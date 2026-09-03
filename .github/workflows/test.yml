@@ -1,0 +1,52 @@
+name: test
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.23.x'
+      - run: go test ./...
+      - name: Test source lifecycle (macOS/Linux)
+        if: runner.os != 'Windows'
+        run: |
+          ./build.sh
+          ./build/mw help add >/dev/null
+          ./build.sh clean
+          mkdir "$RUNNER_TEMP/miniwaves-remove"
+          touch "$RUNNER_TEMP/miniwaves-remove/mw"
+          MINIWAVES_INSTALL_DIR="$RUNNER_TEMP/miniwaves-remove" ./uninstall.sh
+          test ! -e "$RUNNER_TEMP/miniwaves-remove/mw"
+      - name: Test source lifecycle (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./build.ps1
+          ./build/mw.exe help add | Out-Null
+          ./build.ps1 clean
+          $env:MINIWAVES_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "miniwaves-remove"
+          New-Item -ItemType Directory -Force $env:MINIWAVES_INSTALL_DIR | Out-Null
+          New-Item -ItemType File -Path (Join-Path $env:MINIWAVES_INSTALL_DIR "mw.exe") | Out-Null
+          ./uninstall.ps1
+          if (Test-Path (Join-Path $env:MINIWAVES_INSTALL_DIR "mw.exe")) { throw "uninstall failed" }
+      - name: Test published installer (macOS/Linux)
+        if: github.event_name == 'workflow_dispatch' && runner.os != 'Windows'
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/stormovermars/miniwaves/main/install.sh | MINIWAVES_INSTALL_DIR="$RUNNER_TEMP/miniwaves-bin" sh
+          "$RUNNER_TEMP/miniwaves-bin/mw" description >/dev/null
+      - name: Test published installer (Windows)
+        if: github.event_name == 'workflow_dispatch' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:MINIWAVES_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "miniwaves-bin"
+          Invoke-RestMethod https://raw.githubusercontent.com/stormovermars/miniwaves/main/install.ps1 | Invoke-Expression
+          & (Join-Path $env:MINIWAVES_INSTALL_DIR "mw.exe") description | Out-Null

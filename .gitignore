@@ -1,0 +1,5 @@
+/mw
+/.miniwaves.json
+/.miniwaves.json.lock
+.DS_Store
+build/
