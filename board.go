@@ -272,16 +272,15 @@ func writeFileAtomicMode(path string, b []byte, mode os.FileMode) error {
 var (
 	renameTries   = 50
 	renameBackoff = 20 * time.Millisecond
-	renameFn      = os.Rename
+	renameFn      = replaceFile
 	// renameRetryOn: only Windows has transient sharing violations; elsewhere one attempt.
 	renameRetryOn = runtime.GOOS == "windows"
 )
 
-// renameRetry renames tmp over path, retrying a failed rename. On Windows a rename over a
-// file that another process has open (a lock-free reader's os.ReadFile, an antivirus scan)
-// fails with ERROR_ACCESS_DENIED or a sharing violation until that handle closes, because
-// Go opens files without FILE_SHARE_DELETE. os.Rename already uses MoveFileEx with
-// MOVEFILE_REPLACE_EXISTING there, so retrying is all that is needed. A missing tmp is not retried.
+// renameRetry renames tmp over path (replaceFile), retrying a failed rename. On Windows
+// replaceFile uses the POSIX rename, which replaces a target that readers hold open with
+// FILE_SHARE_DELETE (openShared); a handle without it (an antivirus scan, a foreign os.Open)
+// still refuses until it closes, hence the retries. A missing tmp is not retried.
 func renameRetry(tmp, path string) error {
 	var err error
 	tries := renameTries
