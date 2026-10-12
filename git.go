@@ -55,7 +55,7 @@ func ensureGitExclude(dir string) {
 	if err != nil {
 		return
 	}
-	p := strings.TrimSpace(string(out))
+	p := filepath.FromSlash(strings.TrimSpace(string(out))) // git prints C:/x/.git/info/exclude on Windows
 	if !filepath.IsAbs(p) {
 		p = filepath.Join(dir, p)
 	}

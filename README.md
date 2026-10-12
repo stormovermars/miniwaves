@@ -19,6 +19,8 @@ irm https://raw.githubusercontent.com/stormovermars/miniwaves/main/install.ps1 |
 go install github.com/stormovermars/miniwaves@latest                                        # binary is named miniwaves
 ```
 
+Update: `mw update` (checks GitHub releases, verifies the checksum, replaces the binary; `--check` only reports), or re-run the plugin/install one-liner.
+
 ## Use
 
 ```sh
@@ -32,7 +34,7 @@ mw board -A                              # everyone: progress across tenants
 
 Static page: `mw board --html` (see USAGE.md). Storage is per tenant (`.miniwaves.json` index + `.miniwaves/<slug>.json`). Git belongs to the coding agent: commit `.miniwaves.json` and `.miniwaves/` with your code changes and resolve board conflicts in git like any file. `mw init` keeps the lock files out of git.
 
-Runs on macOS and Linux (tested). Windows binaries are built but not yet verified.
+Runs on macOS and Linux, and natively on Windows 10/11 (amd64, arm64; PowerShell, cmd or Git Bash), all three tested in CI. Windows differences: [USAGE.md#windows](USAGE.md#windows).
 
 ## Links
 

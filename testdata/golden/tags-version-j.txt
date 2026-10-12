@@ -1,0 +1,28 @@
+{
+  "version": "0.2.1",
+  "schema": 8,
+  "board_schema": 8,
+  "board": "<DIR>/.miniwaves.json",
+  "tenants": [
+    {
+      "slug": "contract-app",
+      "name": "Contract app",
+      "dir": "<DIR>",
+      "tags": [
+        "android",
+        "store"
+      ]
+    },
+    {
+      "slug": "gone",
+      "name": "Gone app",
+      "dir": "<DIR>",
+      "tags": [
+        "old"
+      ],
+      "archived": true
+    }
+  ],
+  "repo": "stormovermars/miniwaves",
+  "releases_url": "https://github.com/stormovermars/miniwaves/releases"
+}

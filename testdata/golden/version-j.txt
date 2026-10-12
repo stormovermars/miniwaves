@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
   "schema": 8,
   "board_schema": 8,
   "board": "<DIR>/.miniwaves.json",
@@ -9,5 +9,7 @@
       "name": "Contract app",
       "dir": "<DIR>"
     }
-  ]
+  ],
+  "repo": "stormovermars/miniwaves",
+  "releases_url": "https://github.com/stormovermars/miniwaves/releases"
 }

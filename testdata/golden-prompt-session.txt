@@ -1,7 +1,7 @@
 Role: builder session "golden2"; tenant "golden-app" (Golden app).
 
 Setup:
-  cd '/private<DIR>'
+  cd '<DIR>'
   export MW_SESSION='golden2' MW_TENANT='golden-app'
 
 Loop: `mw next -j` (full brief incl. evidence_dir), then `mw start ID -a builder` (or `mw next --claim -j` = pick + claim in one call); work; `mw done ID CHECK --evidence FILE` (one path per flag; or `--no-evidence REASON`). If blocked: `mw block ID REASON`.

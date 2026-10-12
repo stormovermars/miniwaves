@@ -216,7 +216,11 @@ Releases are files, not commands: `releases/<version>.md` with front matter (`ve
 
 `MW_SESSION`, `MW_TENANT`, `-s`, and `-t` select explicit context. Otherwise,
 miniwaves uses the nearest folder default, the nearest configured tenant path,
-then the first tenant.
+then the first tenant that is not archived.
+
+`mw tenant archive SLUG` hides a finished or parked tenant (its files stay); `mw tenant restore SLUG` brings it back.
+`mw tenant tag SLUG +android +store -old` adds and removes tags; `--tag T` (repeatable, all must match) filters
+`tenant list`, `board -A`, `list -A` and `log -A`.
 
 Set a folder default with `mw tenant default SLUG`. Run `mw tenant default` to
 inspect it or `mw tenant default -` to clear it.
@@ -268,19 +272,35 @@ totals (`DONE (n, +N archived)` with `-v`, `archived` in `board -j`); IDs are ne
 
 Git is the coding agent's job, not mw's. Commit `.miniwaves.json` and `.miniwaves/` (and the published page) together with your code changes and resolve board conflicts in git like any file; a board with merge markers is refused with "board has merge markers: resolve it in git". `mw init` adds `.miniwaves/*.lock*`, `.miniwaves/*.tmp` and `.miniwaves.json.tmp` to `.git/info/exclude` so commits never include them.
 
+## Windows
+
+mw runs natively on Windows 10/11 (amd64, arm64); the same board works from PowerShell, cmd and Git Bash, and a board folder can be shared with macOS/Linux checkouts.
+
+- Install: `install.ps1` puts `mw.exe` in `%USERPROFILE%\.local\bin` and adds it to the user PATH (set `MINIWAVES_NO_PATH=1` to skip). The Claude Code plugin hook runs in Git Bash and installs the Windows release there.
+- Home is `%USERPROFILE%`; `~/` and `~\` both expand in folders, `--evidence` and `publish.html`.
+- Writes: Windows refuses to replace a file that another process has open, so lockless readers read the whole file in one go and a writer retries its rename (20 x 10 ms) before failing. Directory fsync is skipped (Windows cannot open a directory); file fsync stays. Locks are `LockFileEx` and are released when the process exits.
+- File modes (0600 board, 0644 page) are not enforced; Windows ACLs of the folder apply.
+- Prompts print PowerShell setup (`$env:MW_SESSION=...`, `Set-Location`).
+
 ## Changelog
 
-### 0.2.0 (schema 8: run `mw migrate`)
+### 0.2.1 (schema 8: run `mw migrate`)
 
-The first release after 0.1.0 (the only public one so far). mw reads schema 8 only; boards from 0.1.0 are upgraded with `mw migrate` (see [MIGRATION.md](MIGRATION.md)). Git is the agent's job: mw never commits, sessions are told to commit the board with their code.
+The first working release after 0.1.0 (the v0.2.0 tag never produced release assets). mw reads schema 8 only; boards from 0.1.0 are upgraded with `mw migrate` (see [MIGRATION.md](MIGRATION.md)). Git is the agent's job: mw never commits, sessions are told to commit the board with their code.
 
 - `mw next --claim [-s NAME] [-a ROLE] [-j]` picks and starts atomically; `--prompt -j` adds the inline headless prompt for the role.
 - `mw start` guard: only inbox/ready (or your own) items start; `mw reopen` for done ones.
-- `mw archive` moves done items out of the hot board file.
+- `mw archive` moves done items out of the hot board file (archived tenants are skipped).
+- `mw tenant archive` refuses while a tenant has a `doing` item or a live session (names them); `--force` overrides. Archived tenants no longer show in `wave list -A` or the gate lines of `board --html`.
+- `mw update`: 120 s timeout for the downloads (5 s for the API call); asset URLs are pinned to github.com and objects.githubusercontent.com (redirects too); on Windows a failed swap restores the old exe. Renames retry only on Windows (50 x 20 ms).
 - Schema 8, per-tenant storage: `.miniwaves.json` is the index, each tenant lives in `.miniwaves/<slug>.json` (+ `.archive.json`); `mw migrate` converts older boards in place (backup `.miniwaves.json.bak7`).
 - Kernel locks for writers (per tenant, 5 s deadline) and lockless reads; 40 runners on one board finish every item exactly once.
 - `mw board --html` and `publish` write a static page, rewritten only when the board changed and at most every `publish.interval` seconds (default 60, minimum 5).
 - Embedded prompts are at most 20 lines each.
 - Waves, gates (evidence, acceptance, judge), `mw log`, `mw show` full brief, `mw note`, `mw edit`.
-- Claude Code plugin (`claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves`), install scripts for macOS, Linux and Windows, CI with `go vet` and `go test -race`.
+- Claude Code plugin (`claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves`), install scripts for macOS, Linux and Windows, CI with `go vet` and `go test -race` (plain `go test` on Windows).
+- `mw tenant archive|restore SLUG`: an archived tenant keeps its files but is hidden from `board -A`, `list -A`, `log -A`, `next`, `tenant list` (shown with `-v`) and the page (shown greyed with `--archived`); `version -j` marks it `archived` so runners skip it; `-t SLUG` on it fails with "SLUG is archived: mw tenant restore SLUG".
+- `mw tenant tag SLUG +TAG -TAG...` (lowercase, unique, sorted; stored in the index); `--tag T` (repeatable, AND) filters `tenant list`, `board -A`, `list -A`, `log -A`; tags show in `board`, `tenant list`, `version -j` and as chips on the page.
+- `mw update [--check]` replaces the binary with the latest GitHub release (checksum verified, exit 2 when current); `mw version` and `mw help` print the releases URL, `version -j` adds `repo` and `releases_url`.
+- Windows: rename retry for writes over an open board file, `~\` paths, `install.ps1` adds mw to the user PATH, the plugin hook installs the Windows asset from Git Bash, CI on windows-latest is a gate (see [Windows](#windows)).
 - Removed since 0.1.0: `mw tenant use` (folder default, tenant path, `MW_TENANT` and the first tenant select the tenant; `tenant default` stays).

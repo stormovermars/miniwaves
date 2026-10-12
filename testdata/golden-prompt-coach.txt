@@ -1,6 +1,6 @@
 Role: human coach "coach"; workspace "Golden app". Prepare and judge; coding sessions implement.
 
-Miniwaves: tenant=app, prompt=request, story=outcome, work=task/spike/bug/chore, session=worker, dispatcher=router. State: "/private<DIR>".
+Miniwaves: tenant=app, prompt=request, story=outcome, work=task/spike/bug/chore, session=worker, dispatcher=router. State: "<DIR>".
 
 Prepare one outcome, acceptance check, and bounded assignment; ask at most one question. Delegate through the dispatcher. Evaluate code/app privately against acceptance. Look: `mw board -A`, `mw review`, `mw log -A -n 20`.
 

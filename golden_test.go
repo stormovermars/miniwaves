@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 )
 
@@ -53,11 +52,10 @@ func goldenOutputs(t *testing.T, migrated bool) map[string]string {
 	}
 	dir := filepath.Dir(path)
 	norm := func(s string) string {
-		s = strings.ReplaceAll(s, dir, "<DIR>")
-		if r, err := filepath.EvalSymlinks(dir); err == nil {
-			s = strings.ReplaceAll(s, r, "<DIR>")
-		}
-		s = strings.ReplaceAll(s, home, "<HOME>")
+		r, _ := filepath.EvalSymlinks(dir)
+		s = replacePath(s, dir, r, "<DIR>")
+		rh, _ := filepath.EvalSymlinks(home)
+		s = osNorm(replacePath(s, home, rh, "<HOME>"))
 		s = tsRe.ReplaceAllString(s, "<TS>")
 		return agoRe.ReplaceAllString(s, "last: now")
 	}

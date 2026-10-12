@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -58,7 +59,7 @@ func TestPublishedPageMode(t *testing.T) {
 	if err := writeHTML(path, &Workspace{Name: "x"}, out); err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := os.Stat(out); st.Mode().Perm() != 0644 {
+	if st, _ := os.Stat(out); runtime.GOOS != "windows" && st.Mode().Perm() != 0644 { // Windows has no Unix modes
 		t.Errorf("publish mode %v", st.Mode().Perm())
 	}
 }

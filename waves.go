@@ -207,7 +207,9 @@ func waveCommand(path string, w *Workspace, args []string) error {
 		var tenants []*Tenant
 		if o["all"] == "true" {
 			for i := range w.Tenants {
-				tenants = append(tenants, &w.Tenants[i])
+				if !w.Tenants[i].Hidden {
+					tenants = append(tenants, &w.Tenants[i])
+				}
 			}
 		} else {
 			t, err := selectTenant(w, o)

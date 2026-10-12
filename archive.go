@@ -98,7 +98,9 @@ func archiveCommand(path string, w *Workspace, args []string) error {
 		tenants = []*Tenant{t}
 	} else {
 		for i := range w.Tenants {
-			tenants = append(tenants, &w.Tenants[i])
+			if !w.Tenants[i].Hidden {
+				tenants = append(tenants, &w.Tenants[i])
+			}
 		}
 	}
 	cutoff := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour)

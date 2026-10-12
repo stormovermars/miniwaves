@@ -13,9 +13,11 @@ import (
 
 func tenantCommand(path string, w *Workspace, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: mw tenant add|list|default")
+		return errors.New("usage: mw tenant add|list|default|archive|restore|tag")
 	}
 	switch args[0] {
+	case "archive", "restore", "tag":
+		return tenantMeta(path, w, args)
 	case "list":
 		o, pos, err := options(args[1:])
 		if err != nil {
@@ -24,23 +26,24 @@ func tenantCommand(path string, w *Workspace, args []string) error {
 		if len(pos) != 0 {
 			return fmt.Errorf("unexpected argument %q", pos[0])
 		}
-		if err := allowOptions(o, "json", "verbose"); err != nil {
+		if err := allowOptions(o, "json", "verbose", "tag"); err != nil {
 			return err
 		}
-		selected, err := selectTenant(w, map[string]string{})
-		if err != nil {
-			return err
+		selected, _ := selectTenantAny(w, map[string]string{})
+		if selected == nil {
+			selected = &Tenant{}
 		}
 		if o["verbose"] == "true" {
+			o["archived"] = "true"
 			out := make([]tenantDetail, 0, len(w.Tenants))
-			for _, t := range w.Tenants {
-				out = append(out, tenantDetail{t.Slug, t.Name, len(t.Items), t.Slug == selected.Slug, t.Path})
+			for _, t := range shown(w, o) {
+				out = append(out, tenantDetail{t.Slug, t.Name, len(t.Items), t.Slug == selected.Slug, t.Path, t.Tags, t.Hidden})
 			}
 			return printData(out, o)
 		}
 		out := make([]tenantBrief, 0, len(w.Tenants))
-		for _, t := range w.Tenants {
-			out = append(out, tenantBrief{t.Slug, len(t.Items), t.Slug == selected.Slug})
+		for _, t := range shown(w, o) {
+			out = append(out, tenantBrief{t.Slug, len(t.Items), t.Slug == selected.Slug, t.Tags})
 		}
 		return printData(out, o)
 	case "default":
@@ -349,7 +352,7 @@ func listItems(w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "tenant", "session", "kind", "status", "json", "verbose", "all", "limit"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "kind", "status", "json", "verbose", "all", "limit", "tag", "archived"); err != nil {
 		return err
 	}
 	limit := 0
@@ -424,8 +427,7 @@ func listAll(w *Workspace, o map[string]string, limit int) error {
 	owner := o["session"]
 	brief := []itemRow{}
 	detail := []itemDetailRow{}
-	for i := range w.Tenants {
-		t := &w.Tenants[i]
+	for _, t := range shown(w, o) {
 		announceTenant(w, t)
 		for _, it := range filtered(t, o) {
 			if it.Kind == "wave" {
@@ -924,15 +926,18 @@ func boardCommand(path string, w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "tenant", "session", "all", "verbose", "json", "html", "out"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "all", "verbose", "json", "html", "out", "tag", "archived"); err != nil {
 		return err
 	}
+	w.showArchived = o["archived"] == "true"
 	if o["out"] != "" && o["html"] != "true" {
 		return errors.New("-o needs --html")
 	}
 	if o["html"] == "true" {
 		for i := range w.Tenants {
-			announceTenant(w, &w.Tenants[i])
+			if !w.Tenants[i].Hidden || w.showArchived {
+				announceTenant(w, &w.Tenants[i])
+			}
 		}
 		target := o["out"]
 		if target == "" && w.Publish != nil {
@@ -954,10 +959,7 @@ func boardCommand(path string, w *Workspace, args []string) error {
 		}
 		full := o["verbose"] == "true"
 		var docs []boardDoc
-		order := make([]*Tenant, len(w.Tenants))
-		for i := range w.Tenants {
-			order[i] = &w.Tenants[i]
-		}
+		order := shown(w, o)
 		last := map[*Tenant]time.Time{}
 		for _, t := range order {
 			x, _, _ := lastActivity(t)
@@ -1015,6 +1017,7 @@ type boardDoc struct {
 	Done     int                    `json:"done"`
 	Total    int                    `json:"total"`
 	Archived int                    `json:"archived,omitempty"`
+	Tags     []string               `json:"tags,omitempty"`
 	Percent  int                    `json:"percent"`
 	Gates    map[string]bool        `json:"gates"`
 	Sessions []string               `json:"sessions"`
@@ -1025,7 +1028,7 @@ type boardDoc struct {
 func boardData(t *Tenant, sessions []Session, full bool, gs []gateInfo) boardDoc {
 	judgeOn := byName(gs, "judge").Effective
 	at, id, act := lastActivity(t)
-	d := boardDoc{LastAt: at, Today: doneToday(t), Tenant: t.Slug, Name: t.Name, Gates: effectiveMap(gs), Sessions: []string{}, Waves: []waveRow{}, States: map[string][]itemBrief{}}
+	d := boardDoc{LastAt: at, Today: doneToday(t), Tenant: t.Slug, Name: t.Name, Tags: t.Tags, Gates: effectiveMap(gs), Sessions: []string{}, Waves: []waveRow{}, States: map[string][]itemBrief{}}
 	for _, it := range t.Items {
 		if it.Kind == "wave" {
 			if full || it.Status != "done" {
@@ -1069,7 +1072,7 @@ func printBoardJ(t *Tenant, sessions []Session, full bool, gates string, judgeOn
 	}
 	bd := burndownOf(t, judgeOn)
 	total, done, pct := bd.Total, bd.Judged, bd.Percent
-	fmt.Printf("%s [%s]  %d%% (%d/%d)\n", compactText(t.Name, 72), t.Slug, pct, done, total)
+	fmt.Printf("%s [%s]%s  %d%% (%d/%d)\n", compactText(t.Name, 72), t.Slug, tagText(t), pct, done, total)
 	fmt.Printf("[%s%s]\n", strings.Repeat("#", pct/5), strings.Repeat(".", 20-pct/5))
 	var active []string
 	for _, s := range sessions {

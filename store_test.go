@@ -118,6 +118,9 @@ func TestTwentyParallelClaims(t *testing.T) {
 		runAll(t, []string{"add", "task", fmt.Sprintf("job %d", i), "-S", "ready"})
 	}
 	bin := filepath.Join(t.TempDir(), "mw")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
 	_, thisFile, _, _ := runtime.Caller(0)
 	build := exec.Command("go", "build", "-o", bin, ".")
 	build.Dir = filepath.Dir(thisFile)
@@ -134,7 +137,8 @@ func TestTwentyParallelClaims(t *testing.T) {
 			defer wg.Done()
 			c := exec.Command(bin, "next", "--claim", "-t", "app", "-s", fmt.Sprintf("p%02d", i), "-a", "builder", "-j")
 			c.Dir = dir
-			c.Env = append(os.Environ(), "HOME="+t.TempDir())
+			h := t.TempDir()
+			c.Env = append(os.Environ(), "HOME="+h, "USERPROFILE="+h)
 			out, err := c.CombinedOutput()
 			if err != nil {
 				got[i] = "ERR " + string(out)

@@ -60,7 +60,7 @@ func TestStartGuardAndClaim(t *testing.T) {
 func TestVersionBoardSchema(t *testing.T) {
 	path, _, _ := contractBoard(t)
 	m := jsonOut(t, "version", "-j")
-	if m["board_schema"] != float64(8) || !strings.HasSuffix(m["board"].(string), dataFile) || m["version"] != "0.2.0" {
+	if m["board_schema"] != float64(8) || !strings.HasSuffix(m["board"].(string), dataFile) || m["version"] != "0.2.1" {
 		t.Fatalf("version: %v", m)
 	}
 	b, _ := os.ReadFile(path)

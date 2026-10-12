@@ -15,7 +15,7 @@ import (
 
 // htmlPath resolves a publish path: ~/ is home, relative is under the workspace folder.
 func htmlPath(boardPath, p string) string {
-	if strings.HasPrefix(p, "~/") {
+	if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`) {
 		if h, err := os.UserHomeDir(); err == nil {
 			return filepath.Join(h, p[2:])
 		}
@@ -120,7 +120,7 @@ main{max-width:860px;margin:0 auto;padding:16px}
 h1{font-size:20px;margin:0 0 12px}h2{font-size:16px;margin:0}h3{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:12px 0 4px}
 section{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin:0 0 12px}
 .bar{height:6px;background:var(--line);border-radius:3px;margin:6px 0}.bar i{display:block;height:6px;background:var(--bar);border-radius:3px}
-.mut{color:var(--mut);font-size:13px}ul{list-style:none;margin:0;padding:0}li{padding:2px 0}
+.mut{color:var(--mut);font-size:13px}.tag{font-size:11px;font-weight:400;border:1px solid var(--mut);border-radius:8px;padding:0 6px;margin-left:4px}.archived{opacity:.5}ul{list-style:none;margin:0;padding:0}li{padding:2px 0}
 code{font:13px ui-monospace,monospace}
 </style></head><body><main>
 `
@@ -130,10 +130,9 @@ func renderHTML(w *Workspace) string {
 	esc := html.EscapeString
 	b.WriteString(htmlHead)
 	fmt.Fprintf(&b, "<h1>%s</h1>\n", esc(compactText(w.Name, 72)))
-	for i := range w.Tenants {
-		t := &w.Tenants[i]
+	for _, t := range shown(w, map[string]string{"archived": fmt.Sprint(w.showArchived)}) {
 		bd := burndownOf(t, byName(gateStates(w, t), "judge").Effective)
-		fmt.Fprintf(&b, "<section><h2>%s <span class=mut>[%s]</span></h2>\n", esc(compactText(t.Name, 72)), esc(t.Slug))
+		fmt.Fprintf(&b, "<section%s><h2>%s <span class=mut>[%s]</span>%s</h2>\n", map[bool]string{true: " class=archived"}[t.Hidden], esc(compactText(t.Name, 72)), esc(t.Slug), tagChips(t))
 		fmt.Fprintf(&b, "<div class=bar><i style=\"width:%d%%\"></i></div><div class=mut>%d%% (%d/%d) &middot; %s</div>\n", bd.Percent, bd.Percent, bd.Judged, bd.Total, esc(activityLine(t)))
 		for _, state := range []string{"doing", "blocked", "ready"} {
 			var rows []string
@@ -162,8 +161,8 @@ func renderHTML(w *Workspace) string {
 		b.WriteString("</section>\n")
 	}
 	var rows []logRow
-	for i := range w.Tenants {
-		rows = append(rows, tenantRows(&w.Tenants[i])...)
+	for _, t := range shown(w, map[string]string{"archived": fmt.Sprint(w.showArchived)}) {
+		rows = append(rows, tenantRows(t)...)
 	}
 	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
 		rows[i], rows[j] = rows[j], rows[i]

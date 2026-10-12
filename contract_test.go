@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 )
 
@@ -34,11 +33,10 @@ func contractBoard(t *testing.T) (path, home string, norm func(string) string) {
 	dir := filepath.Dir(path)
 	norm = func(s string) string {
 		for _, p := range [][2]string{{dir, "<DIR>"}, {home, "<HOME>"}} {
-			if r, err := filepath.EvalSymlinks(p[0]); err == nil {
-				s = strings.ReplaceAll(s, r, p[1])
-			}
-			s = strings.ReplaceAll(s, p[0], p[1])
+			r, _ := filepath.EvalSymlinks(p[0])
+			s = replacePath(s, p[0], r, p[1])
 		}
+		s = agoRe.ReplaceAllString(osNorm(s), "last: now")
 		s = rfcRe.ReplaceAllString(s, "<TS>")
 		return tsRe.ReplaceAllString(s, "<TS>")
 	}
@@ -91,4 +89,10 @@ func TestContractGoldens(t *testing.T) {
 	checkGolden(t, "next-claim-prompt-j", cap("next", "--claim", "-j", "--prompt", "-s", "bot2", "-a", "builder"))
 	checkGolden(t, "gate-j", cap("gate", "-t", "contract-app", "-j"))
 	checkGolden(t, "next-j-null", cap("next", "-j"))
+	runAll(t, []string{"tenant", "tag", "contract-app", "+android", "+store"}, []string{"tenant", "add", "gone", "Gone app"},
+		[]string{"tenant", "tag", "gone", "+old"}, []string{"tenant", "archive", "gone"})
+	checkGolden(t, "tags-version-j", cap("version", "-j"))
+	checkGolden(t, "tags-tenant-list-j-v", cap("tenant", "list", "-j", "-v"))
+	checkGolden(t, "tags-board-html", cap("board", "--html"))
+	checkGolden(t, "tags-board-html-archived", cap("board", "--html", "--archived"))
 }

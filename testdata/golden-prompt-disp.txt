@@ -1,7 +1,7 @@
 Role: dispatcher "dispatcher"; workspace "Golden app". Route work; do not code.
 
 Inspect:
-  cd '/private<DIR>'
+  cd '<DIR>'
   mw board -A
   mw review
   mw log -A -n 20

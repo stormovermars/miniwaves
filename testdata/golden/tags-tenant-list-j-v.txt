@@ -1,0 +1,24 @@
+[
+  {
+    "tenant": "contract-app",
+    "name": "Contract app",
+    "items": 2,
+    "selected": true,
+    "path": "<DIR>",
+    "tags": [
+      "android",
+      "store"
+    ]
+  },
+  {
+    "tenant": "gone",
+    "name": "Gone app",
+    "items": 0,
+    "selected": false,
+    "path": "",
+    "tags": [
+      "old"
+    ],
+    "archived": true
+  }
+]

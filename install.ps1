@@ -30,9 +30,14 @@ try {
     Expand-Archive -Force $archive $temp
     Copy-Item -Force (Join-Path $temp "mw.exe") (Join-Path $dest "mw.exe")
     Write-Output "installed miniwaves to $(Join-Path $dest 'mw.exe')"
-    if (($env:PATH -split ";") -notcontains $dest) {
-        Write-Output "add $dest to PATH"
+    # Put $dest on the user PATH (persisted for new shells, and for this one).
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $parts = @($userPath -split ";" | Where-Object { $_ })
+    if (-not $env:MINIWAVES_NO_PATH -and ($parts | ForEach-Object { $_.TrimEnd("\") }) -notcontains $dest.TrimEnd("\")) {
+        [Environment]::SetEnvironmentVariable("Path", (($parts + $dest) -join ";"), "User")
+        Write-Output "added $dest to the user PATH (open a new terminal to use mw)"
     }
+    if (($env:PATH -split ";") -notcontains $dest) { $env:PATH = "$env:PATH;$dest" }
 } finally {
     if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }
 }

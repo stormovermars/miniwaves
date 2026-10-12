@@ -16,8 +16,12 @@ jobs:
         with:
           go-version: '1.23.x'
       - run: go vet ./...
+      - name: Cross-build every release target
+        if: runner.os == 'Linux'
+        run: for t in windows/amd64 windows/arm64 darwin/arm64 linux/amd64; do GOOS=${t%/*} GOARCH=${t#*/} go vet ./... && GOOS=${t%/*} GOARCH=${t#*/} go build -o /dev/null .; done
       - run: go test ./...
       - run: go test -race ./...
+        if: runner.os != 'Windows' # -race needs cgo; the Windows job runs the plain suite above
       - name: Test source lifecycle (macOS/Linux)
         if: runner.os != 'Windows'
         run: |
@@ -50,5 +54,6 @@ jobs:
         shell: pwsh
         run: |
           $env:MINIWAVES_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "miniwaves-bin"
+          $env:MINIWAVES_NO_PATH = "1"
           Invoke-RestMethod https://raw.githubusercontent.com/stormovermars/miniwaves/main/install.ps1 | Invoke-Expression
           & (Join-Path $env:MINIWAVES_INSTALL_DIR "mw.exe") description | Out-Null

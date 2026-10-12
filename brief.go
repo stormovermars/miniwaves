@@ -111,7 +111,7 @@ func logCommand(w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "tenant", "session", "all", "limit", "json"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "all", "limit", "json", "tag"); err != nil {
 		return err
 	}
 	limit := 20
@@ -125,9 +125,9 @@ func logCommand(w *Workspace, args []string) error {
 		if o["tenant"] != "" {
 			return errors.New("mw log -A cannot be combined with -t")
 		}
-		for i := range w.Tenants {
-			announceTenant(w, &w.Tenants[i])
-			rows = append(rows, tenantRows(&w.Tenants[i])...)
+		for _, t := range shown(w, o) {
+			announceTenant(w, t)
+			rows = append(rows, tenantRows(t)...)
 		}
 	} else {
 		t, err := selectTenant(w, o)
@@ -398,7 +398,7 @@ func copyEvidence(paths []string, dest string) ([]string, error) {
 		return nil
 	}
 	for _, p := range paths {
-		if strings.HasPrefix(p, "~/") {
+		if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`) {
 			if h, err := os.UserHomeDir(); err == nil {
 				p = filepath.Join(h, p[2:])
 			}

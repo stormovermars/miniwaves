@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +14,7 @@ import (
 )
 
 // version is the mw release; schema is currentSchema.
-var version = "0.2.0"
+var version = "0.2.1"
 
 var gateNames = []string{"evidence", "acceptance", "judge"}
 
@@ -425,22 +426,25 @@ type versionInfo struct {
 	BoardSchema *int            `json:"board_schema" toon:"board_schema"`
 	Board       *string         `json:"board" toon:"board"`
 	Tenants     []versionTenant `json:"tenants,omitempty" toon:"tenants"`
+	Repo        string          `json:"repo" toon:"repo"`
+	ReleasesURL string          `json:"releases_url" toon:"releases_url"`
 }
 
 type versionTenant struct {
-	Slug string `json:"slug"`
-	Name string `json:"name"`
-	Dir  string `json:"dir"`
+	Slug     string   `json:"slug"`
+	Name     string   `json:"name"`
+	Dir      string   `json:"dir"`
+	Tags     []string `json:"tags,omitempty"`
+	Archived bool     `json:"archived,omitempty"` // a runner must skip it (single-tenant commands refuse it)
 }
 
 // boardSchemaOf reads only the "version" field of a board file (any schema).
 func boardSchemaOf(path string) (int, bool) {
-	f, err := os.Open(path)
+	b, err := os.ReadFile(path) // one short read: a held handle would block a writer's rename on Windows
 	if err != nil {
 		return 0, false
 	}
-	defer f.Close()
-	dec := json.NewDecoder(f)
+	dec := json.NewDecoder(bytes.NewReader(b))
 	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
 		return 0, false
 	}
@@ -475,7 +479,7 @@ func versionCommand(args []string) error {
 	if err := allowOptions(o, "json"); err != nil {
 		return err
 	}
-	v := versionInfo{Version: version, Schema: currentSchema}
+	v := versionInfo{Version: version, Schema: currentSchema, Repo: "stormovermars/" + repoName, ReleasesURL: releasesURL}
 	if p, err := findWorkspace(); err == nil {
 		v.Board = &p
 		if n, ok := boardSchemaOf(p); ok {
@@ -483,7 +487,7 @@ func versionCommand(args []string) error {
 			if n == currentSchema {
 				if w, err := loadScoped(p, false); err == nil {
 					for _, t := range w.Tenants {
-						v.Tenants = append(v.Tenants, versionTenant{t.Slug, t.Name, tenantDir(p, &t)})
+						v.Tenants = append(v.Tenants, versionTenant{t.Slug, t.Name, tenantDir(p, &t), t.Tags, t.Hidden})
 					}
 				}
 			}
@@ -492,7 +496,7 @@ func versionCommand(args []string) error {
 	if o["json"] == "true" {
 		return printJSON(v)
 	}
-	fmt.Printf("mw %s (schema %d)\n", v.Version, v.Schema)
+	fmt.Printf("mw %s (schema %d)\n%s · update: mw update\n", v.Version, v.Schema, releasesURL)
 	return nil
 }
 

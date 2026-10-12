@@ -3,10 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 const (
@@ -74,6 +76,8 @@ type Tenant struct {
 	GateLatch    map[string]string `json:"gate_latch,omitempty"` // name: reason; auto stays on once latched
 	AcceptStreak int               `json:"accept_streak,omitempty"`
 	Archived     int               `json:"archived,omitempty"` // done items moved to .miniwaves/<slug>.archive.json (mw archive)
+	Hidden       bool              `json:"-"`                  // mw tenant archive (stored in the index as "archived")
+	Tags         []string          `json:"-"`                  // mw tenant tag (stored in the index)
 	loaded       bool
 }
 
@@ -87,15 +91,16 @@ type Session struct {
 }
 
 type Workspace struct {
-	Version  int               `json:"version"`
-	Name     string            `json:"name"`
-	Defaults map[string]string `json:"folder_defaults,omitempty"`
-	Tenants  []Tenant          `json:"tenants"`
-	Sessions []Session         `json:"sessions"`
-	Protocol []string          `json:"protocol,omitempty"`
-	Folders  map[string]string `json:"folders,omitempty"`
-	Gates    map[string]string `json:"gates,omitempty"` // workspace default per gate; absent = auto
-	Publish  *PublishConfig    `json:"publish,omitempty"`
+	showArchived bool              // mw board --html --archived: archived tenants on the page, greyed
+	Version      int               `json:"version"`
+	Name         string            `json:"name"`
+	Defaults     map[string]string `json:"folder_defaults,omitempty"`
+	Tenants      []Tenant          `json:"tenants"`
+	Sessions     []Session         `json:"sessions"`
+	Protocol     []string          `json:"protocol,omitempty"`
+	Folders      map[string]string `json:"folders,omitempty"`
+	Gates        map[string]string `json:"gates,omitempty"` // workspace default per gate; absent = auto
+	Publish      *PublishConfig    `json:"publish,omitempty"`
 
 	base      map[string]string // sha of each loaded tenant file as read (save writes only what changed)
 	indexBase string
@@ -132,17 +137,20 @@ type itemDetail struct {
 }
 
 type tenantBrief struct {
-	Tenant   string `json:"tenant" toon:"tenant"`
-	Items    int    `json:"items" toon:"items"`
-	Selected bool   `json:"selected" toon:"selected"`
+	Tenant   string   `json:"tenant" toon:"tenant"`
+	Items    int      `json:"items" toon:"items"`
+	Selected bool     `json:"selected" toon:"selected"`
+	Tags     []string `json:"tags,omitempty" toon:"tags,omitempty"`
 }
 
 type tenantDetail struct {
-	Tenant   string `json:"tenant" toon:"tenant"`
-	Name     string `json:"name" toon:"name"`
-	Items    int    `json:"items" toon:"items"`
-	Selected bool   `json:"selected" toon:"selected"`
-	Path     string `json:"path" toon:"path"`
+	Tenant   string   `json:"tenant" toon:"tenant"`
+	Name     string   `json:"name" toon:"name"`
+	Items    int      `json:"items" toon:"items"`
+	Selected bool     `json:"selected" toon:"selected"`
+	Path     string   `json:"path" toon:"path"`
+	Tags     []string `json:"tags,omitempty" toon:"tags,omitempty"`
+	Archived bool     `json:"archived,omitempty" toon:"archived,omitempty"`
 }
 
 type sessionBrief struct {
@@ -247,16 +255,48 @@ func writeFileAtomicMode(path string, b []byte, mode os.FileMode) error {
 	if err := os.Chmod(tmp, mode); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := renameRetry(tmp, path); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
-	if syncWrites && runtime.GOOS != "windows" {
+	if syncWrites && runtime.GOOS != "windows" { // Windows cannot open (or fsync) a directory
 		if d, err := os.Open(filepath.Dir(path)); err == nil {
 			_ = d.Sync()
 			d.Close()
 		}
 	}
 	return nil
+}
+
+// renameTries and renameBackoff bound renameRetry: 50 x 20 ms.
+var (
+	renameTries   = 50
+	renameBackoff = 20 * time.Millisecond
+	renameFn      = os.Rename
+	// renameRetryOn: only Windows has transient sharing violations; elsewhere one attempt.
+	renameRetryOn = runtime.GOOS == "windows"
+)
+
+// renameRetry renames tmp over path, retrying a failed rename. On Windows a rename over a
+// file that another process has open (a lock-free reader's os.ReadFile, an antivirus scan)
+// fails with ERROR_ACCESS_DENIED or a sharing violation until that handle closes, because
+// Go opens files without FILE_SHARE_DELETE. os.Rename already uses MoveFileEx with
+// MOVEFILE_REPLACE_EXISTING there, so retrying is all that is needed. A missing tmp is not retried.
+func renameRetry(tmp, path string) error {
+	var err error
+	tries := renameTries
+	if !renameRetryOn {
+		tries = 1
+	}
+	for i := 0; i < tries; i++ {
+		if err = renameFn(tmp, path); err == nil || errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		if i+1 < tries {
+			time.Sleep(renameBackoff)
+		}
+	}
+	return err
 }
 
 func tenantBySlug(w *Workspace, slug string) (*Tenant, error) {
@@ -299,6 +339,17 @@ func selectTenant(w *Workspace, o map[string]string) (*Tenant, error) {
 }
 
 func selectTenantRaw(w *Workspace, o map[string]string) (*Tenant, error) {
+	t, err := selectTenantAny(w, o)
+	if err == nil {
+		err = refuseArchived(t)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+func selectTenantAny(w *Workspace, o map[string]string) (*Tenant, error) {
 	sessionID := value(o, "session", os.Getenv("MW_SESSION"))
 	if sessionID != "" {
 		// an unknown session is never an error: fall through to the other rules
@@ -338,6 +389,11 @@ func selectTenantRaw(w *Workspace, o map[string]string) (*Tenant, error) {
 	}
 	if match != nil {
 		return match, nil
+	}
+	for i := range w.Tenants { // the first tenant that is not archived
+		if !w.Tenants[i].Hidden {
+			return &w.Tenants[i], nil
+		}
 	}
 	if len(w.Tenants) == 0 {
 		return nil, errors.New("no tenants")

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>miniwaves board</title>
+<style>
+:root{--bg:#fff;--fg:#1b1f24;--mut:#6b7280;--line:#e5e7eb;--bar:#2563eb;--card:#f8fafc}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1317;--fg:#e6e8eb;--mut:#9aa3ad;--line:#2a313a;--bar:#60a5fa;--card:#161b21}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0 0 12px}h2{font-size:16px;margin:0}h3{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:12px 0 4px}
+section{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin:0 0 12px}
+.bar{height:6px;background:var(--line);border-radius:3px;margin:6px 0}.bar i{display:block;height:6px;background:var(--bar);border-radius:3px}
+.mut{color:var(--mut);font-size:13px}.tag{font-size:11px;font-weight:400;border:1px solid var(--mut);border-radius:8px;padding:0 6px;margin-left:4px}.archived{opacity:.5}ul{list-style:none;margin:0;padding:0}li{padding:2px 0}
+code{font:13px ui-monospace,monospace}
+</style></head><body><main>
+<h1>Contract app</h1>
+<section><h2>Contract app <span class=mut>[contract-app]</span> <span class=tag>android</span> <span class=tag>store</span></h2>
+<div class=bar><i style="width:0%"></i></div><div class=mut>0% (0/2) &middot; last: now BUG-001 start  today: 0 done</div>
+<h3>doing (2)</h3><ul>
+<li><code>TSK-001</code> First <span class=mut>task @bot</span></li>
+<li><code>BUG-001</code> Second <span class=mut>bug @bot2</span></li>
+</ul>
+</section>
+<section><h2>Activity</h2><ul>
+<li><span class=mut><TS></span> contract-app <code>BUG-001</code> start bot2</li>
+<li><span class=mut><TS></span> contract-app <code>TSK-001</code> start bot</li>
+<li><span class=mut><TS></span> contract-app <code>BUG-001</code> ready -</li>
+<li><span class=mut><TS></span> contract-app <code>BUG-001</code> created -</li>
+<li><span class=mut><TS></span> contract-app <code>TSK-001</code> ready -</li>
+<li><span class=mut><TS></span> contract-app <code>TSK-001</code> created -</li>
+</ul></section>
+</main></body></html>

@@ -24,7 +24,7 @@ var flagAliases = map[string]string{
 }
 
 var validOptions = map[string]bool{
-	"tenant": true, "session": true, "agent": true, "parent": true,
+	"tenant": true, "session": true, "agent": true, "parent": true, "tag": true, "archived": true,
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
@@ -85,6 +85,9 @@ func run(args []string) error {
 	}
 	if args[0] == "version" {
 		return versionCommand(args[1:])
+	}
+	if args[0] == "update" {
+		return updateCommand(args[1:])
 	}
 	if args[0] == "migrate" {
 		return migrateCommand(args[1:])
@@ -252,10 +255,15 @@ prints what changed; --dry-run prints without writing. The only command that rea
 Create .miniwaves.json (the index) and .miniwaves/<slug>.json in the current folder with one tenant.
 Example: mw init "My apps"`,
 		"tenant": `mw tenant add SLUG [NAME...] [-d DIR]
-mw tenant list [-j] [-v]
+mw tenant list [-j] [-v] [--tag T]
 mw tenant default [SLUG|-]
+mw tenant archive [--force]|restore SLUG
+mw tenant tag SLUG +TAG -TAG...
 Manage isolated apps/projects. "default" selects a tenant for the current
-folder ("-" clears it); otherwise the tenant whose -d DIR holds the cwd, MW_TENANT, then the first tenant. Example: mw tenant add api "API" -d ~/apps/api`,
+folder ("-" clears it); otherwise the tenant whose -d DIR holds the cwd, MW_TENANT, then the first tenant that is not archived.
+"archive" refuses while an item is doing or a session is live (--force overrides) and hides a tenant (files untouched) from board -A, list -A, log -A, next, the page and version -j
+runners; -t SLUG on it fails until "restore". list -v shows archived ones. "tag" adds/removes lowercase
+tags (printed sorted); --tag T (repeatable, AND) filters tenant list, board -A, list -A and log -A. Example: mw tenant add api "API" -d ~/apps/api`,
 		"dirs": `mw dirs [init] [-j]
 mw dirs set NAME PATH
 Show the eight folders: datalake (inputs), docs (examples/specs), data (outputs),
@@ -310,10 +318,14 @@ judgeable item judged; a story whose children are all done becomes done and judg
 Human only. Counts an attempt, notes the reason and clears judgement. A story goes back to ready with a
 ready task "Fix: REASON"; a child goes to ready and reopens its done story. Refused in a closed wave.
 --evidence-gap latches the evidence gate.`,
+		"update": `mw update [--check]
+Replace this mw with the latest GitHub release for this OS/CPU (checksum verified; on Windows the old
+binary is kept as mw.exe.old). --check only reports. Exit 2 when already current.`,
 		"version": `mw version [-j]
 Print the mw version and schema; -j prints {version, schema, board_schema, board, tenants}: the nearest
 workspace file and its schema number (null when there is none; an old schema is reported, not an error)
-and, for a current-schema board, tenants [{slug, name, dir}] so a runner needs no tenant list call.`,
+and, for a current-schema board, tenants [{slug, name, dir, tags, archived}] so a runner needs no tenant list
+call (a runner skips archived ones).`,
 		"list": `mw list [-t SLUG] [-k KIND] [-S STATUS] [-n N] [-j] [-v]
 mw list -A [-s SESSION] [-k KIND] [-S STATUS] [-n N] [-j] [-v]
 List items as compact TOON. Use -j for JSON or -v for full fields; -n N keeps the first N.
@@ -401,9 +413,10 @@ Usage:
   mw description [-j]
   mw migrate [--dry-run] [PATH]
   mw version [-j]
+  mw update [--check]
   mw init [workspace name]
   mw tenant add SLUG [NAME...] [-d DIR]
-  mw tenant list [-j] [-v] | default [SLUG|-]
+  mw tenant list [-j] [-v] [--tag T] | default [SLUG|-] | archive|restore SLUG | tag SLUG +T -T
   mw dirs [init] [-j] | set datalake|docs|data|tools|templates|builds|evidence|scratch PATH
   mw note ID TEXT... [-t SLUG] [-s NAME]
   mw session start NAME [-t SLUG] [-a ROLE]
@@ -437,6 +450,7 @@ Flags: -t tenant, -s session, -a agent, -p parent, -d path, -b body,
        -A all
 
 Run mw help COMMAND or mw COMMAND --help for explanations and examples.
+Releases: ` + releasesURL + ` · update: mw update
 `)
 	return nil
 }
@@ -683,12 +697,16 @@ func options(args []string) (map[string]string, []string, error) {
 		if key == "" || !validOptions[key] {
 			return nil, nil, fmt.Errorf("unknown option %s", a)
 		}
-		if key == "json" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "claim" || key == "headless" || key == "prompt" || key == "html" {
+		if key == "json" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "archived" {
 			o[key] = "true"
 			continue
 		}
 		if i+1 >= len(args) {
 			return nil, nil, fmt.Errorf("--%s needs a value", key)
+		}
+		if key == "tag" && o[key] != "" { // repeatable: --tag a --tag b means both
+			o[key], i = o[key]+","+args[i+1], i+1
+			continue
 		}
 		o[key], i = args[i+1], i+1
 	}

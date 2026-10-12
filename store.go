@@ -33,9 +33,11 @@ func tenantPath(board, slug string) string  { return storePath(board, slug+".jso
 func archivePath(board, slug string) string { return storePath(board, slug+".archive.json") }
 
 type indexTenant struct {
-	Slug string `json:"slug"`
-	Name string `json:"name"`
-	Path string `json:"path,omitempty"`
+	Slug     string   `json:"slug"`
+	Name     string   `json:"name"`
+	Path     string   `json:"path,omitempty"`
+	Archived bool     `json:"archived,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
 }
 
 // indexDoc is the schema 8 .miniwaves.json.
@@ -105,7 +107,7 @@ func loadScoped(path string, all bool, slugs ...string) (*Workspace, error) {
 		want[s] = true
 	}
 	for _, it := range ix.Tenants {
-		t := Tenant{Slug: it.Slug, Name: it.Name, Path: it.Path, Next: map[string]int{}, Items: []Item{}}
+		t := Tenant{Slug: it.Slug, Name: it.Name, Path: it.Path, Hidden: it.Archived, Tags: it.Tags, Next: map[string]int{}, Items: []Item{}}
 		if all || want[it.Slug] {
 			tb, err := os.ReadFile(tenantPath(path, it.Slug))
 			if err != nil && !os.IsNotExist(err) {
@@ -146,7 +148,7 @@ func indexBytes(w *Workspace) []byte {
 		ix.Defaults = nil
 	}
 	for _, t := range w.Tenants {
-		ix.Tenants = append(ix.Tenants, indexTenant{t.Slug, t.Name, t.Path})
+		ix.Tenants = append(ix.Tenants, indexTenant{t.Slug, t.Name, t.Path, t.Hidden, t.Tags})
 	}
 	b, _ := json.Marshal(ix)
 	return append(b, '\n')
@@ -265,7 +267,9 @@ func lockFile(lp string, deadline time.Time) (func(), error) {
 	// written first and cheaply (tmp + rename, no fsync): the last acquirer's pid stays
 	pid := strconv.Itoa(os.Getpid())
 	if tmp := pp + "." + pid; os.WriteFile(tmp, []byte(pid), 0600) == nil {
-		_ = os.Rename(tmp, pp)
+		if renameRetry(tmp, pp) != nil {
+			_ = os.Remove(tmp)
+		}
 	}
 	var once sync.Once
 	return func() { once.Do(func() { _ = l.Unlock() }) }, nil
