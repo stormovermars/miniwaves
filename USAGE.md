@@ -285,8 +285,9 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 
 ## Changelog
 
-### 0.2.2 (unreleased)
+### 0.2.2
 
+- Windows: files are replaced with a POSIX-semantics rename (`SetFileInformationByHandle`), so a writer no longer fails with `Access is denied` while a lock-free reader holds the board open; falls back to `MoveFileEx` with retries where unsupported.
 - Windows: board, tenant, index, pid and page-hash files are read with `FILE_SHARE_READ|WRITE|DELETE` and a read that hits a sharing violation or access denied is retried (50 x 20 ms), as is a `stat` of the board; fixes `The process cannot access the file because it is being used by another process` from `mw list` while writers rename.
 - `MW_LOCK_WAIT` (seconds) sets how long a writer waits for its locks: default 5, 15 on Windows. The timeout message now says it was a lock wait timeout and names `MW_LOCK_WAIT` (it still starts with `board locked (pid P)`).
 - Every non-zero exit prints a one-line `mw: <reason>` on stderr, also for `-j` errors (`session_exists`), `mw update` when already current, and panics (`mw: internal error: ...`, exit 70).
