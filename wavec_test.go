@@ -175,7 +175,7 @@ func TestTenantAddUpdateRefusals(t *testing.T) {
 	wantErr(t, "held by tenant b", "tenant", "add", "a", "-d", base+"/b")
 	wantErr(t, "no NAME", "tenant", "add", "a", "New Name", "-d", base+"/c")
 	out := captureOutput(t, func() { runAll(t, []string{"tenant", "add", "a", "-d", base + "/c"}) })
-	if !strings.Contains(out, base+"/a -> "+base+"/c") {
+	if !strings.Contains(out, filepath.Join(base, "a")+" -> "+filepath.Join(base, "c")) {
 		t.Fatalf("%s", out)
 	}
 }

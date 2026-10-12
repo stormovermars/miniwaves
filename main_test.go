@@ -559,11 +559,13 @@ func TestConfiguredFolders(t *testing.T) {
 	slug := w.Tenants[0].Slug
 	l1 := "Folders: code in the tenant repo (plans + ADRs + test fixtures inside); shared tooling " + want.Tools + ", scaffolds " + want.Templates + " (copy, never edit in place)."
 	l3 := "Inputs " + want.Datalake + ", generated outputs " + want.Data + ", shared reference/specs/plans " + want.Docs + "/<topic>. Never write elsewhere; never commit builds, evidence or scratch."
-	line := l1 + "\nArtefacts " + want.Builds + "/" + slug + "/<ver>; proof (screenshots, logs, crash pulls, repro fixtures) " + want.Evidence + "/" + slug + "/<item>; throwaway " + want.Scratch + "/" + slug + "/s1.\n" + l3
+	sep := string(filepath.Separator)
+	l3 = "Inputs " + want.Datalake + ", generated outputs " + want.Data + ", shared reference/specs/plans " + want.Docs + sep + "<topic>. Never write elsewhere; never commit builds, evidence or scratch."
+	line := l1 + "\nArtefacts " + filepath.Join(want.Builds, slug) + sep + "<ver>; proof (screenshots, logs, crash pulls, repro fixtures) " + filepath.Join(want.Evidence, slug) + sep + "<item>; throwaway " + filepath.Join(want.Scratch, slug, "s1") + ".\n" + l3
 	if p := buildSessionPrompt(path, w, &w.Tenants[0], "s1", "builder", false); !strings.Contains(p, line) {
 		t.Fatalf("session prompt lacks per-tenant folders:\n%s", p)
 	}
-	root := l1 + "\nArtefacts " + want.Builds + "/<app>/<ver>; proof (screenshots, logs, crash pulls, repro fixtures) " + want.Evidence + "/<app>/<item>; throwaway " + want.Scratch + "/<app>.\n" + l3
+	root := l1 + "\nArtefacts " + filepath.Join(want.Builds, "<app>") + sep + "<ver>; proof (screenshots, logs, crash pulls, repro fixtures) " + filepath.Join(want.Evidence, "<app>") + sep + "<item>; throwaway " + want.Scratch + "/<app>.\n" + l3
 	for _, p := range []string{buildDispatcherPrompt(path, w, "d"), buildCoachPrompt(path, w, "c")} {
 		if !strings.Contains(p, root) {
 			t.Fatalf("prompt lacks folder roots:\n%s", p)
@@ -1105,7 +1107,7 @@ func TestShowPrintsEverythingWithoutV(t *testing.T) {
 	runAll(t, []string{"start", "TSK-001", "-s", "bot"}, []string{"note", "TSK-001", "found it", "-s", "bot"})
 	out := captureOutput(t, func() { runAll(t, []string{"show", "TSK-001"}) })
 	for _, want := range []string{"TSK-001  task  doing", "parent: STR-001", "session: bot", "acceptance (from STR-001):", "opens fast",
-		"evidence: " + home + "/evidence/gate-app/TSK-001 (0 files)", "notes:", "[bot] found it", "events:", "start"} {
+		"evidence: " + filepath.Join(home, "evidence", "gate-app", "TSK-001") + " (0 files)", "notes:", "[bot] found it", "events:", "start"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q:\n%s", want, out)
 		}

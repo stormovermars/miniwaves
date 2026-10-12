@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -279,11 +281,11 @@ func TestNextCarriesEvidenceFolderOnlyWhenGateOn(t *testing.T) {
 		t.Fatal(out)
 	}
 	gateSet(t, "evidence", "on")
-	want := home + "/evidence/gate-app/BUG-001"
+	want := filepath.Join(home, "evidence", "gate-app", "BUG-001")
 	if out := captureOutput(t, func() { runAll(t, []string{"next", "-k", "bug"}) }); !strings.Contains(out, want) {
 		t.Fatal(out)
 	}
-	if out := captureOutput(t, func() { runAll(t, []string{"next", "-k", "bug", "-j"}) }); !strings.Contains(out, `"evidence_dir": "`+want) {
+	if out := captureOutput(t, func() { runAll(t, []string{"next", "-k", "bug", "-j"}) }); !strings.Contains(out, `"evidence_dir": `+strings.TrimSuffix(strconv.Quote(want), `"`)) {
 		t.Fatal(out)
 	}
 }
