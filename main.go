@@ -567,7 +567,7 @@ func validFolderKey(k string) bool {
 // tenant and session may be empty (roots are shown with <app>/<ver> placeholders).
 func folderSentence(f folderPaths, tenant, session string) string {
 	app := "<app>"
-	scratch := f.Scratch + "/<app>"
+	scratch := f.Scratch + string(filepath.Separator) + "<app>"
 	if tenant != "" {
 		app = tenant
 		scratch = filepath.Join(f.Scratch, tenant)
