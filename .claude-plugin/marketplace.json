@@ -1,0 +1,12 @@
+{
+  "name": "miniwaves",
+  "description": "miniwaves: a tiny work board for coding assistants.",
+  "owner": { "name": "stormovermars" },
+  "plugins": [
+    {
+      "name": "mw",
+      "source": "./plugins/mw",
+      "description": "Work from the miniwaves board: claim the next ready item, finish it with evidence, block with a reason."
+    }
+  ]
+}

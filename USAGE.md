@@ -33,12 +33,14 @@ mw done SPK-001 "FTS5 benchmark passed" -s search-builder
 mw board -A
 ```
 
+Starting the first child of an inbox/ready story moves the story to `doing`; `done` and `reopen` of children leave it alone.
+
 ## Embedded prompts
 
 All embedded prompts use one retrieval command:
 
 ```text
-mw get-prompt session NAME [-t TENANT] [-a ROLE]
+mw get-prompt session NAME [-t TENANT] [-a ROLE] [--headless]
 mw get-prompt dispatcher [NAME]
 mw get-prompt coach [NAME]
 ```
@@ -61,6 +63,12 @@ Retrieval never launches an assistant or changes miniwaves state.
 - `coach` prepares and evaluates work while showing the human only a tiny
   outcome/evidence/decision summary.
 
+`session` exits with code 3 when the session NAME already exists (`-j` prints
+`{"error":"session_exists","session":"NAME"}`). `--headless` is for a runner that
+claims the item and handles setup, the loop and replies itself: the prompt drops the Setup
+block, the Loop line, the folders hint and the reply format, and says "Your item is already
+claimed; its brief follows."
+
 Use `-j` for a structured envelope. Every envelope contains `type`, `name`,
 `workspace`, and `prompt`; session prompts also contain `tenant` and `agent`.
 Prompt text is intentionally small and treats repository/backlog content as
@@ -80,8 +88,9 @@ DOING (1)
   SPK-001  spike   Choose a local index ← STR-001 @search-builder
 ```
 
-Run `mw context -s NAME` when an assistant session starts. It prints the work
-convention, next ready item, ownership, and tenant board.
+An assistant session needs only `mw next -j` (the full brief with `evidence_dir`) and
+`mw start ID -a ROLE`, or `mw next --claim -j` to do both atomically. `mw context -s NAME` still
+prints the work convention, next ready item, ownership, and tenant board.
 
 ## Commands
 
@@ -91,26 +100,47 @@ an initialized workspace.
 ```text
 mw description [-j]
 mw init [workspace name]
-mw tenant add SLUG [NAME...] [-d DIR]
-mw tenant list [-j] [-v] | use SLUG | default [SLUG|-]
-mw dirs [init] [-j]
-mw session start NAME [-t SLUG] [-a ROLE]
+mw tenant add SLUG [NAME...] [-d DIR]   # on an existing slug with -d: updates the path
+mw tenant list [-j] [-v] | default [SLUG|-]
+mw migrate [--dry-run] [PATH]   # upgrade a schema 5/6 workspace file to 7 (MIGRATION.md)
+mw dirs [init] [-j] | set NAME PATH   # NAME: datalake docs data tools templates builds evidence scratch (all eight shown by mw dirs)
+mw note ID TEXT... [-t SLUG] [-s NAME]
+mw session start NAME [-t SLUG] [-a ROLE]   # optional: `start` registers an unknown -s name; with none it uses the tenant's implicit "local" session (id `local@SLUG`, may own many items; the name `local` is reserved)
 mw session list [-t SLUG] [-j] [-v] | stop NAME
-mw get-prompt session NAME [-t SLUG] [-a ROLE] [-j]
+mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]   # exit 3 if NAME exists
 mw get-prompt dispatcher|coach [NAME] [-j]
-mw add KIND TITLE... [-t SLUG] [-p ID] [-b TEXT] [-c TEXT]
-mw list [-t SLUG] [-k KIND] [-S STATUS] [-j] [-v]
-mw show ID [-t SLUG] [-j] [-v]
-mw ready|start|reopen ID [-t SLUG] [-s NAME]
+mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
+mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]   # -c under a session only while acceptance is empty
+mw gate [-t SLUG] [-j] | mw gate evidence|acceptance|judge on|off|auto [--by NAME] [--workspace]
+mw version [-j]   # {version, schema, board_schema, board}: nearest workspace and its schema (null if none)
+mw review [-t SLUG] [-j]
+mw judge ID [-t SLUG]
+mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]
+mw list [-t SLUG] [-k KIND] [-S STATUS] [-n N] [-j] [-v]
+mw list -A [-s SESSION] [-k KIND] [-S STATUS] [-n N] [-j] [-v]   # every tenant; -s = items that session owns (no waves)
+mw show ID [-t SLUG] [-j] [-v]   # full brief: body, acceptance + source, evidence dir, children, notes, last 5 events; falls back to the archive; -j ignores -v
+mw ready|reopen ID [-t SLUG] [-s NAME]
+mw start ID [-t SLUG] [-s NAME] [-a ROLE]   # inbox/ready only (or your own item); -a ROLE registers a missing session with that role
 mw block ID REASON... [-t SLUG] [-s NAME]
-mw done ID VERIFICATION... [-t SLUG] [-s NAME]
-mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v]
-mw board [-t SLUG | -A] [-v]
-mw context [-t SLUG] [-s NAME]
+mw done ID VERIFICATION... [--evidence PATH]... [--no-evidence REASON] [-t SLUG] [-s NAME]
+mw wave create TITLE... [-t SLUG] [-p WAVE] [-b TEXT]
+mw wave add|remove WAVE ID... [-t SLUG]
+mw wave step WAVE KEY=NOTE [KEY=NOTE...] [--na] [-t SLUG]   # several steps per call, all-or-nothing
+mw wave step WAVE --na-rest REASON [-t SLUG]   # marks every unticked step n/a with the reason, prints the count
+mw wave unstep WAVE KEY [-t SLUG]
+mw wave show WAVE [-t SLUG] [-j]
+mw wave list [-t SLUG | -A] [-j]
+mw wave close WAVE [--no-evidence REASON] [-t SLUG]
+mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v]   # the same full brief as show; -j: null (exit 0) when nothing, "skipped: N (...)" on stderr
+mw next --claim [-s NAME] [-a ROLE] [-t SLUG] [-k KIND] [-j]   # pick + start in one locked step; -j adds "claimed": true
+mw archive [--days N] [-t SLUG] [--dry-run]   # done items older than N days (30) -> .miniwaves/<slug>.archive.json
+mw log [-t SLUG | -A] [-n N] [-j]   # activity feed, newest first
+mw board [-t SLUG | -A] [-v] [-j]   # last: <ago> <item> <action>, today: N done; -A sorted by last activity
+mw context [-t SLUG] [-s NAME] [-j]
 ```
 
 Short flags: `-t` tenant, `-s` session, `-a` agent, `-p` parent,
-`-d` path, `-b` body, `-c` acceptance, `-k` kind, `-S` status,
+`-d` path, `-w` wave, `-b` body, `-c` acceptance (`--acceptance`, alias `--accept`), `-k` kind, `-S` status,
 `-n` name, `-j` JSON, `-v` verbose, and `-A` all tenants. Long forms remain
 supported. Use `--` before a title or note beginning with `-`.
 
@@ -118,11 +148,75 @@ Kinds are `prompt`, `story`, `task`, `spike`, `bug`, and `chore`. States are
 `inbox`, `ready`, `doing`, `blocked`, and `done`. Blocking requires a reason,
 completion requires verification, and a parent cannot close with open children.
 
+## Waves (milestones)
+
+A wave is a milestone bundle: members carry the wave in their own `wave` field
+(`mw wave add`, or `mw add KIND TITLE --wave WAV-001`); `parent` is untouched, so
+a member keeps its story and prompt. Waves may nest (`mw wave create -p`). Delivery goes by milestone: each one is
+audited and fixed, adversarially reviewed and fixed, wrapped up, committed,
+merged, tested, version-bumped, built/installed, cleaned up, and only then is
+the plan revised and the revised plan audited. Every wave is created `ready`
+with this checklist by default, in this order (key in parentheses):
+
+1. audit (`audit`): result audit, issues solved
+2. adversarial review (`adversarial`): issues solved
+3. wrap-up (`wrapup`): evidence on the items
+4. commit (`commit`)
+5. merge (`merge`)
+6. test (`test`)
+7. version bump (`bump`)
+8. build + install, if it applies (`install`)
+9. clean up (`cleanup`)
+10. plan revised (`plan`)
+11. plan audited (`plan-audit`): plan issues solved
+
+The default checklist is `PROTOCOL.md` (embedded in the binary). To use another checklist, add a top-level `"protocol": ["step name", ...]` list
+to `.miniwaves.json` (no CLI; key = lower-cased name with dashes). It applies to
+waves created afterwards.
+
+Tick steps with evidence, several per call: `mw wave step WAV-001 test="go test: 19 pass" bump=0.5.0`.
+Use `--na` when a step does not apply; the note is then the reason and the step
+counts as done; `mw wave unstep WAV-001 test` unticks. `mw wave close` refuses (exit 1, listing what is missing) while
+any member is not done or any step is unticked; `mw done` also refuses on
+waves, as do `start`, `block`, `ready` and `unclaim`; only `mw reopen WAV-001`
+works on a closed wave and it resets every step. A closed wave accepts no new
+members (`wave add`, `add --wave`) or steps. `mw next` never hands out a wave;
+`mw board` shows waves with their rollup, and `mw list` prints one document with
+a `waves` key when waves are listed; `mw list -j` always prints `{items, waves}` (waves may be empty).
+`mw edit ID -p PARENT|-` changes or clears the parent of any item; the kind
+hierarchy (prompt > story > task/spike/bug/chore) and cycles are enforced, and
+a wave is never the parent of a non-wave (`-p WAV-001` or `edit -p` to it errors: use `--wave`). A closed wave refuses new members, removals, closed parent waves, and `ready`/`start`/`reopen` of its members; `wave close` also needs every child wave closed. An item belongs to one wave: `wave remove` it first to move it.
+
+## Gates (proof before closing)
+
+Gates are per tenant: `evidence`, `acceptance`, `judge`, each `auto|on|off`. `mw gate [-t SLUG] [-j]` shows setting, effective state and a reason; `mw gate NAME on|off|auto` overrides (humans only: refused under `MW_SESSION` or `-s`; `--by NAME` is required when stdin is not a terminal). `--workspace` sets the default for every tenant without its own setting. A gates line appears on `board`, `context` and `next` only when one is on; a change since the last saving command prints one stderr line.
+- **evidence**: `mw done ID CHECK` needs `<evidence>/<tenant>/<ID>/` (folder name exactly the ID) with at least one non-empty file (dotfiles, `Thumbs.db`, `desktop.ini` do not count); or `--no-evidence REASON`, kept as a note. `wave close` checks `<evidence>/<tenant>/WAV-NNN/` the same way. `show -v` lists the files, `list -v` shows `E`. `auto` = a product tenant (build manifest or `releases/` in the tenant dir) or a latch.
+- **acceptance**: `auto` = off (no latch). With it `on`, `mw next` skips only prompts and stories (`-k story`) whose own or nearest ancestor acceptance is empty (`skipped N without acceptance`); standalone task/spike/bug/chore and children of a story are handed out regardless. `mw edit ID -c TEXT` sets acceptance (humans only).
+- **judge**: `auto` = off (`mw gate` says "auto = off; set on to require human accept"); no product-tenant latch, no accept-streak hint. Only a human setting `on` turns it on. `done` records `judged: ungated` while it is off; on, `mw add -S done` is refused.
+- Boards migrated from schema 5 start with every gate `off` (finished items are `judged: ungated`); new boards start at `auto`. `ready`/`start`/`reopen` clear evidence and judgement; `done` records them again.
+- Threat model: mw guards against lazy or confused agents, not hostile ones. An agent can edit the JSON or `edit -p` around a gate; the guard is friction plus an audit trail (`by`, `judged_by`, timestamps, notes).
+- `mw show ID` prints the item's notes (timestamp, `[session]` author, text) without `-v`; `mw note ID TEXT` records `-s`/`MW_SESSION` as author.
+- `mw version -j` prints `{version, schema}`; `mw next -j` prints `null` (exit 0) when nothing is ready and carries `gates` and `skipped`; `board -j` and `context -j` carry `gates`.
+
+## Review and judgement
+
+The loop with the judge gate on (set by a human; `auto` is off): a session claims, works, writes proof into the evidence folder, runs `mw done` and idles; the human runs `mw review`, then `mw judge ID` and `mw accept ID` or `mw reject ID REASON`.
+- `mw review [-t SLUG] [-j]`: `judge` (items awaiting judgement, `×N` = rejections; `[]` while the gate is off), `blocked`, `acceptance` (only with that gate on) and `waves` ready to close. `-j` = `{judge, blocked, acceptance, waves}`.
+- Judgeable = a story or a work item with no story ancestor. A story appears once all its children are done, whatever its own status.
+- `mw judge ID` prints Outcome, then Evidence (one folder per line; a story adds each child's) and Decision (one `[ ]` line per acceptance line).
+- `mw accept ID` records `judged` and `judged_by`; a story with done children becomes done and judged together.
+- `mw reject ID REASON [--evidence-gap]`: story back to `ready` plus a ready task `Fix: REASON` (inherits the acceptance); a child goes `ready` and reopens its done story. Refused in a closed wave. `--evidence-gap` latches the evidence gate.
+- `accept`/`reject` are humans only (refused under `MW_SESSION` or `-s`; `--by NAME` without a terminal). With the judge gate on, `wave close` lists unjudged members and the board header counts done and judged.
+
+## Releases
+
+Releases are files, not commands: `releases/<version>.md` with front matter (`version`, `date`, `build`, `tested`, `items`, optional `wave`, optional `evidence` = the release item's own `<evidence>/<tenant>/<ID>/` folder) and free-text notes. See `releases/README.md`; validate with `scripts/check-release.sh <file>`.
+
 ## Tenant and folder selection
 
 `MW_SESSION`, `MW_TENANT`, `-s`, and `-t` select explicit context. Otherwise,
 miniwaves uses the nearest folder default, the nearest configured tenant path,
-then the global fallback set by `mw tenant use SLUG`.
+then the first tenant.
 
 Set a folder default with `mw tenant default SLUG`. Run `mw tenant default` to
 inspect it or `mw tenant default -` to clear it.
@@ -131,6 +225,62 @@ The shared folder convention is:
 
 - `~/datalake` — consumed inputs;
 - `~/docs` — examples and specifications;
-- `~/data` — stored data and generated documents.
+- `~/data` — stored data and generated documents;
+- `~/tools` — shared tooling; `~/templates` — scaffolds (copy, never edit in place);
+- `~/builds/<app>/<ver>` — artefacts; `~/evidence/<app>/<item>` — proof (screenshots, logs, crash pulls, repro fixtures); `~/scratch/<app>/<session>` — throwaway.
 
-`mw dirs` prints expanded paths. `mw dirs init` creates missing folders.
+`mw dirs` prints all eight expanded paths. `mw dirs init` creates missing folders.
+
+The locations are configurable per board with an optional top-level `folders`
+key in `.miniwaves.json`, e.g. `{"datalake": "D:\\lake", "docs": "~/specs", "data": "out"}` (also `tools`, `templates`, `builds`, `evidence`, `scratch`) (a drive-letter path is absolute on Windows only; elsewhere it resolves under the home directory). Control characters are rejected.
+Relative paths and a `~/` prefix resolve against the home directory; absolute
+paths (including Windows drive paths) are kept. `mw dirs set
+NAME PATH` writes the key. Prompts and `mw context` print the configured paths as a three-line sentence
+(session prompts render `<builds>/<tenant>`, `<evidence>/<tenant>`,
+`<scratch>/<tenant>/<session>`; dispatcher and coach render the roots):
+
+```
+Folders: code in the tenant repo (plans + ADRs + test fixtures inside); shared tooling ~/tools, scaffolds ~/templates (copy, never edit in place).
+Artefacts ~/builds/<app>/<ver>; proof (screenshots, logs, crash pulls, repro fixtures) ~/evidence/<app>/<item>; throwaway ~/scratch/<app>.
+Inputs ~/datalake, generated outputs ~/data, shared reference/specs/plans ~/docs/<topic>. Never write elsewhere; never commit builds, evidence or scratch.
+```
+
+Without the key the defaults above apply.
+
+`mw note ID TEXT...` appends a timestamped note to any item or wave (any
+status); `mw show ID` lists the notes. It never changes the status or the
+block/done note.
+
+## Archive
+
+`mw archive [--days N] [-t SLUG] [--dry-run]` moves done items older than N days (default 30) with
+their events into `.miniwaves/<slug>.archive.json`, so every command loads less (5000 items:
+the board file shrinks from 5.8 MB to 0.3 MB). Waves and parents that still
+have open children stay. `mw show ID` finds archived items read-only; the board counts them in its
+totals (`DONE (n, +N archived)` with `-v`, `archived` in `board -j`); IDs are never reused.
+`mw list` and `mw log` no longer show archived items.
+
+## Static page
+
+`mw board --html [-o PATH]` writes one self-contained page (all tenants with counts and open items, last/today, the last 40 events; dark mode via `prefers-color-scheme`; no JS, no CDN). Set `"publish": {"html": "site/index.html", "auto": true}` in `.miniwaves.json` to regenerate it after writes. The page is rewritten only when the board changed (a hash of the rendered page is kept in `<page>.hash`) and the last write is at least `"interval"` seconds old (default 60, minimum 5; lower values clamp to 5); a change skipped inside the interval is marked `pending` in `<page>.hash`, and the next mw invocation after the interval (a read such as `mw list` too, while `publish.auto` is on) publishes it, so the last change is never lost; an explicit `mw board --html` always writes. The page is written through a unique temp file, then its hash. GitHub Pages: copy `docs/publish.yml` to `.github/workflows/`. Vercel: set the output directory to the folder that holds the page (no build command), or add `vercel.json` with `{"outputDirectory": "site"}`, and commit the page (`git add site/index.html`).
+
+## Git
+
+Git is the coding agent's job, not mw's. Commit `.miniwaves.json` and `.miniwaves/` (and the published page) together with your code changes and resolve board conflicts in git like any file; a board with merge markers is refused with "board has merge markers: resolve it in git". `mw init` adds `.miniwaves/*.lock*`, `.miniwaves/*.tmp` and `.miniwaves.json.tmp` to `.git/info/exclude` so commits never include them.
+
+## Changelog
+
+### 0.2.0 (schema 8: run `mw migrate`)
+
+The first release after 0.1.0 (the only public one so far). mw reads schema 8 only; boards from 0.1.0 are upgraded with `mw migrate` (see [MIGRATION.md](MIGRATION.md)). Git is the agent's job: mw never commits, sessions are told to commit the board with their code.
+
+- `mw next --claim [-s NAME] [-a ROLE] [-j]` picks and starts atomically; `--prompt -j` adds the inline headless prompt for the role.
+- `mw start` guard: only inbox/ready (or your own) items start; `mw reopen` for done ones.
+- `mw archive` moves done items out of the hot board file.
+- Schema 8, per-tenant storage: `.miniwaves.json` is the index, each tenant lives in `.miniwaves/<slug>.json` (+ `.archive.json`); `mw migrate` converts older boards in place (backup `.miniwaves.json.bak7`).
+- Kernel locks for writers (per tenant, 5 s deadline) and lockless reads; 40 runners on one board finish every item exactly once.
+- `mw board --html` and `publish` write a static page, rewritten only when the board changed and at most every `publish.interval` seconds (default 60, minimum 5).
+- Embedded prompts are at most 20 lines each.
+- Waves, gates (evidence, acceptance, judge), `mw log`, `mw show` full brief, `mw note`, `mw edit`.
+- Claude Code plugin (`claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves`), install scripts for macOS, Linux and Windows, CI with `go vet` and `go test -race`.
+- Removed since 0.1.0: `mw tenant use` (folder default, tenant path, `MW_TENANT` and the first tenant select the tenant; `tenant default` stays).

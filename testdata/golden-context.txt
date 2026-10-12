@@ -1,0 +1,38 @@
+# miniwaves context: Golden app [golden-app]
+
+Session: golden
+prompt=request; story=outcome; task/spike/bug/chore=work. Claim one ready item. Finish with verification; block with reason. Never close a parent with open children.
+Folders: code in the tenant repo (plans + ADRs + test fixtures inside); shared tooling <HOME>/tools, scaffolds <HOME>/templates (copy, never edit in place).
+Artefacts <HOME>/builds/golden-app/<ver>; proof (screenshots, logs, crash pulls, repro fixtures) <HOME>/evidence/golden-app/<item>; throwaway <HOME>/scratch/golden-app/golden.
+Inputs <HOME>/datalake, generated outputs <HOME>/data, shared reference/specs/plans <HOME>/docs/<topic>. Never write elsewhere; never commit builds, evidence or scratch. Run mw dirs.
+
+TSK-001  task  ready  Build index
+parent: STR-001
+acceptance (from STR-001):
+  opens under 100ms
+evidence: <HOME>/evidence/golden-app/TSK-001 (0 files)
+events:
+  <TS>  created   -
+  <TS>  ready     -
+
+Current board:
+Golden app [golden-app]  0% (0/6)
+[....................]
+sessions: golden:idle
+last: now WAV-001 created  today: 0 done
+
+WAVES
+  WAV-001  ready   First milestone  members 0/0 0%, steps 0/11
+
+DOING (1)
+  CHR-001  chore   Tidy
+
+READY (3)
+  PRM-001  prompt  Make it fast
+  TSK-001  task    Build index ← STR-001
+  BUG-001  bug     Crash on empty
+
+INBOX (2)
+  STR-001  story   Instant startup ← PRM-001
+  SPK-001  spike   Hidden inbox
+

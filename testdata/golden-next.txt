@@ -1,0 +1,8 @@
+TSK-001  task  ready  Build index
+parent: STR-001
+acceptance (from STR-001):
+  opens under 100ms
+evidence: <HOME>/evidence/golden-app/TSK-001 (0 files)
+events:
+  <TS>  created   -
+  <TS>  ready     -

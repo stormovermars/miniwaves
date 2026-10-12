@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "schema": 8,
+  "board_schema": 8,
+  "board": "<DIR>/.miniwaves.json",
+  "tenants": [
+    {
+      "slug": "contract-app",
+      "name": "Contract app",
+      "dir": "<DIR>"
+    }
+  ]
+}

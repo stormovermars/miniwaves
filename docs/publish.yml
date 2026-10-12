@@ -1,0 +1,28 @@
+# Sample GitHub Pages workflow: publish the miniwaves board as a static page.
+# Copy to .github/workflows/publish.yml and enable Settings > Pages > Source: GitHub Actions.
+name: publish-board
+on:
+  push:
+    branches: [main]
+    paths: ['.miniwaves.json']
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install mw
+        run: curl -fsSL https://raw.githubusercontent.com/stormovermars/miniwaves/main/install.sh | sh
+      - name: Render the board
+        run: mkdir site && ~/.local/bin/mw board --html -o site/index.html
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v5

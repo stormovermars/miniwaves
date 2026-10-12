@@ -3,3 +3,6 @@
 /.miniwaves.json.lock
 .DS_Store
 build/
+/miniwaves
+/.miniwaves/
+/.miniwaves.json.*

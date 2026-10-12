@@ -1,0 +1,9 @@
+[
+  {
+    "tenant": "contract-app",
+    "name": "Contract app",
+    "items": 2,
+    "selected": true,
+    "path": "<DIR>"
+  }
+]

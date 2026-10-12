@@ -1,45 +1,41 @@
-# miniwaves
+# miniwaves (`mw`)
 
-`miniwaves` is a tiny local delivery board for humans and coding assistants.
-It tracks user prompts, desired outcomes as stories, implementation work, and
-multiple tenant-bound assistant sessions. There is no account, service,
-database, or web interface.
+A tiny local work board for humans and coding assistants: plain JSON files, one Go binary, no server or account.
+Assistants claim the next ready item, finish it with proof, or block it with a reason.
 
 ## Install
 
-macOS or Linux:
+For Claude Code (installs the skill, `/mw-next`, `/mw-board` and the `mw` binary):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/stormovermars/miniwaves/main/install.sh | sh
+claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves
 ```
 
-Windows PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/stormovermars/miniwaves/main/install.ps1 | iex
-```
-
-arm64 and x86-64 are supported. Installers verify release checksums and place
-the compiled `mw` binary in `~/.local/bin` (`mw.exe` on Windows). Run
-`mw help` after installation.
-
-Run `mw description` for a short guide for humans and coding assistants.
-
-## Quick start
+Or the binary alone:
 
 ```sh
-mw init "My apps"
-mw add prompt "Add offline search" -b "Original request"
-mw add story "Search works offline" -p PRM-001 -c "cached results appear"
-mw add task "Build local index" -p STR-001
-mw ready TSK-001
-mw board
+curl -fsSL https://raw.githubusercontent.com/stormovermars/miniwaves/main/install.sh | sh   # macOS, Linux
+irm https://raw.githubusercontent.com/stormovermars/miniwaves/main/install.ps1 | iex        # Windows
+go install github.com/stormovermars/miniwaves@latest                                        # binary is named miniwaves
 ```
 
-Read [USAGE.md](USAGE.md) for workflows, embedded prompts, and the full command
-reference. Read [TECHNICAL.md](TECHNICAL.md) for storage, concurrency, design,
-build, clean, uninstall, and release details.
+## Use
 
-## License
+```sh
+mw init "My apps"                        # once per workspace
+mw add task "Build index" -S ready       # a human adds work
+mw next -j                               # assistant: take the full brief of the next ready item
+mw start TSK-001 -a builder              # claim it (or: mw next --claim -j)
+mw done TSK-001 "tests pass" --evidence out.png     # or: mw block TSK-001 "question"
+mw board -A                              # everyone: progress across tenants
+```
+
+Static page: `mw board --html` (see USAGE.md). Storage is per tenant (`.miniwaves.json` index + `.miniwaves/<slug>.json`). Git belongs to the coding agent: commit `.miniwaves.json` and `.miniwaves/` with your code changes and resolve board conflicts in git like any file. `mw init` keeps the lock files out of git.
+
+Runs on macOS and Linux (tested). Windows binaries are built but not yet verified.
+
+## Links
+
+[USAGE.md](USAGE.md) (commands, prompts, gates, waves) · [TECHNICAL.md](TECHNICAL.md) · [MIGRATION.md](MIGRATION.md) · runner: [wr](https://github.com/stormovermars/wr)
 
 MIT

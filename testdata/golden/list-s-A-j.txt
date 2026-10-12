@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "tenant": "contract-app",
+      "id": "TSK-001",
+      "type": "task",
+      "state": "doing",
+      "title": "First"
+    }
+  ],
+  "waves": []
+}

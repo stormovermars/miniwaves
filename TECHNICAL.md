@@ -16,16 +16,52 @@ prompts describe how a capable host application should create them.
 
 ## Storage and concurrency
 
-Workspace state lives in `.miniwaves.json`. The current schema version is 3.
-Writes hold `.miniwaves.json.lock`, write a temporary file, and atomically
-rename it. Cross-platform file locking prevents concurrent local sessions from
-overwriting one another.
+Workspace state lives in `.miniwaves.json`. The current schema version is 7 (4 added waves, 5 added `folders` and `notes`, 6 added gates and evidence, 7 added the per-item `events` activity list: `{at, action, by, note}` appended through `emit` by add, ready, start, block, done, reopen, accept, reject, note, edit and wave steps; `load` refuses any other schema; `migrate.go` (`mw migrate`, recipe in MIGRATION.md) is the only code that reads schemas 5/6 and synthesises created/updated events; older binaries refuse newer boards).
+Schema 8 layout (`store.go`): `.miniwaves.json` is the index (version, name, folders, workspace gates, publish, `tenants: [{slug,name,path}]`); `.miniwaves/<slug>.json` holds a tenant's items, counters, gate state and sessions (sessions live in the tenant file, so registering one never touches the index). Reads take no lock: every write is tmp + fsync + rename (+ directory fsync), so a reader always sees a complete file. A writer locks only what it writes, with a blocking kernel lock (no polling) and a 5 s deadline: `.miniwaves/<slug>.lock` per tenant (taken in sorted order) and `.miniwaves/index.lock` for index changes (`tenant`, `dirs`, workspace `gate`); the pid of the last acquirer is in `<lock>.pid`. `scopeOf` decides from the arguments which tenant files a command loads (one with `-t`/`MW_TENANT`/the folder, else all); `save` writes only the files whose bytes changed. Writes hold the lock for read-modify-write-fsync only; publish work happens after unlock. Writes compact JSON
+to a temporary file, `fsync` it, and atomically rename it. Read-only commands (`list`, `show`, `log`,
+`board`, `next` without `--claim`, `review`, `judge`, `context`, `get-prompt`, `tenant|session list`,
+`wave show|list`, `dirs`) take a shared lock; every lock waits at most 5 s, then fails with
+"board locked (pid P) — retry". Cross-platform file locking prevents concurrent local sessions from
+overwriting one another. `mw archive` moves old done items to `.miniwaves/<slug>.archive.json` (
+`{version, tenants: [{slug, items}]}`) and counts them in the tenant's `archived` field; only `show`
+reads the archive. The optional `publish` board key drives `html.go` (static page, after the command succeeded, never fails it). mw never runs git itself, except that `mw init` writes the lock/tmp/pid names to `.git/info/exclude` (`git.go`).
 
 State and lock files use `0600` where the operating system supports POSIX
 permissions. `mw dirs init` creates missing shared folders with `0700` and
 leaves existing folders unchanged.
 
+The session, dispatcher and coach prompts live in `prompts/*.md`, embedded with
+`//go:embed` and rendered with `text/template` (`prompts.go`). The optional
+board key `folders` (`datalake`, `docs`, `data`, `tools`, `templates`, `builds`, `evidence`, `scratch`; additive, schema stays 5) is resolved by
+`workspaceFolders`: relative and `~/` paths go under the home directory,
+absolute paths are kept; the result feeds the prompts, `mw context` and
+`mw dirs`. Items carry an optional `notes` list (appended by `mw note`).
+
 This is single-machine coordination, not a distributed lease system.
+
+## Waves in the data model
+
+A wave is an `Item` with `kind: "wave"` (ID prefix `WAV`, counter in the
+tenant's `Next`). It alone carries `steps`, an array of
+`{key, title, done, na, note, when}` seeded from `defaultProtocol` in `waves.go` (parsed from `PROTOCOL.md`), or
+from the board's optional top-level `protocol: [names]` (`protocolSteps`). The default list lives in `PROTOCOL.md`, embedded with `go:embed` and parsed at startup.
+Waves start `ready`; moveCommand verbs refuse them except `reopen`, which
+resets every step. Membership is a separate `wave` field on the member
+(`omitempty`; board schema was bumped to 4 (waves) and 5 (folders, notes); older binaries refuse newer boards with "upgrade mw"; `mw migrate` repairs cfa03cf-style boards: WAV parent on a non-wave becomes `wave`, an unclosed `doing` wave becomes `ready`); `parent` is only the story/prompt hierarchy and
+wave nesting. `checkParent` enforces kind hierarchy, rejects waves as parents of
+non-waves, and rejects cycles (`wouldCycle`), for `mw add` and `mw edit -p`;
+`checkMember` refuses closed waves.
+
+## Gates and evidence (schema 6)
+
+Items gain `evidence` (relative path + size, recorded at `done`), `judged` (RFC3339, `legacy` or `ungated`), `by` (session at `done`), `judged_by` and `attempts` (all omitempty). Tenants gain `gates` (`evidence|acceptance|judge`: `auto|on|off`), `gates_seen` (effective state last recorded), `gate_latch` (`{name: reason}`) and `accept_streak`; the workspace may carry a default `gates`. `mw migrate` (schema below 6) sets the workspace default to `off` and marks done non-prompt, non-wave items `judged: ungated`; `load` refuses every schema but 7.
+
+Effective state (`gates.go`): setting `on`/`off` wins; `auto` = rule OR latch for evidence only; judge and acceptance `auto` are off (no latches, `gate_latch.judge/acceptance` in old boards are ignored). Product tenant = tenant dir holds `build.gradle*`, `*.xcodeproj`, `project.yml`, `Package.swift`, `go.mod`, `package.json`, `Cargo.toml` or `releases/` (evidence rule only; a missing dir is off). With acceptance `on`, `pickNext` skips only prompts and stories lacking effective acceptance. `save` refreshes latches and `gates_seen` only for the tenants the command touched (file-system checks happen only for tenants shown); non-saving commands print a stderr flip line when the effective state differs from `gates_seen`. `done` with the evidence gate on calls `checkEvidence`: `ReadDir` of `<evidence>/<slug>` and an exact, case-sensitive ID match, then at least one regular non-empty file that is not a dotfile, `Thumbs.db` or `desktop.ini`; paths are built with `filepath.Join` only; a symlinked evidence folder or file is resolved with `os.Stat` (symlinked subfolders are not descended). Acceptance is inherited from the nearest non-empty ancestor (`effectiveAcceptance`).
+
+## Judgement loop (`judge.go`)
+
+Judgeable = a story or a task/spike/bug/chore with no story ancestor (`judgeable`); a child's judgement belongs to its story (`judgementOwner`), prompts and waves count as judged. `ungated` counts as judged, so turning the judge gate on after ungated `done`s queues nothing. A story is awaiting judgement when it has no `judged`, every child is done and (childless) it is done itself; other items when `done` and unjudged.
+Transitions: `done` records `evidence`, `by` and `judged: ungated` unless the judge gate is on; `accept` sets `judged` (RFC3339), `judged_by`, `accept_streak++`, and for a story also `status: done`; `reject` does `attempts++`, a note, clears `judged`/`judged_by`/`evidence`, `accept_streak = 0`, story to `ready` plus a ready `Fix: REASON` task child (a done story ancestor of a rejected child goes to `ready` and gets `attempts++` too, so `×N` shows in review); `ready`/`start`/`reopen` clear judgement. `reject` is refused while the item's (or its story's) wave is closed. `wave close` lists unjudged members with the judge gate on; board/burndown count a done item only when judged (`countsDone`). `burndownOf` (`burndown.go`) is the one burndown rule behind the board header (`mw burndown` is gone): `done` = all done items, `judged` = those counting via `countsDone`, `percent = judged/total`. `start` of a child moves its nearest story ancestor from inbox/ready to `doing` (`startStoryAbove`); `done`, `reopen` and an already-doing story are left alone. `mw judge` prints `Outcome:` then an `Evidence:` block (one folder per line, a story adds each child) and a `Decision:` block (one `[ ]` line per acceptance line). `accept`/`reject` reuse `refuseSession` and the `--by` rule of `gate`. Prompts: rule lines render from `GateEvidence/GateAcceptance/GateJudge` (session) and `workspaceGatesOn` (dispatcher, coach); `next` prints the full brief (evidence folder always).
 
 ## Output
 
@@ -83,7 +119,9 @@ Release binaries have no runtime dependencies. Third-party licenses are in
 
 There are no distributed leases, estimates, sprints, budgets, assistant
 launchers, plugins, webhooks, analytics, or background services. If
-multi-machine orchestration is required, use wvs rather than expanding
+multi-machine orchestration is required, use a dedicated tool rather than expanding
 miniwaves into another fleet service.
 
-See [AUDIT.md](AUDIT.md) for the source-app audit and scope decisions.
+## One-call views
+
+`brief.go` holds `briefOf`/`printBrief`, the single full view behind `show` and `next` (`briefDoc` in -j; `next -j` adds `gates` and `skipped`), the `log` feed (`tenantRows`, newest first; events are stamped RFC3339Nano by `emit`, so ties sort by time), `lastActivity`/`doneToday` for the board lines, and `done --evidence` (`splitEvidenceArgs`, `copyEvidence`: one path per `--evidence` flag, folders are copied recursively without junk or symlinks, every path is checked and name collisions refused before the first copy, copy happens before `checkEvidence` and aborts before any state change; the copied files are recorded on the item even with the gate off). `moveCommand` registers an unknown session only on `start`, revives a stopped one, and uses the per-tenant implicit session `local@<slug>` (`localID`, `syncLocal` derives its item/state from the doing items, `displayName` shows it as `local`) for a session-less `start`; `done`/`block` without `-s` attribute `by` to the item's assignee; `selectTenantRaw` ignores an unknown session (with a stderr warning when no tenant was given). `wave step` parses `KEY=NOTE` pairs and validates them all before ticking any.

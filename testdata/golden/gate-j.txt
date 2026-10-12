@@ -1,0 +1,20 @@
+[
+  {
+    "name": "evidence",
+    "setting": "off",
+    "effective": false,
+    "reason": "set off"
+  },
+  {
+    "name": "acceptance",
+    "setting": "auto",
+    "effective": false,
+    "reason": "auto = off; set on to require acceptance on prompts/stories"
+  },
+  {
+    "name": "judge",
+    "setting": "auto",
+    "effective": false,
+    "reason": "auto = off; set on to require human accept"
+  }
+]

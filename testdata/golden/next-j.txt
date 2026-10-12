@@ -1,0 +1,27 @@
+{
+  "id": "TSK-001",
+  "type": "task",
+  "state": "ready",
+  "title": "First",
+  "acceptance": "works",
+  "evidence_dir": "<HOME>/ev/contract-app/TSK-001",
+  "evidence_files": 0,
+  "children": [],
+  "notes": [],
+  "events": [
+    {
+      "at": "<TS>",
+      "action": "created"
+    },
+    {
+      "at": "<TS>",
+      "action": "ready"
+    }
+  ],
+  "gates": {
+    "acceptance": false,
+    "evidence": false,
+    "judge": false
+  },
+  "skipped": 0
+}

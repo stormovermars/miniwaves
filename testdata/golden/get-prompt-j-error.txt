@@ -1,0 +1,1 @@
+{"error":"session_exists","session":"bot"}

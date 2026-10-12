@@ -1,0 +1,6 @@
+{"version":7,"name":"N","gates":{"evidence":"off","acceptance":"off","judge":"off"},"tenants":[{"slug":"n","name":"N","next":{"TSK":2,"WAV":1},"items":[
+{"id":"TSK-001","kind":"task","title":"Build","status":"done","wave":"WAV-001","judged":"ungated","by":"bot",
+ "events":[{"at":"2026-01-01T10:00:00Z","action":"created"},{"at":"2026-01-02T10:00:00Z","action":"updated","by":"bot","note":"done"}],
+ "created":"2026-01-01T10:00:00Z","updated":"2026-01-02T10:00:00Z"},
+{"id":"TSK-002","kind":"task","title":"Test","status":"ready","events":[{"at":"2026-01-01T11:00:00Z","action":"created"}],"created":"2026-01-01T11:00:00Z","updated":"2026-01-01T11:00:00Z"},
+{"id":"WAV-001","kind":"wave","title":"M1","status":"ready","events":[{"at":"2026-01-01T09:00:00Z","action":"created"}],"created":"2026-01-01T09:00:00Z","updated":"2026-01-01T09:00:00Z"}]}],"sessions":[]}
