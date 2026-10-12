@@ -14,7 +14,7 @@ import (
 )
 
 // version is the mw release; schema is currentSchema.
-var version = "0.2.1"
+var version = "0.2.2"
 
 var gateNames = []string{"evidence", "acceptance", "judge"}
 
@@ -440,7 +440,7 @@ type versionTenant struct {
 
 // boardSchemaOf reads only the "version" field of a board file (any schema).
 func boardSchemaOf(path string) (int, bool) {
-	b, err := os.ReadFile(path) // one short read: a held handle would block a writer's rename on Windows
+	b, err := readFileShared(path) // one short shared read: never blocks a writer's rename on Windows
 	if err != nil {
 		return 0, false
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -31,8 +32,8 @@ var validOptions = map[string]bool{
 	"claim": true, "headless": true, "prompt": true, "days": true, "html": true, "out": true,
 }
 
-// exitError carries a specific exit code. quiet means the message was
-// already printed (for -j output on stdout).
+// exitError carries a specific exit code. quiet means the details were already printed
+// (for -j output on stdout); the one-line reason still goes to stderr.
 type exitError struct {
 	code  int
 	msg   string
@@ -42,17 +43,49 @@ type exitError struct {
 func (e *exitError) Error() string { return e.msg }
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
-		var ee *exitError
-		if errors.As(err, &ee) {
-			if !ee.quiet {
-				fmt.Fprintln(os.Stderr, "mw:", err)
-			}
-			os.Exit(ee.code)
+	os.Exit(mainExit(os.Args[1:], os.Stderr))
+}
+
+// mainExit runs mw and returns the exit code. Every non-zero exit prints a one-line
+// "mw: <reason>" on stderr (an exitError with no message gets one, a panic included), so a caller never sees a bare failure.
+func mainExit(args []string, stderr io.Writer) (code int) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(stderr, "mw: internal error: %s\n", oneLine(fmt.Sprint(r)))
+			code = 70
 		}
-		fmt.Fprintln(os.Stderr, "mw:", err)
-		os.Exit(1)
+	}()
+	return mainExitErr(run(args), stderr)
+}
+
+// mainExitErr maps run's error to an exit code and prints its reason.
+func mainExitErr(err error, stderr io.Writer) int {
+	if err == nil {
+		return 0
 	}
+	code := 1
+	var ee *exitError
+	if errors.As(err, &ee) {
+		code = ee.code
+		if code == 0 {
+			code = 1
+		}
+	}
+	msg := strings.TrimSpace(err.Error())
+	if msg == "" {
+		msg = fmt.Sprintf("failed (exit %d)", code)
+	}
+	fmt.Fprintln(stderr, "mw:", msg)
+	return code
+}
+
+// oneLine trims a message and folds it to its first line.
+func oneLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = strings.TrimSpace(s[:i])
+	}
+	return s
 }
 
 func run(args []string) error {
@@ -444,7 +477,7 @@ Usage:
 
 Kinds: prompt, story, task, spike, bug, chore (+ wave via mw wave create)
 States: inbox, ready, doing, blocked, done
-Environment: MW_TENANT, MW_SESSION
+Environment: MW_TENANT, MW_SESSION, MW_LOCK_WAIT (seconds a writer waits for the board lock; default 5, Windows 15)
 Flags: -t tenant, -s session, -a agent, -p parent, -d path, -b body,
        -c acceptance, -k kind, -S status, -n limit, -j json, -v verbose,
        -A all

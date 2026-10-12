@@ -55,7 +55,7 @@ func publishHTML(boardPath string, w *Workspace, target string, force bool) (boo
 	sum := sha256.Sum256(page)
 	hash := hex.EncodeToString(sum[:])
 	if !force {
-		if b, err := os.ReadFile(out + ".hash"); err == nil {
+		if b, err := readFileShared(out + ".hash"); err == nil {
 			f := strings.Fields(string(b))
 			if len(f) >= 2 {
 				at, _ := strconv.ParseInt(f[0], 10, 64)
@@ -90,7 +90,7 @@ func publishPending(path string, ix *Workspace) {
 	if ix == nil || ix.Publish == nil || !ix.Publish.Auto || ix.Publish.HTML == "" {
 		return
 	}
-	b, err := os.ReadFile(htmlPath(path, ix.Publish.HTML) + ".hash")
+	b, err := readFileShared(htmlPath(path, ix.Publish.HTML) + ".hash")
 	if err != nil {
 		return
 	}

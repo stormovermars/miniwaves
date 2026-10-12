@@ -37,7 +37,7 @@ func migrateCommand(args []string) error {
 	if old, err := lockFile(path+".lock", time.Now().Add(lockWait)); err == nil { // the schema 7 lock file
 		defer old()
 	}
-	b, err := os.ReadFile(path)
+	b, err := readFileShared(path)
 	if err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func migrateBytes(b []byte, path string) (*Workspace, int, []string, error) {
 // splitOldArchive moves the schema 7 root archive (.miniwaves.archive.json) into one archive
 // file per tenant, merging with any per-tenant archive already there (a re-run is harmless).
 func splitOldArchive(path string) error {
-	b, err := os.ReadFile(filepath.Join(filepath.Dir(path), ".miniwaves.archive.json"))
+	b, err := readFileShared(filepath.Join(filepath.Dir(path), ".miniwaves.archive.json"))
 	if os.IsNotExist(err) {
 		return nil
 	}

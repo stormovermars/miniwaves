@@ -192,7 +192,7 @@ type descriptionInfo struct {
 
 func initWorkspace(name string) error {
 	path := filepath.Join(mustGetwd(), dataFile)
-	if _, err := os.Stat(path); err == nil {
+	if _, err := statShared(path); err == nil {
 		return fmt.Errorf("%s already exists", path)
 	}
 	slug := slugify(name)
@@ -214,7 +214,7 @@ func findWorkspace() (string, error) {
 	d := mustGetwd()
 	for {
 		p := filepath.Join(d, dataFile)
-		if _, err := os.Stat(p); err == nil {
+		if _, err := statShared(p); err == nil {
 			return p, nil
 		}
 		parent := filepath.Dir(d)

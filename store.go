@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,7 +68,7 @@ type tenantDoc struct {
 func sum(b []byte) string { h := sha256.Sum256(b); return string(h[:]) }
 
 func readIndexBytes(path string) ([]byte, error) {
-	b, err := os.ReadFile(path)
+	b, err := readFileShared(path)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +110,7 @@ func loadScoped(path string, all bool, slugs ...string) (*Workspace, error) {
 	for _, it := range ix.Tenants {
 		t := Tenant{Slug: it.Slug, Name: it.Name, Path: it.Path, Hidden: it.Archived, Tags: it.Tags, Next: map[string]int{}, Items: []Item{}}
 		if all || want[it.Slug] {
-			tb, err := os.ReadFile(tenantPath(path, it.Slug))
+			tb, err := readFileShared(tenantPath(path, it.Slug))
 			if err != nil && !os.IsNotExist(err) {
 				return nil, err
 			}
@@ -212,7 +213,7 @@ func sessionElsewhere(path string, w *Workspace, id, tenant string) error {
 		if t.Slug == tenant {
 			continue
 		}
-		b, err := os.ReadFile(tenantPath(path, t.Slug))
+		b, err := readFileShared(tenantPath(path, t.Slug))
 		if err != nil || !bytes.Contains(b, needle) {
 			continue
 		}
@@ -231,14 +232,33 @@ func sessionElsewhere(path string, w *Workspace, id, tenant string) error {
 
 // ---- locks ----
 
-// lockWait is how long a writer may wait for its locks before the command fails.
-var lockWait = 5 * time.Second
+// lockWait is how long a writer may wait for its locks before the command fails:
+// MW_LOCK_WAIT seconds, else 5 s (15 s on Windows, where process start and file I/O are slower).
+var lockWait = lockWaitFrom(os.Getenv("MW_LOCK_WAIT"), runtime.GOOS)
+
+// lockWaitFrom parses MW_LOCK_WAIT (seconds, fractions allowed); empty, invalid or
+// non-positive values fall back to the platform default.
+func lockWaitFrom(env, goos string) time.Duration {
+	if s, err := strconv.ParseFloat(strings.TrimSpace(env), 64); err == nil && s > 0 && s <= 3600 {
+		return time.Duration(s * float64(time.Second))
+	}
+	if goos == "windows" {
+		return 15 * time.Second
+	}
+	return 5 * time.Second
+}
+
+// lockTimeoutError is the message for a lock wait that ran out (wr matches "board locked").
+func lockTimeoutError(pid string, wait time.Duration) error {
+	return fmt.Errorf("board locked (pid %s): lock wait timed out after %s — retry, or raise MW_LOCK_WAIT (seconds)", pid, wait.Round(time.Millisecond))
+}
 
 // lockFile takes an exclusive lock on lp. The kernel does the waiting (a blocking
 // flock/LockFileEx in a goroutine, no polling); deadline is when the wait gives up, naming
 // the pid last recorded in <lp>.pid.
 func lockFile(lp string, deadline time.Time) (func(), error) {
 	pp := lp + ".pid"
+	wait := lockWait
 	if err := os.MkdirAll(filepath.Dir(lp), 0o755); err != nil {
 		return nil, err
 	}
@@ -259,10 +279,10 @@ func lockFile(lp string, deadline time.Time) (func(), error) {
 			}
 		}()
 		pid := "?"
-		if b, e := os.ReadFile(pp); e == nil && strings.TrimSpace(string(b)) != "" {
+		if b, e := readFileShared(pp); e == nil && strings.TrimSpace(string(b)) != "" {
 			pid = strings.TrimSpace(string(b))
 		}
-		return nil, fmt.Errorf("board locked (pid %s) — retry", pid)
+		return nil, lockTimeoutError(pid, wait)
 	}
 	// written first and cheaply (tmp + rename, no fsync): the last acquirer's pid stays
 	pid := strconv.Itoa(os.Getpid())

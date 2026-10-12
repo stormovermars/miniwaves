@@ -18,7 +18,7 @@ type archiveDoc struct {
 }
 
 func loadArchive(boardPath, slug string) (*archiveDoc, error) {
-	b, err := os.ReadFile(archivePath(boardPath, slug))
+	b, err := readFileShared(archivePath(boardPath, slug))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &archiveDoc{Version: currentSchema}, nil

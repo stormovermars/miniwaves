@@ -138,7 +138,7 @@ func updateCommand(args []string) error {
 	latest := strings.TrimPrefix(rel.Tag, "v")
 	if !newerVersion(version, latest) {
 		fmt.Printf("%s %s is current (latest release %s)\n", binName, version, latest)
-		return &exitError{code: 2, quiet: true}
+		return &exitError{code: 2, msg: "already current (" + version + "); nothing to update", quiet: true}
 	}
 	if check {
 		fmt.Printf("update available: %s → %s (%s update)\n", version, latest, binName)

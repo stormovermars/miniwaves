@@ -278,11 +278,18 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 
 - Install: `install.ps1` puts `mw.exe` in `%USERPROFILE%\.local\bin` and adds it to the user PATH (set `MINIWAVES_NO_PATH=1` to skip). The Claude Code plugin hook runs in Git Bash and installs the Windows release there.
 - Home is `%USERPROFILE%`; `~/` and `~\` both expand in folders, `--evidence` and `publish.html`.
-- Writes: Windows refuses to replace a file that another process has open, so lockless readers read the whole file in one go and a writer retries its rename (20 x 10 ms) before failing. Directory fsync is skipped (Windows cannot open a directory); file fsync stays. Locks are `LockFileEx` and are released when the process exits.
+- Writes and reads: lockless readers open the board, tenant and index files with `FILE_SHARE_READ|WRITE|DELETE`, so they never block a writer's rename, and retry a sharing violation or access-denied open (50 x 20 ms); a writer retries its rename the same way before failing.
+- Lock wait: a writer waits up to `MW_LOCK_WAIT` seconds for the board lock (default 15 on Windows, 5 elsewhere), then fails with `board locked (pid P): lock wait timed out ...`; raise it for many concurrent runners on a slow machine. Directory fsync is skipped (Windows cannot open a directory); file fsync stays. Locks are `LockFileEx` and are released when the process exits.
 - File modes (0600 board, 0644 page) are not enforced; Windows ACLs of the folder apply.
 - Prompts print PowerShell setup (`$env:MW_SESSION=...`, `Set-Location`).
 
 ## Changelog
+
+### 0.2.2 (unreleased)
+
+- Windows: board, tenant, index, pid and page-hash files are read with `FILE_SHARE_READ|WRITE|DELETE` and a read that hits a sharing violation or access denied is retried (50 x 20 ms), as is a `stat` of the board; fixes `The process cannot access the file because it is being used by another process` from `mw list` while writers rename.
+- `MW_LOCK_WAIT` (seconds) sets how long a writer waits for its locks: default 5, 15 on Windows. The timeout message now says it was a lock wait timeout and names `MW_LOCK_WAIT` (it still starts with `board locked (pid P)`).
+- Every non-zero exit prints a one-line `mw: <reason>` on stderr, also for `-j` errors (`session_exists`), `mw update` when already current, and panics (`mw: internal error: ...`, exit 70).
 
 ### 0.2.1 (schema 8: run `mw migrate`)
 
