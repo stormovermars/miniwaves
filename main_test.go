@@ -565,7 +565,7 @@ func TestConfiguredFolders(t *testing.T) {
 	if p := buildSessionPrompt(path, w, &w.Tenants[0], "s1", "builder", false); !strings.Contains(p, line) {
 		t.Fatalf("session prompt lacks per-tenant folders:\n%s", p)
 	}
-	root := l1 + "\nArtefacts " + filepath.Join(want.Builds, "<app>") + sep + "<ver>; proof (screenshots, logs, crash pulls, repro fixtures) " + filepath.Join(want.Evidence, "<app>") + sep + "<item>; throwaway " + want.Scratch + "/<app>.\n" + l3
+	root := l1 + "\nArtefacts " + filepath.Join(want.Builds, "<app>") + sep + "<ver>; proof (screenshots, logs, crash pulls, repro fixtures) " + filepath.Join(want.Evidence, "<app>") + sep + "<item>; throwaway " + want.Scratch + sep + "<app>.\n" + l3
 	for _, p := range []string{buildDispatcherPrompt(path, w, "d"), buildCoachPrompt(path, w, "c")} {
 		if !strings.Contains(p, root) {
 			t.Fatalf("prompt lacks folder roots:\n%s", p)
@@ -575,7 +575,7 @@ func TestConfiguredFolders(t *testing.T) {
 		t.Fatalf("dispatcher prompt lost wave/untrusted wording:\n%s", p)
 	}
 	out := captureOutput(t, func() { runAll(t, []string{"context"}) })
-	if !strings.Contains(out, l1) || !strings.Contains(out, "throwaway "+want.Scratch+"/"+slug+".") || !strings.Contains(out, l3) {
+	if !strings.Contains(out, l1) || !strings.Contains(out, "throwaway "+filepath.Join(want.Scratch, slug)+".") || !strings.Contains(out, l3) {
 		t.Fatalf("context lacks folders:\n%s", out)
 	}
 	// An old board without the key keeps the defaults.
