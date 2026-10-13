@@ -167,6 +167,7 @@ type sessionDetail struct {
 	State   string `json:"state" toon:"state"`
 	Item    string `json:"item" toon:"item"`
 	Updated string `json:"updated" toon:"updated"`
+	Age     string `json:"age" toon:"age"`
 }
 
 type folderPaths struct {

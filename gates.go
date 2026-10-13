@@ -14,7 +14,7 @@ import (
 )
 
 // version is the mw release; schema is currentSchema.
-var version = "0.2.2"
+var version = "0.2.3"
 
 var gateNames = []string{"evidence", "acceptance", "judge"}
 
@@ -411,6 +411,7 @@ func editCommand(path string, w *Workspace, args []string) error {
 	}
 	it.Updated = time.Now().UTC().Format(time.RFC3339)
 	emit(it, it.Updated, "edit", who, strings.Join(what, ", "))
+	touchSession(w, who, it.Updated)
 	if err := save(path, w); err != nil {
 		return err
 	}

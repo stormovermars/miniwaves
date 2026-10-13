@@ -1,5 +1,5 @@
 {
-  "version": "0.2.2",
+  "version": "0.2.3",
   "schema": 8,
   "board_schema": 8,
   "board": "<DIR>/.miniwaves.json",

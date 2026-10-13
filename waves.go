@@ -306,6 +306,7 @@ func waveCommand(path string, w *Workspace, args []string) error {
 			it.Updated = now
 			emit(it, now, "wave-"+cmd, value(o, "session", os.Getenv("MW_SESSION")), wv.ID)
 		}
+		touchSession(w, value(o, "session", os.Getenv("MW_SESSION")), now)
 		if err := save(path, w); err != nil {
 			return err
 		}
@@ -339,6 +340,7 @@ func waveCommand(path string, w *Workspace, args []string) error {
 			}
 			wv.Updated = now
 			emit(wv, now, "step", value(o, "session", os.Getenv("MW_SESSION")), fmt.Sprintf("%d steps n/a: %s", n, o["na-rest"]))
+			touchSession(w, value(o, "session", os.Getenv("MW_SESSION")), now)
 			if err := save(path, w); err != nil {
 				return err
 			}
@@ -397,6 +399,7 @@ func waveCommand(path string, w *Workspace, args []string) error {
 			marks = append(marks, tk.key+" "+mark)
 		}
 		wv.Updated = now
+		touchSession(w, who, now)
 		if err := save(path, w); err != nil {
 			return err
 		}

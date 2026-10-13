@@ -318,7 +318,7 @@ func TestSessionBootstrapPrompt(t *testing.T) {
 	if n := len(strings.Split(prompt, "\n")); n > 20 {
 		t.Fatalf("session prompt has %d lines", n)
 	}
-	if n := len(strings.Fields(prompt)); n > 190 {
+	if n := len(strings.Fields(prompt)); n > 220 {
 		t.Fatalf("session prompt too long: %d words", n)
 	}
 	windows := sessionSetup("windows", `C:\work\app`, "api-builder", "workspace", "builder")
@@ -365,10 +365,10 @@ func TestDispatcherBootstrapPrompt(t *testing.T) {
 			t.Fatalf("dispatcher prompt missing %q:\n%s", want, prompt)
 		}
 	}
-	if n := len(strings.Split(prompt, "\n")); n > 22 {
+	if n := len(strings.Split(prompt, "\n")); n > 24 {
 		t.Fatalf("dispatcher prompt has %d lines", n)
 	}
-	if n := len(strings.Fields(prompt)); n > 225 {
+	if n := len(strings.Fields(prompt)); n > 245 {
 		t.Fatalf("dispatcher prompt too long: %d words", n)
 	}
 	if err := run([]string{"get-prompt", "dispatcher", "bad name"}); err == nil {
@@ -649,7 +649,7 @@ func TestCoachPromptAndCompactBoard(t *testing.T) {
 			t.Fatalf("coach prompt missing %q:\n%s", want, prompt)
 		}
 	}
-	if n := len(strings.Fields(prompt)); n > 160 {
+	if n := len(strings.Fields(prompt)); n > 175 {
 		t.Fatalf("coach prompt too long: %d words", n)
 	}
 	if n := len(strings.Fields(contextGuide)); n > 30 {
@@ -1066,7 +1066,7 @@ func TestBoardWithoutActiveTenantField(t *testing.T) { // F11
 }
 
 func TestVersion051(t *testing.T) {
-	if version != "0.2.2" || currentSchema != 8 {
+	if version != "0.2.3" || currentSchema != 8 {
 		t.Fatal(version, currentSchema)
 	}
 }

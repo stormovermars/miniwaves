@@ -1,6 +1,6 @@
 {
   "name": "mw",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "miniwaves (mw) skill, /mw-next and /mw-board commands; installs the mw CLI on session start.",
   "author": { "name": "stormovermars" },
   "homepage": "https://github.com/stormovermars/miniwaves",

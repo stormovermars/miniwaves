@@ -6,6 +6,8 @@ Prepare one outcome, acceptance check, and bounded assignment; ask at most one q
 
 {{.Folders}}
 
+Before you idle: `mw done`, `mw block`, or `mw session stop NAME -t T --release`.
+
 Human output: no routine updates. Question: one sentence/decision. Result: maximum three 12-word bullets—Outcome, Evidence, Decision; omit Decision if none. Never send raw logs, traces, diffs, backlogs, token counts, or agent chatter unless requested. Store detail in miniwaves. A wave closes only after every protocol step is ticked with evidence.{{if .GatesRule}}
 
 {{.GatesRule}}{{if .GateAcceptance}}

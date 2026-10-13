@@ -138,19 +138,30 @@ type reviewDoc struct {
 	Blocked    []reviewItem `json:"blocked"`
 	Acceptance []reviewItem `json:"acceptance"`
 	Waves      []waveRow    `json:"waves"`
+	Stale      []reviewItem `json:"stale"`
 }
 
 func reviewOf(w *Workspace, t *Tenant) (reviewDoc, bool) {
 	gs := gateStates(w, t)
 	judgeOn, accOn := byName(gs, "judge").Effective, byName(gs, "acceptance").Effective
 	evOn := byName(gs, "evidence").Effective
-	d := reviewDoc{Judge: []reviewItem{}, Blocked: []reviewItem{}, Acceptance: []reviewItem{}, Waves: []waveRow{}}
+	d := reviewDoc{Judge: []reviewItem{}, Blocked: []reviewItem{}, Acceptance: []reviewItem{}, Waves: []waveRow{}, Stale: []reviewItem{}}
 	mk := func(it Item) reviewItem {
 		return reviewItem{ID: it.ID, Type: it.Kind, State: it.Status, Title: compactText(it.Title, 72), Attempts: it.Attempts}
 	}
 	for _, it := range t.Items {
 		if it.Kind == "wave" {
 			continue
+		}
+		if it.Status == "doing" {
+			if at := parseTS(it.Updated); !at.IsZero() && time.Since(at) > staleDoingAge {
+				r := mk(it)
+				r.Note = "doing " + ageShort(it.Updated)
+				if it.Assignee != "" {
+					r.Note += " @" + displayName(it.Assignee)
+				}
+				d.Stale = append(d.Stale, r)
+			}
 		}
 		if judgeOn && awaitingJudgement(t, it) {
 			d.Judge = append(d.Judge, mk(it))
@@ -238,6 +249,10 @@ func reviewCommand(w *Workspace, args []string) error {
 				fmt.Printf("  %-8s %-7s %s%s%s\n", r.ID, r.Type, r.Title, att, note)
 			}
 		}
+	}
+	if len(d.Stale) > 0 {
+		fmt.Printf("STALE (%d)\n", len(d.Stale))
+		items(d.Stale)()
 	}
 	section("judge", len(d.Judge), items(d.Judge))
 	section("blocked", len(d.Blocked), items(d.Blocked))

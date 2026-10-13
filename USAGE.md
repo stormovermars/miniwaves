@@ -106,7 +106,8 @@ mw migrate [--dry-run] [PATH]   # upgrade a schema 5/6 workspace file to 7 (MIGR
 mw dirs [init] [-j] | set NAME PATH   # NAME: datalake docs data tools templates builds evidence scratch (all eight shown by mw dirs)
 mw note ID TEXT... [-t SLUG] [-s NAME]
 mw session start NAME [-t SLUG] [-a ROLE]   # optional: `start` registers an unknown -s name; with none it uses the tenant's implicit "local" session (id `local@SLUG`, may own many items; the name `local` is reserved)
-mw session list [-t SLUG] [-j] [-v] | stop NAME
+mw session list [-t SLUG] [-j] [-v] | stop NAME [--release]
+mw session reap [-t SLUG | -A] [--older-than DUR] [--except NAME,NAME] [-n|--dry-run] [-j]
 mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]   # exit 3 if NAME exists
 mw get-prompt dispatcher|coach [NAME] [-j]
 mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
@@ -147,6 +148,13 @@ supported. Use `--` before a title or note beginning with `-`.
 Kinds are `prompt`, `story`, `task`, `spike`, `bug`, and `chore`. States are
 `inbox`, `ready`, `doing`, `blocked`, and `done`. Blocking requires a reason,
 completion requires verification, and a parent cannot close with open children.
+
+Session liveness: a session's last activity is set by `session start` and by every
+start/ready/block/done/reopen, `note`, `edit` and `wave add/remove/step/unstep` it runs
+with `-s`. During long work with no mw command, run `mw note ID "still on it" -s NAME`
+at least hourly so `reap` leaves the session alone. A reaped session's later `mw done` on
+an item that is still `ready` succeeds and revives the session; it is refused if
+another session claimed the item meanwhile.
 
 ## Waves (milestones)
 
@@ -284,6 +292,16 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 - Prompts print PowerShell setup (`$env:MW_SESSION=...`, `Set-Location`).
 
 ## Changelog
+
+### 0.2.3
+
+A killed session (controller stopped, context lost) no longer holds its items and its record forever; no schema change, no migration.
+
+- `mw session stop NAME -t T --release` sets every `doing` item the session owns back to `ready` (owner cleared, note `released: session NAME stopped with --release`), then stops the session. Without `--release` the refusal stays.
+- `mw session reap [-t T | -A] [--older-than DUR] [-n|--dry-run] [-j]` does the same for every session idle longer than DUR (default `2h`; `90m`, `2h`, `1d`; at most `365d`), note `reaped: no activity since <last> (> DUR)`; `--except NAME,NAME` (comma-separated) skips those sessions. The event actor is the reaper (`-s`/`MW_SESSION`, else `reap`). One line per session and item; `-j` prints `{"reaped":[{"session","tenant","items":[...]}]}` (`"dry_run":true` added with `-n`). Takes the tenant lock(s). The implicit `local` session is never reaped.
+- Last activity per session (`updated`) is now set by every start/ready/block/done/reopen, `note` and `edit` the session runs, and by `session start`.
+- `mw board` shows the age of each doing item (`doing 3h`); `mw review` lists doing items older than 2h under `STALE` (and `stale` in `-j`); `session list -v` gains `age`.
+- Prompts: "Before you idle: `mw done`, `mw block`, or `mw session stop NAME -t T --release`."
 
 ### 0.2.2
 

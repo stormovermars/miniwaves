@@ -144,11 +144,21 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 	if len(args) == 0 {
 		return errors.New("usage: mw session start|list|stop")
 	}
+	if args[0] == "reap" { // -n is --dry-run here (elsewhere it is --limit)
+		args = append([]string(nil), args...)
+		for i, a := range args {
+			if a == "-n" {
+				args[i] = "--dry-run"
+			}
+		}
+	}
 	o, pos, err := options(args[1:])
 	if err != nil {
 		return err
 	}
 	switch args[0] {
+	case "reap":
+		return reapCommand(path, w, o, pos)
 	case "list":
 		if len(pos) != 0 {
 			return fmt.Errorf("unexpected argument %q", pos[0])
@@ -165,7 +175,7 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 			out := make([]sessionDetail, 0)
 			for _, s := range w.Sessions {
 				if o["tenant"] == "" || s.Tenant == o["tenant"] {
-					out = append(out, sessionDetail{s.ID, s.Tenant, s.Agent, s.State, s.Item, s.Updated})
+					out = append(out, sessionDetail{s.ID, s.Tenant, s.Agent, s.State, s.Item, s.Updated, ageShort(s.Updated)})
 				}
 			}
 			return printData(out, o)
@@ -222,15 +232,26 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 		fmt.Printf("started session %s on %s\n", id, t.Slug)
 		return nil
 	case "stop":
-		if err := allowOptions(o, "tenant"); err != nil {
+		if err := allowOptions(o, "tenant", "release"); err != nil {
 			return err
 		}
 		if len(pos) != 1 {
-			return errors.New("usage: mw session stop NAME [-t SLUG]")
+			return errors.New("usage: mw session stop NAME [-t SLUG] [--release]")
 		}
 		s, err := sessionByID(w, pos[0])
 		if err != nil {
 			return err
+		}
+		if o["release"] == "true" {
+			ids := releaseSession(w, s, "released: session "+s.ID+" stopped with --release", actorName(o, "stop"))
+			if err := save(path, w); err != nil {
+				return err
+			}
+			fmt.Println("stopped session", s.ID)
+			for _, id := range ids {
+				fmt.Println("  released", id)
+			}
+			return nil
 		}
 		if s.Item != "" {
 			return fmt.Errorf("session %s still owns %s; block, finish, or reopen it first", s.ID, s.Item)
@@ -1139,7 +1160,11 @@ func printBoardJ(t *Tenant, sessions []Session, full bool, gates string, judgeOn
 				if it.Assignee != "" {
 					owner = " @" + displayName(it.Assignee)
 				}
-				fmt.Printf("  %-8s %-7s %s%s%s\n", it.ID, it.Kind, compactText(it.Title, 72), parent, owner)
+				age := ""
+				if state == "doing" {
+					age = "  doing " + ageShort(it.Updated)
+				}
+				fmt.Printf("  %-8s %-7s %s%s%s%s\n", it.ID, it.Kind, compactText(it.Title, 72), parent, owner, age)
 				shown++
 			}
 		}

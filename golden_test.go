@@ -10,8 +10,10 @@ import (
 // goldenBoard builds a fixed board whose outputs must not change while every
 // gate is off (byte for byte with the pre-gate binary).
 var (
-	tsRe  = regexp.MustCompile(`\d\d-\d\d \d\d:\d\d`)
-	agoRe = regexp.MustCompile(`last: (now|\d+m ago)`)
+	tsRe       = regexp.MustCompile(`\d\d-\d\d \d\d:\d\d`)
+	agoRe      = regexp.MustCompile(`last: (now|\d+m ago)`)
+	ageFieldRe = regexp.MustCompile(`("age": ?)"\d+[mhd]"`)
+	ageRe      = regexp.MustCompile(`doing \d+[mhd]\b`)
 )
 
 func goldenOutputs(t *testing.T, migrated bool) map[string]string {
@@ -57,6 +59,8 @@ func goldenOutputs(t *testing.T, migrated bool) map[string]string {
 		rh, _ := filepath.EvalSymlinks(home)
 		s = osNorm(replacePath(s, home, rh, "<HOME>"))
 		s = tsRe.ReplaceAllString(s, "<TS>")
+		s = ageRe.ReplaceAllString(s, "doing 0m")
+		s = ageFieldRe.ReplaceAllString(s, `${1}"0m"`)
 		return agoRe.ReplaceAllString(s, "last: now")
 	}
 	cap := func(args ...string) string {

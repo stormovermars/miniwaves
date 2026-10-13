@@ -29,7 +29,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"claim": true, "headless": true, "prompt": true, "days": true, "html": true, "out": true,
+	"claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -307,12 +307,18 @@ Example: mw dirs set data D:\out`,
 Append a timestamped note to any item or wave; shown by mw show.`,
 		"session": `mw session start NAME [-t SLUG] [-a ROLE]
 mw session list [-t SLUG] [-j] [-v]
-mw session stop NAME [-t SLUG]   (-t limits the command to one tenant file)
+mw session stop NAME [-t SLUG] [--release]   (-t limits the command to one tenant file)
+mw session reap [-t SLUG | -A] [--older-than DUR] [--except NAME,NAME] [-n|--dry-run] [-j]
 Register and inspect tenant-bound coding-assistant sessions. Registering is optional:
 mw start with an unknown -s/MW_SESSION name registers it silently (no other command does).
 With no session, start uses the implicit session "local" of the tenant (id local@SLUG), which
 may own many items; "local" cannot be named with -s or session start. start NAME is only needed
-to set a role (-a).`,
+to set a role (-a).
+stop refuses while the session owns an item; --release first sets its doing items back to ready (owner
+cleared, a note appended) and then stops it. reap releases and stops every session idle longer than
+--older-than (default 2h; 90m, 2h, 1d) in -t TENANT or all tenants (-A); --except NAME,NAME skips those sessions; -n/--dry-run only prints. A
+session's last activity is set by session start and by every start/ready/block/done/reopen, note and
+edit it runs. The implicit local session is never reaped.`,
 		"get-prompt": `mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]
 mw get-prompt dispatcher|coach [NAME] [-j]
 Print a minimal embedded prompt to paste into an assistant. Retrieval changes no state.
@@ -453,7 +459,7 @@ Usage:
   mw dirs [init] [-j] | set datalake|docs|data|tools|templates|builds|evidence|scratch PATH
   mw note ID TEXT... [-t SLUG] [-s NAME]
   mw session start NAME [-t SLUG] [-a ROLE]
-  mw session list [-t SLUG] [-j] [-v] | stop NAME
+  mw session list [-t SLUG] [-j] [-v] | stop NAME [--release] | reap [-t SLUG | -A] [--older-than DUR] [--except NAMES] [-n] [-j]
   mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]
   mw get-prompt dispatcher|coach [NAME] [-j]
   mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
@@ -689,6 +695,7 @@ func noteCommand(path string, w *Workspace, args []string) error {
 	}
 	it.Notes = append(it.Notes, now+" "+who+text)
 	emit(it, now, "note", value(o, "session", os.Getenv("MW_SESSION")), text)
+	touchSession(w, value(o, "session", os.Getenv("MW_SESSION")), now)
 	it.Updated = now
 	if err := save(path, w); err != nil {
 		return err
@@ -730,7 +737,7 @@ func options(args []string) (map[string]string, []string, error) {
 		if key == "" || !validOptions[key] {
 			return nil, nil, fmt.Errorf("unknown option %s", a)
 		}
-		if key == "json" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "archived" {
+		if key == "json" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "archived" {
 			o[key] = "true"
 			continue
 		}
