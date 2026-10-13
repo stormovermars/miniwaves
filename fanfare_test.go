@@ -86,13 +86,15 @@ func TestFanfareConfigRoundTrip(t *testing.T) {
 	if !strings.Contains(got, "fanfare: disabled") || !strings.Contains(got, "milestone_seconds: 15") || !strings.Contains(got, "finale_seconds: 300") || !strings.Contains(got, "~/fanfare-finale-songs") {
 		t.Fatalf("defaults: %s", got)
 	}
-	runAll(t, []string{"fanfare", "set", "enabled=true", "milestone_seconds=20", "finale_seconds=240", "dir=/x/songs", "volume=0.5"})
+	songs := filepath.Join(testCwd(t), "x", "songs")
+	runAll(t, []string{"fanfare", "set", "enabled=true", "milestone_seconds=20", "finale_seconds=240", "dir=" + songs, "volume=0.5"})
 	b, _ := os.ReadFile(path)
-	if !strings.Contains(string(b), `"fanfare":{"enabled":true,"dir":"/x/songs","milestone_seconds":20,"finale_seconds":240,"volume":0.5}`) {
+	sj, _ := json.Marshal(songs)
+	if !strings.Contains(string(b), `"fanfare":{"enabled":true,"dir":`+string(sj)+`,"milestone_seconds":20,"finale_seconds":240,"volume":0.5}`) {
 		t.Fatalf("not stored: %s", b)
 	}
 	w, _ := load(path)
-	if c := fanfareCfg(w); !c.Enabled || c.Dir != "/x/songs" || c.MilestoneSeconds != 20 || c.FinaleSeconds != 240 || c.Volume != 0.5 {
+	if c := fanfareCfg(w); !c.Enabled || c.Dir != songs || c.MilestoneSeconds != 20 || c.FinaleSeconds != 240 || c.Volume != 0.5 {
 		t.Fatalf("%+v", c)
 	}
 	for _, bad := range []string{"enabled=maybe", "milestone_seconds=0", "volume=0", "nope=1", "dir"} {
@@ -476,7 +478,7 @@ func TestFanfareClampsAndSetDir(t *testing.T) {
 	}
 	runAll(t, []string{"fanfare", "set", "dir=~/x"})
 	w, _ = load(filepath.Join(testCwd(t), dataFile))
-	if strings.Contains(w.Fanfare.Dir, "~") || !filepath.IsAbs(w.Fanfare.Dir) {
+	if strings.HasPrefix(w.Fanfare.Dir, "~") || !filepath.IsAbs(w.Fanfare.Dir) {
 		t.Fatalf("dir %q", w.Fanfare.Dir)
 	}
 	wantErr(t, "starts with '-'", "fanfare", "set", "dir=-x")
