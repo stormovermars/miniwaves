@@ -18,6 +18,8 @@ func tenantCommand(path string, w *Workspace, args []string) error {
 	switch args[0] {
 	case "archive", "restore", "tag":
 		return tenantMeta(path, w, args)
+	case "protocol":
+		return tenantProtocol(path, w, args[1:])
 	case "list":
 		o, pos, err := options(args[1:])
 		if err != nil {
@@ -716,6 +718,9 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 		enote = it.Note
 	}
 	emit(it, it.Updated, command, actor, enote)
+	if to == "done" {
+		fanfareAfterChange(w, t, false, stamp)
+	}
 	if err := save(path, w); err != nil {
 		return nil, nil, err
 	}

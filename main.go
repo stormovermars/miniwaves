@@ -182,7 +182,8 @@ func run(args []string) error {
 	if err := dispatch(path, w, args); err != nil {
 		return err
 	}
-	unlock() // publish and hash work happen after the lock is released
+	unlock()              // publish and hash work happen after the lock is released
+	playPendingFanfare(w) // spawn after the locks are gone: the collection may sit on a slow mount
 	if savedCount > 0 {
 		afterWrite(path)
 	} else {
@@ -215,6 +216,8 @@ func dispatch(path string, w *Workspace, args []string) error {
 		return logCommand(w, args[1:])
 	case "wave":
 		return waveCommand(path, w, args[1:])
+	case "fanfare":
+		return fanfareCommand(path, w, args[1:])
 	case "gate":
 		return gateCommand(path, w, args[1:])
 	case "edit":
@@ -260,6 +263,9 @@ func readOnly(args []string) bool {
 	case "next":
 		return !has("--claim")
 	case "tenant":
+		if sub == "protocol" { // only set and reset write
+			return !has("set") && !has("reset")
+		}
 		return sub == "list"
 	case "session":
 		return sub == "list"
@@ -267,6 +273,8 @@ func readOnly(args []string) bool {
 		return sub == "show" || sub == "list"
 	case "dirs":
 		return sub != "set" && sub != "init"
+	case "fanfare":
+		return sub != "set"
 	}
 	return false
 }
@@ -292,6 +300,7 @@ mw tenant list [-j] [-v] [--tag T]
 mw tenant default [SLUG|-]
 mw tenant archive [--force]|restore SLUG
 mw tenant tag SLUG +TAG -TAG...
+mw tenant protocol SLUG [set STEP...|reset]   (--workspace for the workspace list)
 Manage isolated apps/projects. "default" selects a tenant for the current
 folder ("-" clears it); otherwise the tenant whose -d DIR holds the cwd, MW_TENANT, then the first tenant that is not archived.
 "archive" refuses while an item is doing or a session is live (--force overrides) and hides a tenant (files untouched) from board -A, list -A, log -A, next, the page and version -j
@@ -334,6 +343,15 @@ Example: mw add task "Build index" -p STR-001`,
 Change an item's acceptance (-c), body (-b) and/or parent (-p; "-" clears; kind hierarchy and
 cycles are enforced, waves are not parents: use mw wave add). A session may set -c only while
 the acceptance is empty (drafting); changing a non-empty acceptance is humans only.`,
+		"fanfare": `mw fanfare [-j]
+mw fanfare set enabled=true milestone_seconds=15 finale_seconds=300 volume=1 dir=~/fanfare-finale-songs
+mw fanfare test [milestone|finale]
+mw fanfare fetch
+mw fanfare list [-j]
+mw fanfare stop
+Play a short clip when a wave closes and a longer finale when a tenant is finished (items exist, none inbox/ready/doing/blocked, no open wave; once per transition).
+Playback is a detached player (afplay, ffplay, mpv, paplay, Windows .wav) and never fails a board command. "fetch" downloads public-domain, CC0 and CC-BY pairs; the
+bring-your-own pair folders stay empty until you add fanfare.<ext> and finale.<ext>. Example: mw fanfare set enabled=true`,
 		"gate": `mw gate [-t SLUG] [-j]
 mw gate evidence|acceptance|judge on|off|auto [-t SLUG] [--by NAME]
 mw gate evidence|acceptance|judge on|off|auto --workspace [--by NAME]   (workspace default for every tenant)

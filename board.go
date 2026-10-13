@@ -71,14 +71,16 @@ type Tenant struct {
 	Next  map[string]int `json:"next"`
 	Items []Item         `json:"items"`
 
-	Gates        map[string]string `json:"gates,omitempty"`      // evidence|acceptance|judge: auto|on|off
-	GatesSeen    map[string]bool   `json:"gates_seen,omitempty"` // effective state last recorded by a saving command
-	GateLatch    map[string]string `json:"gate_latch,omitempty"` // name: reason; auto stays on once latched
-	AcceptStreak int               `json:"accept_streak,omitempty"`
-	Archived     int               `json:"archived,omitempty"` // done items moved to .miniwaves/<slug>.archive.json (mw archive)
-	Hidden       bool              `json:"-"`                  // mw tenant archive (stored in the index as "archived")
-	Tags         []string          `json:"-"`                  // mw tenant tag (stored in the index)
-	loaded       bool
+	Gates           map[string]string `json:"gates,omitempty"`             // evidence|acceptance|judge: auto|on|off
+	GatesSeen       map[string]bool   `json:"gates_seen,omitempty"`        // effective state last recorded by a saving command
+	FanfareFinaleAt string            `json:"fanfare_finale_at,omitempty"` // set when the tenant became finished (mw fanfare)
+	Protocol        []string          `json:"protocol,omitempty"`          // mw tenant protocol: wave steps for new waves, wins over the workspace list
+	GateLatch       map[string]string `json:"gate_latch,omitempty"`        // name: reason; auto stays on once latched
+	AcceptStreak    int               `json:"accept_streak,omitempty"`
+	Archived        int               `json:"archived,omitempty"` // done items moved to .miniwaves/<slug>.archive.json (mw archive)
+	Hidden          bool              `json:"-"`                  // mw tenant archive (stored in the index as "archived")
+	Tags            []string          `json:"-"`                  // mw tenant tag (stored in the index)
+	loaded          bool
 }
 
 type Session struct {
@@ -101,6 +103,7 @@ type Workspace struct {
 	Folders      map[string]string `json:"folders,omitempty"`
 	Gates        map[string]string `json:"gates,omitempty"` // workspace default per gate; absent = auto
 	Publish      *PublishConfig    `json:"publish,omitempty"`
+	Fanfare      *FanfareConfig    `json:"fanfare,omitempty"`
 
 	base      map[string]string // sha of each loaded tenant file as read (save writes only what changed)
 	indexBase string

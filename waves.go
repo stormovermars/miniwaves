@@ -44,14 +44,11 @@ func parseProtocol(md string) []Step {
 	return steps
 }
 
-// protocolSteps returns a fresh step list for a new wave.
-func protocolSteps(w *Workspace) []Step {
-	if len(w.Protocol) == 0 {
-		return append([]Step(nil), defaultProtocol...)
-	}
-	steps := make([]Step, 0, len(w.Protocol))
+// protocolNamed turns step names into steps (key = lowercase, words joined by dashes; duplicates dropped).
+func protocolNamed(names []string) []Step {
+	steps := make([]Step, 0, len(names))
 	seen := map[string]bool{}
-	for _, name := range w.Protocol {
+	for _, name := range names {
 		name = strings.TrimSpace(name)
 		key := strings.ToLower(strings.Join(strings.Fields(name), "-"))
 		if key != "" && !seen[key] {
@@ -59,9 +56,26 @@ func protocolSteps(w *Workspace) []Step {
 			steps = append(steps, Step{Key: key, Title: name})
 		}
 	}
-	if len(steps) == 0 {
-		return append([]Step(nil), defaultProtocol...)
+	return steps
+}
+
+// protocolFor resolves the steps a new wave of tenant t gets and where they come from:
+// the tenant's own list, else the workspace list, else the embedded PROTOCOL.md.
+func protocolFor(w *Workspace, t *Tenant) ([]Step, string) {
+	if t != nil {
+		if steps := protocolNamed(t.Protocol); len(steps) > 0 {
+			return steps, "tenant"
+		}
 	}
+	if steps := protocolNamed(w.Protocol); len(steps) > 0 {
+		return steps, "workspace"
+	}
+	return append([]Step(nil), defaultProtocol...), "default"
+}
+
+// protocolSteps returns a fresh step list for a new wave of tenant t.
+func protocolSteps(w *Workspace, t *Tenant) []Step {
+	steps, _ := protocolFor(w, t)
 	return steps
 }
 
@@ -249,7 +263,7 @@ func waveCommand(path string, w *Workspace, args []string) error {
 			}
 		}
 		t.Next["WAV"]++
-		steps := protocolSteps(w)
+		steps := protocolSteps(w, t)
 		it := Item{ID: fmt.Sprintf("WAV-%03d", t.Next["WAV"]), Kind: "wave", Title: strings.Join(pos, " "),
 			Status: "ready", Parent: parent, Body: o["body"], Steps: steps, Created: now, Updated: now}
 		emit(&it, now, "created", os.Getenv("MW_SESSION"), "")
@@ -511,6 +525,7 @@ func waveCommand(path string, w *Workspace, args []string) error {
 		}
 		wv.Status, wv.Updated, wv.Note = "done", now, "closed "+time.Now().Format("2006-01-02")
 		emit(wv, now, "done", value(o, "session", os.Getenv("MW_SESSION")), "closed")
+		fanfareAfterChange(w, t, true, now)
 		if err := save(path, w); err != nil {
 			return err
 		}

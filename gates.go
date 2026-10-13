@@ -14,7 +14,7 @@ import (
 )
 
 // version is the mw release; schema is currentSchema.
-var version = "0.2.3"
+var version = "0.2.4"
 
 var gateNames = []string{"evidence", "acceptance", "judge"}
 
@@ -43,6 +43,7 @@ func resetRunState() {
 	touchedTenants = map[string]bool{}
 	announced = map[string]bool{}
 	manifestCache = map[string]manifestResult{}
+	fanfarePending = nil
 }
 
 func validGateName(n string) bool {

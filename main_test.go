@@ -996,12 +996,12 @@ func TestClosedWaveAndMembershipGuards(t *testing.T) {
 
 func TestProtocolDedupeAndBlank(t *testing.T) {
 	w := &Workspace{Protocol: []string{"Test", " ", "test", "Ship it", ""}}
-	st := protocolSteps(w)
+	st := protocolSteps(w, nil)
 	if len(st) != 2 || st[0].Key != "test" || st[1].Key != "ship-it" {
 		t.Fatalf("%+v", st)
 	}
 	w.Protocol = []string{"", "  "}
-	if st := protocolSteps(w); len(st) != len(defaultProtocol) {
+	if st := protocolSteps(w, nil); len(st) != len(defaultProtocol) {
 		t.Fatalf("no fallback: %+v", st)
 	}
 }
@@ -1066,7 +1066,7 @@ func TestBoardWithoutActiveTenantField(t *testing.T) { // F11
 }
 
 func TestVersion051(t *testing.T) {
-	if version != "0.2.3" || currentSchema != 8 {
+	if version != "0.2.4" || currentSchema != 8 {
 		t.Fatal(version, currentSchema)
 	}
 }
