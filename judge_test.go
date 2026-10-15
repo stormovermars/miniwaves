@@ -177,7 +177,7 @@ func TestRejectRefusedInClosedWaveAndEvidenceGap(t *testing.T) {
 }
 
 func TestReviewJudgeOffAndAcceptanceOff(t *testing.T) {
-	path, _ := gateEnv(t)
+	path, _ := gateEnvTrust(t)
 	runAll(t, []string{"add", "story", "S", "-S", "ready"}, []string{"add", "bug", "B", "-S", "blocked"})
 	gateSet(t, "judge", "off")
 	gateSet(t, "acceptance", "off")
@@ -199,7 +199,7 @@ func TestReviewJudgeOffAndAcceptanceOff(t *testing.T) {
 }
 
 func TestJudgeGateAfterUngatedDoneIsJudged(t *testing.T) {
-	path, _ := gateEnv(t)
+	path, _ := gateEnvTrust(t)
 	gateSet(t, "judge", "off")
 	runAll(t, []string{"add", "bug", "old", "-S", "ready"})
 	runAll(t, []string{"done", "BUG-001", "ok"})

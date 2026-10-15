@@ -112,7 +112,7 @@ mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]   # exit 3 if N
 mw get-prompt dispatcher|coach [NAME] [-j]
 mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
 mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]   # -c under a session only while acceptance is empty
-mw gate [-t SLUG] [-j] | mw gate evidence|acceptance|judge on|off|auto [--by NAME] [--workspace]
+mw gate [-t SLUG] [-j] | mw gate level trust|proof|spec|judged [-t SLUG] [--workspace] [--by NAME] | mw gate evidence|acceptance|judge on|off|auto [--by NAME] [--workspace]
 mw version [-j]   # {version, schema, board_schema, board}: nearest workspace and its schema (null if none)
 mw review [-t SLUG] [-j]
 mw judge ID [-t SLUG]
@@ -198,14 +198,23 @@ a wave is never the parent of a non-wave (`-p WAV-001` or `edit -p` to it errors
 
 ## Gates (proof before closing)
 
-Gates are per tenant: `evidence`, `acceptance`, `judge`, each `auto|on|off`. `mw gate [-t SLUG] [-j]` shows setting, effective state and a reason; `mw gate NAME on|off|auto` overrides (humans only: refused under `MW_SESSION` or `-s`; `--by NAME` is required when stdin is not a terminal). `--workspace` sets the default for every tenant without its own setting. A gates line appears on `board`, `context` and `next` only when one is on; a change since the last saving command prints one stderr line.
-- **evidence**: `mw done ID CHECK` needs `<evidence>/<tenant>/<ID>/` (folder name exactly the ID) with at least one non-empty file (dotfiles, `Thumbs.db`, `desktop.ini` do not count); or `--no-evidence REASON`, kept as a note. `wave close` checks `<evidence>/<tenant>/WAV-NNN/` the same way. `show -v` lists the files, `list -v` shows `E`. `auto` = a product tenant (build manifest or `releases/` in the tenant dir) or a latch.
+Rigour is set as a cumulative **level** per tenant (or `--workspace` for the default):
+
+| level | evidence | acceptance | judge |
+|---|---|---|---|
+| `trust` | off | off | off |
+| `proof` (default) | on | off | off |
+| `spec` | on | on | off |
+| `judged` | on | on | on |
+
+`mw gate level trust|proof|spec|judged [-t SLUG|--workspace] [--by NAME]` sets the three gates (humans only, like `mw gate NAME on|off`). New tenants and boards start at `proof` unless the workspace default says otherwise (boards migrated from schema 5 keep default `off`, so new tenants there start at `trust`); `mw gate level trust` goes back to no gates. `mw gate level L --workspace` lists tenants whose own settings override it. Gate changes record `--by` and the date (shown as "set by NAME DATE" in `mw gate`). Under the hood there are three gates, `evidence`, `acceptance`, `judge`, each `auto|on|off`; `mw gate NAME on|off|auto` still works and can make a combination that is no level (`level custom`). `mw gate [-t SLUG] [-j]` prints the level first (`level proof (evidence on, acceptance off, judge off)`), then the setting, effective state and reason per gate; `-j` prints `{level, gates}`. Gates are humans only: refused under `MW_SESSION` or `-s`; `--by NAME` is required when stdin is not a terminal. `--workspace` sets the default for every tenant without its own setting. A short gates line (`gates: proof`, or the per-gate text for a custom mix) appears on `board`, `context` and `next` when any gate is on; a change since the last saving command prints one stderr line.
+- **evidence**: `mw done ID CHECK` needs `<evidence>/<tenant>/<ID>/` (folder name exactly the ID) with at least one non-empty file (dotfiles, `Thumbs.db`, `desktop.ini` do not count); or `--no-evidence REASON`, kept as a note. `wave close` checks `<evidence>/<tenant>/WAV-NNN/` the same way. `show -v` lists the files, `list -v` shows `E`. `auto` = on for every tenant (level `proof`); `mw gate` names the reason: product tenant (build manifest or `releases/`), latch, else `default proof`.
 - **acceptance**: `auto` = off (no latch). With it `on`, `mw next` skips only prompts and stories (`-k story`) whose own or nearest ancestor acceptance is empty (`skipped N without acceptance`); standalone task/spike/bug/chore and children of a story are handed out regardless. `mw edit ID -c TEXT` sets acceptance (humans only).
 - **judge**: `auto` = off (`mw gate` says "auto = off; set on to require human accept"); no product-tenant latch, no accept-streak hint. Only a human setting `on` turns it on. `done` records `judged: ungated` while it is off; on, `mw add -S done` is refused.
-- Boards migrated from schema 5 start with every gate `off` (finished items are `judged: ungated`); new boards start at `auto`. `ready`/`start`/`reopen` clear evidence and judgement; `done` records them again.
+- Boards migrated from schema 5 start with every gate `off` (finished items are `judged: ungated`); new boards start at level `proof`. `ready`/`start`/`reopen` clear evidence and judgement; `done` records them again.
 - Threat model: mw guards against lazy or confused agents, not hostile ones. An agent can edit the JSON or `edit -p` around a gate; the guard is friction plus an audit trail (`by`, `judged_by`, timestamps, notes).
 - `mw show ID` prints the item's notes (timestamp, `[session]` author, text) without `-v`; `mw note ID TEXT` records `-s`/`MW_SESSION` as author.
-- `mw version -j` prints `{version, schema}`; `mw next -j` prints `null` (exit 0) when nothing is ready and carries `gates` and `skipped`; `board -j` and `context -j` carry `gates`.
+- `mw version -j` prints `{version, schema}`; `mw next -j` prints `null` (exit 0) when nothing is ready and carries `level`, `gates` and `skipped`; `board -j` and `context -j` carry `level` and `gates`.
 
 ## Review and judgement
 
@@ -305,6 +314,12 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 - Prompts print PowerShell setup (`$env:MW_SESSION=...`, `Set-Location`).
 
 ## Changelog
+
+### 0.2.5
+
+- Gate levels: `mw gate level trust|proof|spec|judged [-t SLUG|--workspace]` sets evidence/acceptance/judge cumulatively (trust none, proof evidence, spec + acceptance, judged + judge). The default is now `proof`: evidence is on for every tenant, not only product tenants; `mw gate level trust` restores the old non-product behaviour.
+- `mw gate` prints `level NAME (...)` first (`level custom` for a mix that matches no level); `mw gate -j` now prints `{"level", "gates"}` instead of a bare array. The gates line on board/context/next is `gates: proof` when the level has a name.
+- Upgrade: boards whose tenants left evidence on `auto` now require evidence on `done`; set `mw gate level trust` to keep the previous behaviour.
 
 ### 0.2.4
 

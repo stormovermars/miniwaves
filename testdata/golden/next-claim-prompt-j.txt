@@ -24,6 +24,7 @@
       "by": "bot2"
     }
   ],
+  "level": "trust",
   "gates": {
     "acceptance": false,
     "evidence": false,

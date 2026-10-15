@@ -69,7 +69,7 @@ func TestLocalReservedAndRegisterOnlyOnStart(t *testing.T) { // F5
 }
 
 func TestStartNeedsNoSession(t *testing.T) {
-	path, _ := gateEnv(t)
+	path, _ := gateEnvTrust(t)
 	runAll(t, []string{"add", "task", "A", "-S", "ready"}, []string{"add", "task", "B", "-S", "ready"}, []string{"add", "task", "C", "-S", "ready"})
 	runAll(t, []string{"start", "TSK-001"})
 	if it := itemOf(t, path, "TSK-001"); it.Status != "doing" || it.Assignee != "local@gate-app" {

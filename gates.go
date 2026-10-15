@@ -14,9 +14,67 @@ import (
 )
 
 // version is the mw release; schema is currentSchema.
-var version = "0.2.4"
+var version = "0.2.5"
 
 var gateNames = []string{"evidence", "acceptance", "judge"}
+
+// gateLevels are the cumulative rigour levels, lowest first: evidence,
+// acceptance, judge.
+var gateLevels = []struct {
+	Name string
+	On   [3]bool
+}{
+	{"trust", [3]bool{false, false, false}},
+	{"proof", [3]bool{true, false, false}},
+	{"spec", [3]bool{true, true, false}},
+	{"judged", [3]bool{true, true, true}},
+}
+
+func validLevel(n string) bool {
+	for _, l := range gateLevels {
+		if l.Name == n {
+			return true
+		}
+	}
+	return false
+}
+
+// levelOf names the level the effective gates match exactly, else "custom".
+func levelOf(gs []gateInfo) string {
+	m := effectiveMap(gs)
+	got := [3]bool{m["evidence"], m["acceptance"], m["judge"]}
+	for _, l := range gateLevels {
+		if l.On == got {
+			return l.Name
+		}
+	}
+	return "custom"
+}
+
+func levelSettings(level string) map[string]string {
+	for _, l := range gateLevels {
+		if l.Name == level {
+			out := map[string]string{}
+			for i, n := range gateNames {
+				out[n] = map[bool]string{true: "on", false: "off"}[l.On[i]]
+			}
+			return out
+		}
+	}
+	return nil
+}
+
+func levelLine(gs []gateInfo) string {
+	lv := levelOf(gs)
+	if lv == "custom" {
+		return "level custom"
+	}
+	parts := make([]string, 0, 3)
+	for _, g := range gs {
+		parts = append(parts, g.Name+" "+map[bool]string{true: "on", false: "off"}[g.Effective])
+	}
+	return "level " + lv + " (" + strings.Join(parts, ", ") + ")"
+}
 
 type gateInfo struct {
 	Name      string `json:"name" toon:"name"`
@@ -118,13 +176,14 @@ func gateStates(w *Workspace, t *Tenant) []gateInfo {
 			if name == "evidence" {
 				latch := t.GateLatch[name]
 				product := productManifest(t)
+				g.Effective = true
 				switch {
 				case product.found != "":
-					g.Effective, g.Reason = true, "product tenant ("+product.found+")"
+					g.Reason = "product tenant (" + product.found + ")"
 				case latch != "":
-					g.Effective, g.Reason = true, "latched: "+latch
+					g.Reason = "latched: " + latch
 				default:
-					g.Reason = product.reason
+					g.Reason = "default proof"
 				}
 			} else {
 				g.Reason = "auto = off; set on to require " + map[string]string{"judge": "human accept", "acceptance": "acceptance on prompts/stories"}[name]
@@ -165,6 +224,9 @@ func anyGateOn(gs []gateInfo) bool {
 func gatesLine(t *Tenant, gs []gateInfo) string {
 	if !anyGateOn(gs) {
 		return ""
+	}
+	if lv := levelOf(gs); lv != "custom" {
+		return "gates: " + lv
 	}
 	parts := make([]string, 0, 3)
 	for _, g := range gs {
@@ -274,7 +336,14 @@ func gateCommand(path string, w *Workspace, args []string) error {
 		return err
 	}
 	if len(pos) != 0 && len(pos) != 2 {
-		return errors.New("usage: mw gate [-t SLUG] [-j] | mw gate evidence|acceptance|judge on|off|auto [-t SLUG] [--by NAME]")
+		return errors.New("usage: mw gate [-t SLUG] [-j] | mw gate level trust|proof|spec|judged [-t SLUG] [--by NAME] | mw gate evidence|acceptance|judge on|off|auto [-t SLUG] [--by NAME]")
+	}
+	isLevel := len(pos) == 2 && strings.EqualFold(pos[0], "level")
+	if isLevel {
+		pos[1] = strings.ToLower(pos[1])
+		if !validLevel(pos[1]) {
+			return fmt.Errorf("gate level must be trust, proof, spec or judged, not %q", pos[1])
+		}
 	}
 	if o["workspace"] == "true" {
 		return workspaceGate(path, w, o, pos)
@@ -283,7 +352,16 @@ func gateCommand(path string, w *Workspace, args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(pos) == 2 {
+	if isLevel {
+		if !stdinIsTerminal() && strings.TrimSpace(o["by"]) == "" {
+			return errors.New("mw gate needs --by NAME when stdin is not a terminal")
+		}
+		t.Gates = levelSettings(pos[1])
+		t.GateBy = gateByStamp(o)
+		if err := save(path, w); err != nil {
+			return err
+		}
+	} else if len(pos) == 2 {
 		name, setting := strings.ToLower(pos[0]), strings.ToLower(pos[1])
 		if !validGateName(name) {
 			return fmt.Errorf("unknown gate %q (evidence, acceptance, judge)", pos[0])
@@ -298,6 +376,7 @@ func gateCommand(path string, w *Workspace, args []string) error {
 			t.Gates = map[string]string{}
 		}
 		t.Gates[name] = setting
+		t.GateBy = gateByStamp(o)
 		if setting == "auto" {
 			delete(t.GateLatch, name)
 			if len(t.GateLatch) == 0 {
@@ -310,14 +389,28 @@ func gateCommand(path string, w *Workspace, args []string) error {
 	}
 	gs := gateStates(w, t)
 	if o["json"] == "true" {
-		return printJSON(gs)
+		return printJSON(struct {
+			Level string     `json:"level"`
+			Gates []gateInfo `json:"gates"`
+		}{levelOf(gs), gs})
 	}
+	fmt.Println(levelLine(gs))
 	for _, g := range gs {
 		on := "off"
 		if g.Effective {
 			on = "on"
 		}
-		fmt.Printf("%-10s %-5s %-3s %s\n", g.Name, g.Setting, on, g.Reason)
+		reason := g.Reason
+		if g.Setting == "on" || g.Setting == "off" {
+			by := t.GateBy
+			if strings.HasPrefix(reason, "workspace default") {
+				by = w.GateBy
+			}
+			if n, d := splitGateBy(by); n != "" {
+				reason += ", set by " + n + " " + d
+			}
+		}
+		fmt.Printf("%-10s %-5s %-3s %s\n", g.Name, g.Setting, on, reason)
 	}
 	return nil
 }
@@ -326,7 +419,28 @@ func gateCommand(path string, w *Workspace, args []string) error {
 // --workspace); auto removes the default. Tenant settings still win.
 func workspaceGate(path string, w *Workspace, o map[string]string, pos []string) error {
 	if len(pos) != 2 || o["tenant"] != "" {
-		return errors.New("usage: mw gate evidence|acceptance|judge on|off|auto --workspace [--by NAME]")
+		return errors.New("usage: mw gate evidence|acceptance|judge on|off|auto --workspace [--by NAME] | mw gate level trust|proof|spec|judged --workspace [--by NAME]")
+	}
+	if strings.EqualFold(pos[0], "level") {
+		if !stdinIsTerminal() && strings.TrimSpace(o["by"]) == "" {
+			return errors.New("mw gate needs --by NAME when stdin is not a terminal")
+		}
+		w.Gates = levelSettings(strings.ToLower(pos[1]))
+		w.GateBy = gateByStamp(o)
+		if err := save(path, w); err != nil {
+			return err
+		}
+		fmt.Printf("workspace default level: %s\n", strings.ToLower(pos[1]))
+		var over []string
+		for _, t := range w.Tenants {
+			if len(t.Gates) > 0 {
+				over = append(over, t.Slug)
+			}
+		}
+		if len(over) > 0 {
+			fmt.Printf("overridden by: %s (set their level with -t)\n", strings.Join(over, ", "))
+		}
+		return nil
 	}
 	name, setting := strings.ToLower(pos[0]), strings.ToLower(pos[1])
 	if !validGateName(name) {
@@ -341,6 +455,7 @@ func workspaceGate(path string, w *Workspace, o map[string]string, pos []string)
 	if w.Gates == nil {
 		w.Gates = map[string]string{}
 	}
+	w.GateBy = gateByStamp(o)
 	if setting == "auto" {
 		delete(w.Gates, name)
 		if len(w.Gates) == 0 {
@@ -548,6 +663,14 @@ func ignoredEvidenceName(n string) bool {
 // non-empty, non-junk file. The folder name must equal the ID exactly.
 // It returns the files as "relative/path size".
 func checkEvidence(w *Workspace, t *Tenant, id string) ([]string, error) {
+	files, err := checkEvidenceFiles(w, t, id)
+	if err != nil && byName(gateStates(w, t), "evidence").Reason == "default proof" {
+		err = fmt.Errorf("%w (0.2.5 default level is proof; a human can run `mw gate level trust -t SLUG`)", err)
+	}
+	return files, err
+}
+
+func checkEvidenceFiles(w *Workspace, t *Tenant, id string) ([]string, error) {
 	want := evidenceFolder(w, t, id)
 	parent := filepath.Dir(want)
 	entries, err := os.ReadDir(parent)
@@ -632,4 +755,25 @@ func tenantDir(boardPath string, t *Tenant) string {
 		return t.Path
 	}
 	return filepath.Dir(boardPath)
+}
+
+// gateByStamp is "NAME RFC3339" for the --by value ("human" at a terminal).
+func gateByStamp(o map[string]string) string {
+	by := strings.Join(strings.Fields(o["by"]), "_")
+	if by == "" {
+		by = "human"
+	}
+	return by + " " + time.Now().UTC().Format(time.RFC3339)
+}
+
+// splitGateBy returns the name and the date (YYYY-MM-DD) of a gate_by stamp.
+func splitGateBy(s string) (name, date string) {
+	n, ts, ok := strings.Cut(s, " ")
+	if !ok {
+		return "", ""
+	}
+	if len(ts) >= 10 {
+		ts = ts[:10]
+	}
+	return n, ts
 }

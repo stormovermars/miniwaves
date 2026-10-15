@@ -72,6 +72,7 @@ type Tenant struct {
 	Items []Item         `json:"items"`
 
 	Gates           map[string]string `json:"gates,omitempty"`             // evidence|acceptance|judge: auto|on|off
+	GateBy          string            `json:"gate_by,omitempty"`           // "NAME RFC3339" of the last gate change on this tenant
 	GatesSeen       map[string]bool   `json:"gates_seen,omitempty"`        // effective state last recorded by a saving command
 	FanfareFinaleAt string            `json:"fanfare_finale_at,omitempty"` // set when the tenant became finished (mw fanfare)
 	Protocol        []string          `json:"protocol,omitempty"`          // mw tenant protocol: wave steps for new waves, wins over the workspace list
@@ -101,7 +102,8 @@ type Workspace struct {
 	Sessions     []Session         `json:"sessions"`
 	Protocol     []string          `json:"protocol,omitempty"`
 	Folders      map[string]string `json:"folders,omitempty"`
-	Gates        map[string]string `json:"gates,omitempty"` // workspace default per gate; absent = auto
+	Gates        map[string]string `json:"gates,omitempty"`   // workspace default per gate; absent = auto
+	GateBy       string            `json:"gate_by,omitempty"` // "NAME RFC3339" of the last workspace default change
 	Publish      *PublishConfig    `json:"publish,omitempty"`
 	Fanfare      *FanfareConfig    `json:"fanfare,omitempty"`
 

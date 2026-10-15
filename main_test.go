@@ -33,7 +33,7 @@ func inTempDir(t *testing.T) string {
 func TestWorkflow(t *testing.T) {
 	path := inTempDir(t)
 	steps := [][]string{
-		{"init", "Tiny app"},
+		{"init", "Tiny app"}, {"gate", "level", "trust", "--workspace", "--by", "t"},
 		{"add", "prompt", "Make it fast", "--status", "ready"},
 		{"add", "story", "Instant startup", "--parent", "PRM-001", "--acceptance", "opens under 100ms"},
 		{"ready", "STR-001"},
@@ -100,7 +100,7 @@ func TestDescriptionNeedsNoWorkspace(t *testing.T) {
 
 func TestRejectsUnknownParentWithoutWriting(t *testing.T) {
 	path := inTempDir(t)
-	if err := run([]string{"init", "test"}); err != nil {
+	if err := runTrust([]string{"init", "test"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := run([]string{"add", "task", "orphan", "--parent", "STR-999"}); err == nil {
@@ -118,7 +118,7 @@ func TestRejectsUnknownParentWithoutWriting(t *testing.T) {
 
 func TestHierarchyAndCompletionGate(t *testing.T) {
 	path := inTempDir(t)
-	steps := [][]string{{"init", "test"}, {"add", "prompt", "request"},
+	steps := [][]string{{"init", "test"}, {"gate", "level", "trust", "--workspace", "--by", "t"}, {"add", "prompt", "request"},
 		{"add", "story", "outcome", "--parent", "PRM-001"},
 		{"add", "task", "work", "--parent", "STR-001"}}
 	for _, step := range steps {
@@ -150,7 +150,7 @@ func TestHierarchyAndCompletionGate(t *testing.T) {
 
 func TestStrictOptionsAndTransitionNotes(t *testing.T) {
 	path := inTempDir(t)
-	for _, step := range [][]string{{"init", "strict"}, {"add", "task", "work"}, {"block", "TSK-001", "waiting"}, {"ready", "TSK-001"}} {
+	for _, step := range [][]string{{"init", "strict"}, {"gate", "level", "trust", "--workspace", "--by", "t"}, {"add", "task", "work"}, {"block", "TSK-001", "waiting"}, {"ready", "TSK-001"}} {
 		if err := run(step); err != nil {
 			t.Fatalf("%v: %v", step, err)
 		}
@@ -173,7 +173,7 @@ func TestStrictOptionsAndTransitionNotes(t *testing.T) {
 
 func TestFindsProjectFromChildDirectory(t *testing.T) {
 	path := inTempDir(t)
-	if err := run([]string{"init", "test"}); err != nil {
+	if err := runTrust([]string{"init", "test"}); err != nil {
 		t.Fatal(err)
 	}
 	child := filepath.Join(filepath.Dir(path), "a", "b")
@@ -194,7 +194,7 @@ func TestFindsProjectFromChildDirectory(t *testing.T) {
 
 func TestFolderDefaultTenant(t *testing.T) {
 	path := inTempDir(t)
-	if err := run([]string{"init", "workspace"}); err != nil {
+	if err := runTrust([]string{"init", "workspace"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := run([]string{"tenant", "add", "api", "API"}); err != nil {
@@ -253,7 +253,7 @@ func TestFolderDefaultTenant(t *testing.T) {
 func TestMultipleTenantsAndSessionOwnership(t *testing.T) {
 	path := inTempDir(t)
 	steps := [][]string{
-		{"init", "workspace"},
+		{"init", "workspace"}, {"gate", "level", "trust", "--workspace", "--by", "t"},
 		{"tenant", "add", "api", "API", "--path", filepath.Join(filepath.Dir(path), "api")},
 		{"add", "story", "Reliable API", "--tenant", "api"},
 		{"add", "task", "Add retries", "--tenant", "api", "--parent", "STR-001"},
@@ -292,7 +292,7 @@ func TestMultipleTenantsAndSessionOwnership(t *testing.T) {
 
 func TestSessionBootstrapPrompt(t *testing.T) {
 	path := inTempDir(t)
-	if err := run([]string{"init", "workspace"}); err != nil {
+	if err := runTrust([]string{"init", "workspace"}); err != nil {
 		t.Fatal(err)
 	}
 	w, err := load(path)
@@ -347,7 +347,7 @@ func TestSessionBootstrapPrompt(t *testing.T) {
 
 func TestDispatcherBootstrapPrompt(t *testing.T) {
 	path := inTempDir(t)
-	if err := run([]string{"init", "apps"}); err != nil {
+	if err := runTrust([]string{"init", "apps"}); err != nil {
 		t.Fatal(err)
 	}
 	w, err := load(path)
@@ -400,7 +400,7 @@ func TestShortOptionAliases(t *testing.T) {
 	path := inTempDir(t)
 	apiPath := filepath.Join(filepath.Dir(path), "api")
 	steps := [][]string{
-		{"init", "workspace"}, {"tenant", "add", "api", "API", "-d", apiPath},
+		{"init", "workspace"}, {"gate", "level", "trust", "--workspace", "--by", "t"}, {"tenant", "add", "api", "API", "-d", apiPath},
 		{"add", "story", "Outcome", "-t", "api"},
 		{"add", "task", "Work", "-t", "api", "-p", "STR-001", "-b", "detail", "-c", "check"},
 		{"session", "start", "builder", "-t", "api", "-a", "builder"},
@@ -532,7 +532,7 @@ func TestConfiguredFolders(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	abs := filepath.Join(t.TempDir(), "abs-out")
-	runAll(t, []string{"init", "f"},
+	runAll(t, []string{"init", "f"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"},
 		[]string{"dirs", "set", "datalake", "lake/in"},
 		[]string{"dirs", "set", "docs", "~/specs"},
 		[]string{"dirs", "set", "data", abs},
@@ -591,7 +591,7 @@ func TestConfiguredFolders(t *testing.T) {
 
 func TestNote(t *testing.T) {
 	path := inTempDir(t)
-	runAll(t, []string{"init", "n"}, []string{"add", "task", "A"}, []string{"wave", "create", "W"},
+	runAll(t, []string{"init", "n"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"}, []string{"add", "task", "A"}, []string{"wave", "create", "W"},
 		[]string{"note", "TSK-001", "found", "the", "cause"},
 		[]string{"ready", "TSK-001"}, []string{"note", "WAV-001", "wave", "note"})
 	w, _ := load(path)
@@ -614,7 +614,7 @@ func TestNote(t *testing.T) {
 
 func TestSchemaAndPrivateState(t *testing.T) {
 	path := inTempDir(t)
-	if err := run([]string{"init", "private"}); err != nil {
+	if err := runTrust([]string{"init", "private"}); err != nil {
 		t.Fatal(err)
 	}
 	w, err := load(path)
@@ -636,7 +636,7 @@ func TestSchemaAndPrivateState(t *testing.T) {
 
 func TestCoachPromptAndCompactBoard(t *testing.T) {
 	path := inTempDir(t)
-	if err := run([]string{"init", "apps"}); err != nil {
+	if err := runTrust([]string{"init", "apps"}); err != nil {
 		t.Fatal(err)
 	}
 	w, err := load(path)
@@ -698,7 +698,7 @@ func runAll(t *testing.T, cmds ...[]string) {
 func TestWaves(t *testing.T) {
 	path := inTempDir(t)
 	runAll(t,
-		[]string{"init", "Tiny app"},
+		[]string{"init", "Tiny app"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"},
 		[]string{"wave", "create", "Milestone", "one"},
 		[]string{"add", "task", "A"}, []string{"add", "bug", "B"},
 		[]string{"wave", "add", "WAV-001", "TSK-001", "BUG-001"},
@@ -769,7 +769,7 @@ func TestWaves(t *testing.T) {
 func TestReparent(t *testing.T) {
 	path := inTempDir(t)
 	runAll(t,
-		[]string{"init", "Tiny app"},
+		[]string{"init", "Tiny app"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"},
 		[]string{"wave", "create", "Outer"},
 		[]string{"wave", "create", "Inner", "-p", "WAV-001"},
 		[]string{"add", "task", "A"},
@@ -828,7 +828,7 @@ func waveOf(t *testing.T, path, id string) Item {
 func TestWaveMembershipField(t *testing.T) {
 	path := inTempDir(t)
 	runAll(t,
-		[]string{"init", "Tiny app"},
+		[]string{"init", "Tiny app"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"},
 		[]string{"wave", "create", "M"},
 		[]string{"add", "story", "S"},
 		[]string{"add", "task", "A", "-p", "STR-001", "--wave", "WAV-001"},
@@ -933,7 +933,7 @@ func TestOldBoardAndProtocolOverride(t *testing.T) {
 
 func TestListIsOneTOONDocument(t *testing.T) {
 	inTempDir(t)
-	runAll(t, []string{"init", "Tiny app"}, []string{"add", "task", "A"}, []string{"wave", "create", "M"})
+	runAll(t, []string{"init", "Tiny app"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"}, []string{"add", "task", "A"}, []string{"wave", "create", "M"})
 	out := captureOutput(t, func() { runAll(t, []string{"list"}) })
 	if strings.Count(out, "\nwaves") != 1 && !strings.HasPrefix(out, "waves") {
 		t.Fatalf("no waves key:\n%s", out)
@@ -973,7 +973,7 @@ func closeWave(t *testing.T, path, id string) {
 
 func TestClosedWaveAndMembershipGuards(t *testing.T) {
 	path := inTempDir(t)
-	runAll(t, []string{"init", "Tiny app"}, []string{"add", "task", "A"}, []string{"add", "task", "B"},
+	runAll(t, []string{"init", "Tiny app"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"}, []string{"add", "task", "A"}, []string{"add", "task", "B"},
 		[]string{"wave", "create", "One"}, []string{"wave", "create", "Two"},
 		[]string{"wave", "add", "WAV-001", "TSK-001"}, []string{"done", "TSK-001", "ok"})
 	// one wave per item
@@ -1008,7 +1008,7 @@ func TestProtocolDedupeAndBlank(t *testing.T) {
 
 func TestListJSONShapeWithoutWaves(t *testing.T) {
 	inTempDir(t)
-	runAll(t, []string{"init", "Tiny app"}, []string{"add", "task", "A"})
+	runAll(t, []string{"init", "Tiny app"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"}, []string{"add", "task", "A"})
 	out := captureOutput(t, func() { runAll(t, []string{"list", "-j"}) })
 	var doc struct {
 		Items []map[string]any `json:"items"`
@@ -1028,7 +1028,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestEventOrderAndCoverage(t *testing.T) { // F8 F9
-	path, _ := gateEnv(t)
+	path, _ := gateEnvTrust(t)
 	runAll(t, []string{"add", "story", "S", "-c", "x"}, []string{"add", "task", "A", "-p", "STR-001", "-S", "ready"})
 	runAll(t, []string{"start", "TSK-001"})
 	st := itemOf(t, path, "STR-001")
@@ -1066,13 +1066,13 @@ func TestBoardWithoutActiveTenantField(t *testing.T) { // F11
 }
 
 func TestVersion051(t *testing.T) {
-	if version != "0.2.4" || currentSchema != 8 {
+	if version != "0.2.5" || currentSchema != 8 {
 		t.Fatal(version, currentSchema)
 	}
 }
 
 func TestLogActivityFeed(t *testing.T) {
-	path, _ := gateEnv(t)
+	path, _ := gateEnvTrust(t)
 	runAll(t, []string{"add", "task", "A", "-S", "ready"}, []string{"start", "TSK-001", "-s", "bot"},
 		[]string{"note", "TSK-001", "halfway", "-s", "bot"}, []string{"done", "TSK-001", "all checked", "-s", "bot"})
 	var rows []logRow
@@ -1150,7 +1150,7 @@ func TestNextIsTheShowBrief(t *testing.T) {
 }
 
 func TestBoardAllSortedByActivityWithLastAndToday(t *testing.T) {
-	_, _ = gateEnv(t)
+	_, _ = gateEnvTrust(t)
 	runAll(t, []string{"tenant", "add", "quiet"}, []string{"tenant", "add", "busy"})
 	runAll(t, []string{"add", "task", "Q", "-t", "quiet"})
 	w := loadT(t, ".miniwaves.json")
@@ -1214,4 +1214,13 @@ func TestRemovedSurfaces(t *testing.T) {
 	wantErr(t, "unknown command", "burndown")
 	wantErr(t, "unknown command", "reparent", "TSK-001", "-")
 	wantErr(t, "unknown tenant command", "tenant", "use", "x")
+}
+
+// runTrust runs an init command, then sets level trust (the tests that use it
+// predate the proof default and exercise behaviour with the gates off).
+func runTrust(args []string) error {
+	if err := run(args); err != nil {
+		return err
+	}
+	return run([]string{"gate", "level", "trust", "--workspace", "--by", "t"})
 }

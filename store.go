@@ -50,6 +50,7 @@ type indexDoc struct {
 	Protocol []string          `json:"protocol,omitempty"`
 	Folders  map[string]string `json:"folders,omitempty"`
 	Gates    map[string]string `json:"gates,omitempty"`
+	GateBy   string            `json:"gate_by,omitempty"`
 	Publish  *PublishConfig    `json:"publish,omitempty"`
 	Fanfare  *FanfareConfig    `json:"fanfare,omitempty"`
 }
@@ -61,6 +62,7 @@ type tenantDoc struct {
 	Sessions        []Session         `json:"sessions,omitempty"`
 	Gates           map[string]string `json:"gates,omitempty"`
 	GatesSeen       map[string]bool   `json:"gates_seen,omitempty"`
+	GateBy          string            `json:"gate_by,omitempty"`
 	GateLatch       map[string]string `json:"gate_latch,omitempty"`
 	AcceptStreak    int               `json:"accept_streak,omitempty"`
 	Archived        int               `json:"archived,omitempty"`
@@ -102,7 +104,7 @@ func loadScoped(path string, all bool, slugs ...string) (*Workspace, error) {
 		return nil, fmt.Errorf("%s is schema %d and this mw only reads schema %d: run mw migrate (see MIGRATION.md)", path, ix.Version, currentSchema)
 	}
 	w := &Workspace{Version: ix.Version, Name: ix.Name, Defaults: ix.Defaults, Protocol: ix.Protocol, Folders: ix.Folders,
-		Gates: ix.Gates, Publish: ix.Publish, Fanfare: ix.Fanfare, Sessions: []Session{}, base: map[string]string{}}
+		Gates: ix.Gates, GateBy: ix.GateBy, Publish: ix.Publish, Fanfare: ix.Fanfare, Sessions: []Session{}, base: map[string]string{}}
 	if w.Defaults == nil {
 		w.Defaults = map[string]string{}
 	}
@@ -136,6 +138,7 @@ func loadScoped(path string, all bool, slugs ...string) (*Workspace, error) {
 }
 
 func (t *Tenant) applyDoc(td tenantDoc) {
+	t.GateBy = td.GateBy
 	t.Next, t.Items, t.Gates, t.GatesSeen, t.GateLatch, t.AcceptStreak, t.Archived, t.Protocol, t.FanfareFinaleAt =
 		td.Next, td.Items, td.Gates, td.GatesSeen, td.GateLatch, td.AcceptStreak, td.Archived, td.Protocol, td.FanfareFinaleAt
 	if t.Next == nil {
@@ -147,7 +150,7 @@ func (t *Tenant) applyDoc(td tenantDoc) {
 }
 
 func indexBytes(w *Workspace) []byte {
-	ix := indexDoc{Version: w.Version, Name: w.Name, Defaults: w.Defaults, Protocol: w.Protocol, Folders: w.Folders, Gates: w.Gates, Publish: w.Publish, Fanfare: w.Fanfare}
+	ix := indexDoc{Version: w.Version, Name: w.Name, Defaults: w.Defaults, Protocol: w.Protocol, Folders: w.Folders, Gates: w.Gates, GateBy: w.GateBy, Publish: w.Publish, Fanfare: w.Fanfare}
 	if len(ix.Defaults) == 0 {
 		ix.Defaults = nil
 	}
@@ -159,7 +162,7 @@ func indexBytes(w *Workspace) []byte {
 }
 
 func tenantBytes(w *Workspace, t *Tenant) []byte {
-	td := tenantDoc{Next: t.Next, Items: t.Items, Gates: t.Gates, GatesSeen: t.GatesSeen, GateLatch: t.GateLatch, AcceptStreak: t.AcceptStreak, Archived: t.Archived, Protocol: t.Protocol, FanfareFinaleAt: t.FanfareFinaleAt}
+	td := tenantDoc{Next: t.Next, Items: t.Items, Gates: t.Gates, GateBy: t.GateBy, GatesSeen: t.GatesSeen, GateLatch: t.GateLatch, AcceptStreak: t.AcceptStreak, Archived: t.Archived, Protocol: t.Protocol, FanfareFinaleAt: t.FanfareFinaleAt}
 	for _, s := range w.Sessions {
 		if s.Tenant == t.Slug {
 			td.Sessions = append(td.Sessions, s)

@@ -353,12 +353,14 @@ Play a short clip when a wave closes and a longer finale when a tenant is finish
 Playback is a detached player (afplay, ffplay, mpv, paplay, Windows .wav) and never fails a board command. "fetch" downloads public-domain, CC0 and CC-BY pairs; the
 bring-your-own pair folders stay empty until you add fanfare.<ext> and finale.<ext>. Example: mw fanfare set enabled=true`,
 		"gate": `mw gate [-t SLUG] [-j]
+mw gate level trust|proof|spec|judged [-t SLUG | --workspace] [--by NAME]
 mw gate evidence|acceptance|judge on|off|auto [-t SLUG] [--by NAME]
 mw gate evidence|acceptance|judge on|off|auto --workspace [--by NAME]   (workspace default for every tenant)
-Gates are per tenant. Without arguments: setting, effective state and reason per gate (-j: array).
+Levels are cumulative: trust = no gates; proof (default) = evidence; spec = evidence + acceptance; judged = all three.
+Gates are per tenant. Without arguments: the level, then setting, effective state and reason per gate (-j: {level, gates}).
 evidence: done needs a non-empty file in <evidence>/<tenant>/<ID>/. acceptance: next skips
 prompts/stories with no acceptance (own or an ancestor's); tasks are never skipped. judge: a human accepts or rejects finished work (mw review).
-auto: evidence = rule or latch (product tenant: build manifest or releases/); judge and acceptance auto = off. on/off wins.
+auto: evidence = on (level proof; reason notes a product tenant or latch); judge and acceptance auto = off. on/off wins.
 Humans only (refused under MW_SESSION or -s); --by NAME is required when stdin is not a terminal.`,
 		"review": `mw review [-t SLUG] [-j]
 What needs a human: judge (judgeable items awaiting judgement, ×N = rejections; [] while the
@@ -482,7 +484,7 @@ Usage:
   mw get-prompt dispatcher|coach [NAME] [-j]
   mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]
-  mw gate [-t SLUG] [-j] | gate evidence|acceptance|judge on|off|auto [--by NAME]
+  mw gate [-t SLUG] [-j] | gate level trust|proof|spec|judged | gate evidence|acceptance|judge on|off|auto [--by NAME]
   mw review [-t SLUG] [-j]
   mw judge ID [-t SLUG]
   mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]

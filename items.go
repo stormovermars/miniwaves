@@ -787,6 +787,7 @@ type nextJSON struct {
 	Title      string          `json:"title"`
 	Acceptance string          `json:"acceptance"`
 	Evidence   string          `json:"evidence,omitempty"`
+	Level      string          `json:"level"`
 	Gates      map[string]bool `json:"gates"`
 	Skipped    int             `json:"skipped"`
 }
@@ -794,7 +795,7 @@ type nextJSON struct {
 // nextOf builds the -j next record; the evidence folder appears only with the evidence gate on.
 func nextOf(w *Workspace, t *Tenant, it Item, gs []gateInfo, skipped int) nextJSON {
 	n := nextJSON{ID: it.ID, Title: compactText(it.Title, 72), Acceptance: nextAcceptance(t, it, gs),
-		Gates: effectiveMap(gs), Skipped: skipped}
+		Level: levelOf(gs), Gates: effectiveMap(gs), Skipped: skipped}
 	if byName(gs, "evidence").Effective {
 		n.Evidence = evidenceFolder(w, t, it.ID)
 	}
@@ -857,7 +858,7 @@ func claimNext(path string, w *Workspace, t *Tenant, o map[string]string) error 
 	it, _ = itemByID(t, id)
 	d := briefOf(w, t, *it, o["verbose"] == "true")
 	if o["json"] == "true" {
-		nb := nextBriefJSON{d, effectiveMap(gs), skipped, true, ""}
+		nb := nextBriefJSON{d, levelOf(gs), effectiveMap(gs), skipped, true, ""}
 		if o["prompt"] == "true" {
 			nb.Prompt = buildSessionPrompt(path, w, t, o["session"], role, true)
 		}
@@ -900,6 +901,7 @@ func shownAcceptance(t *Tenant, it Item, gs []gateInfo) string {
 
 type nextBriefJSON struct {
 	briefDoc
+	Level   string          `json:"level"`
 	Gates   map[string]bool `json:"gates"`
 	Skipped int             `json:"skipped"`
 	Claimed bool            `json:"claimed,omitempty"`
@@ -916,7 +918,7 @@ func printNext(w *Workspace, t *Tenant, o map[string]string, withGates bool) err
 		if skipped > 0 {
 			fmt.Fprintf(os.Stderr, "skipped: %d (%d without acceptance)\n", skipped, skipped)
 		}
-		return printJSON(nextBriefJSON{d, effectiveMap(gs), skipped, false, ""})
+		return printJSON(nextBriefJSON{d, levelOf(gs), effectiveMap(gs), skipped, false, ""})
 	}
 	printBrief(d, o["verbose"] == "true")
 	if withGates {
@@ -1045,6 +1047,7 @@ type boardDoc struct {
 	Archived int                    `json:"archived,omitempty"`
 	Tags     []string               `json:"tags,omitempty"`
 	Percent  int                    `json:"percent"`
+	Level    string                 `json:"level"`
 	Gates    map[string]bool        `json:"gates"`
 	Sessions []string               `json:"sessions"`
 	Waves    []waveRow              `json:"waves"`
@@ -1054,7 +1057,7 @@ type boardDoc struct {
 func boardData(t *Tenant, sessions []Session, full bool, gs []gateInfo) boardDoc {
 	judgeOn := byName(gs, "judge").Effective
 	at, id, act := lastActivity(t)
-	d := boardDoc{LastAt: at, Today: doneToday(t), Tenant: t.Slug, Name: t.Name, Tags: t.Tags, Gates: effectiveMap(gs), Sessions: []string{}, Waves: []waveRow{}, States: map[string][]itemBrief{}}
+	d := boardDoc{LastAt: at, Today: doneToday(t), Tenant: t.Slug, Name: t.Name, Tags: t.Tags, Level: levelOf(gs), Gates: effectiveMap(gs), Sessions: []string{}, Waves: []waveRow{}, States: map[string][]itemBrief{}}
 	for _, it := range t.Items {
 		if it.Kind == "wave" {
 			if full || it.Status != "done" {
@@ -1208,12 +1211,13 @@ func contextCommand(w *Workspace, args []string) error {
 			Session string          `json:"session,omitempty"`
 			Guide   string          `json:"guide"`
 			Folders string          `json:"folders"`
+			Level   string          `json:"level"`
 			Gates   map[string]bool `json:"gates"`
 			Next    any             `json:"next"`
 			Board   boardDoc        `json:"board"`
 		}{t.Slug, t.Name, value(o, "session", os.Getenv("MW_SESSION")), contextGuide,
 			folderSentence(workspaceFolders(w), t.Slug, value(o, "session", os.Getenv("MW_SESSION"))),
-			effectiveMap(gs), next, boardData(t, w.Sessions, true, gs)})
+			levelOf(gs), effectiveMap(gs), next, boardData(t, w.Sessions, true, gs)})
 	}
 	fmt.Printf("# miniwaves context: %s [%s]\n\n", compactText(t.Name, 72), t.Slug)
 	if s := value(o, "session", os.Getenv("MW_SESSION")); s != "" {

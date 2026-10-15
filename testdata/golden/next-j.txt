@@ -18,6 +18,7 @@
       "action": "ready"
     }
   ],
+  "level": "trust",
   "gates": {
     "acceptance": false,
     "evidence": false,

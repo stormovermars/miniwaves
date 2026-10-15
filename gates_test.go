@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func captureStderr(t *testing.T, fn func()) string {
@@ -46,6 +47,15 @@ func gateEnv(t *testing.T) (path, home string) {
 	return path, home
 }
 
+// gateEnvTrust is gateEnv with the workspace default at level trust (every
+// gate off), for tests of behaviour that predate the proof default.
+func gateEnvTrust(t *testing.T) (path, home string) {
+	t.Helper()
+	path, home = gateEnv(t)
+	runAll(t, []string{"gate", "level", "trust", "--workspace", "--by", "test"})
+	return path, home
+}
+
 func gateSet(t *testing.T, name, setting string) {
 	t.Helper()
 	runAll(t, []string{"gate", name, setting, "--by", "test"})
@@ -81,7 +91,10 @@ func itemOf(t *testing.T, path, id string) Item {
 func TestEvidenceGateOffAndOn(t *testing.T) {
 	path, home := gateEnv(t)
 	runAll(t, []string{"add", "task", "A"}, []string{"add", "task", "B"})
-	// auto on a non-product tenant is off: done needs nothing, judged ungated
+	// default proof: even a non-product tenant needs evidence
+	wantErr(t, "evidence required", "done", "TSK-001", "ok")
+	gateSet(t, "evidence", "off")
+	// off: done needs nothing, judged ungated
 	runAll(t, []string{"done", "TSK-001", "ok"})
 	if it := itemOf(t, path, "TSK-001"); it.Judged != "ungated" || len(it.Evidence) != 0 {
 		t.Fatalf("%+v", it)
@@ -179,7 +192,7 @@ func TestWaveEvidenceAtClose(t *testing.T) {
 }
 
 func TestAcceptanceGateAndInheritance(t *testing.T) {
-	path, _ := gateEnv(t)
+	path, _ := gateEnvTrust(t)
 	runAll(t, []string{"add", "prompt", "P", "-c", "prompt-level check"},
 		[]string{"add", "story", "S", "-p", "PRM-001"},
 		[]string{"add", "task", "T", "-p", "STR-001", "-S", "ready"},
@@ -214,7 +227,7 @@ func TestAcceptanceGateAndInheritance(t *testing.T) {
 }
 
 func TestAcceptanceOnSkipsOnlyPromptsAndStoriesWithoutAcceptance(t *testing.T) {
-	_, _ = gateEnv(t)
+	_, _ = gateEnvTrust(t)
 	runAll(t, []string{"add", "story", "Bare", "-S", "ready"}, []string{"add", "chore", "C", "-S", "ready"})
 	gateSet(t, "acceptance", "on")
 	out := captureOutput(t, func() { runAll(t, []string{"next"}) })
@@ -294,7 +307,7 @@ func TestGateAndEditRefusedForSessions(t *testing.T) {
 }
 
 func TestAddDoneRefusedWhileGateOn(t *testing.T) {
-	gateEnv(t)
+	gateEnvTrust(t)
 	runAll(t, []string{"add", "task", "fine", "-S", "done"})
 	gateSet(t, "evidence", "on")
 	wantErr(t, "refused", "add", "task", "x", "-S", "done")
@@ -308,7 +321,7 @@ func TestAddDoneRefusedWhileGateOn(t *testing.T) {
 func TestGateViewAndProductRule(t *testing.T) {
 	path, _ := gateEnv(t)
 	out := captureOutput(t, func() { runAll(t, []string{"gate"}) })
-	if !strings.Contains(out, "evidence") || !strings.Contains(out, "no build manifest") {
+	if !strings.HasPrefix(out, "level proof (evidence on, acceptance off, judge off)\n") || !strings.Contains(out, "default proof") {
 		t.Fatalf("%s", out)
 	}
 	w, _ := load(path)
@@ -317,14 +330,18 @@ func TestGateViewAndProductRule(t *testing.T) {
 		t.Fatal(err)
 	}
 	out = captureOutput(t, func() { runAll(t, []string{"gate", "-j"}) })
-	var gs []gateInfo
-	if err := json.Unmarshal([]byte(out), &gs); err != nil || len(gs) != 3 {
+	var doc struct {
+		Level string     `json:"level"`
+		Gates []gateInfo `json:"gates"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil || len(doc.Gates) != 3 || doc.Level != "proof" {
 		t.Fatalf("%v %s", err, out)
 	}
+	gs := doc.Gates
 	if !gs[0].Effective || gs[2].Effective || gs[1].Effective || !strings.Contains(gs[0].Reason, "go.mod") {
 		t.Fatalf("%+v", gs)
 	}
-	if b := captureOutput(t, func() { runAll(t, []string{"board"}) }); !strings.Contains(b, "gates: evidence on") {
+	if b := captureOutput(t, func() { runAll(t, []string{"board"}) }); !strings.Contains(b, "gates: proof") {
 		t.Fatalf("board lacks gates line:\n%s", b)
 	}
 	// judge never relaxes by itself: latched by the next saving command
@@ -335,14 +352,14 @@ func TestGateViewAndProductRule(t *testing.T) {
 	w, _ = load(path)
 	tn := &w.Tenants[0]
 	manifestCache = map[string]manifestResult{}
-	if gateOn(w, tn, "evidence") {
-		t.Fatal("evidence rule should relax with the manifest")
+	if g := byName(gateStates(w, tn), "evidence"); !g.Effective || g.Reason != "default proof" {
+		t.Fatalf("evidence stays on by default: %+v", g)
 	}
-	// a missing dir is off and says so
+	// a missing dir is on too (default proof)
 	tn.Path = filepath.Join(dir, "gone")
 	manifestCache = map[string]manifestResult{}
 	g := gateStates(w, &Tenant{Slug: "z", Path: tn.Path})
-	if g[0].Effective || !strings.Contains(g[0].Reason, "missing") {
+	if !g[0].Effective || g[0].Reason != "default proof" {
 		t.Fatalf("%+v", g[0])
 	}
 }
@@ -355,11 +372,16 @@ func TestFlipLineAndGatesSeenWrittenBySavesOnly(t *testing.T) {
 	if !strings.Contains(string(before), `"gates_seen"`) {
 		t.Fatalf("init did not record gates_seen:\n%s", before)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\n"), 0o644); err != nil {
+	_ = dir
+	// another process turns evidence off behind this one's back
+	w.Tenants[0].Gates = map[string]string{"evidence": "off"}
+	resetRunState()
+	if err := save(path, w); err != nil {
 		t.Fatal(err)
 	}
+	before, _ = os.ReadFile(tenantPath(path, w.Tenants[0].Slug))
 	errOut := captureStderr(t, func() { captureOutput(t, func() { runAll(t, []string{"board"}) }) })
-	if !strings.Contains(errOut, "gate evidence is now on") {
+	if !strings.Contains(errOut, "gate evidence is now off") {
 		t.Fatalf("no flip line: %q", errOut)
 	}
 	after, _ := os.ReadFile(tenantPath(path, w.Tenants[0].Slug))
@@ -368,12 +390,12 @@ func TestFlipLineAndGatesSeenWrittenBySavesOnly(t *testing.T) {
 	}
 	// repeats until a saving command runs
 	errOut = captureStderr(t, func() { captureOutput(t, func() { runAll(t, []string{"list"}) }) })
-	if !strings.Contains(errOut, "gate evidence is now on") {
+	if !strings.Contains(errOut, "gate evidence is now off") {
 		t.Fatalf("flip line did not repeat: %q", errOut)
 	}
 	runAll(t, []string{"add", "task", "saves"})
 	w, _ = load(path)
-	if !w.Tenants[0].GatesSeen["evidence"] {
+	if w.Tenants[0].GatesSeen["evidence"] {
 		t.Fatalf("gates_seen not recorded: %+v", w.Tenants[0].GatesSeen)
 	}
 	errOut = captureStderr(t, func() { captureOutput(t, func() { runAll(t, []string{"board"}) }) })
@@ -403,7 +425,7 @@ func TestVersionAndEditAndBoardJSON(t *testing.T) {
 }
 
 func TestPromptsRenderOnlyEffectiveGates(t *testing.T) {
-	path, _ := gateEnv(t)
+	path, _ := gateEnvTrust(t)
 	render := func() (string, string, string) {
 		w, _ := load(path)
 		tn := &w.Tenants[0]
@@ -621,5 +643,128 @@ func TestDoneEvidenceCopiesFilesAndFolders(t *testing.T) {
 	wantErr(t, "evidence path", "done", "TSK-002", "ok", "--evidence", filepath.Join(src, "missing"))
 	if itemOf(t, path, "TSK-002").Status == "done" {
 		t.Fatal("done despite missing evidence path")
+	}
+}
+
+func TestGateLevelsRoundTripAndCustom(t *testing.T) {
+	path, _ := gateEnv(t)
+	gateLine := func() string {
+		out := captureOutput(t, func() { runAll(t, []string{"gate"}) })
+		return strings.SplitN(out, "\n", 2)[0]
+	}
+	if got := gateLine(); got != "level proof (evidence on, acceptance off, judge off)" {
+		t.Fatalf("default: %q", got)
+	}
+	for _, c := range []struct{ level, want string }{
+		{"trust", "level trust (evidence off, acceptance off, judge off)"},
+		{"spec", "level spec (evidence on, acceptance on, judge off)"},
+		{"judged", "level judged (evidence on, acceptance on, judge on)"},
+		{"proof", "level proof (evidence on, acceptance off, judge off)"},
+	} {
+		runAll(t, []string{"gate", "level", c.level, "--by", "test"})
+		if got := gateLine(); got != c.want {
+			t.Fatalf("%s: %q", c.level, got)
+		}
+		w, _ := load(path)
+		for _, g := range gateStates(w, &w.Tenants[0]) {
+			if g.Setting != "on" && g.Setting != "off" {
+				t.Fatalf("%s: %+v", c.level, g)
+			}
+		}
+	}
+	// the -j form carries the level
+	out := captureOutput(t, func() { runAll(t, []string{"gate", "-j"}) })
+	var doc struct {
+		Level string
+		Gates []gateInfo
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil || doc.Level != "proof" || len(doc.Gates) != 3 {
+		t.Fatalf("%v %s", err, out)
+	}
+	// a combination that is no level
+	gateSet(t, "judge", "on")
+	if got := gateLine(); got != "level custom" {
+		t.Fatalf("custom: %q", got)
+	}
+	out = captureOutput(t, func() { runAll(t, []string{"gate", "-j"}) })
+	if !strings.Contains(out, `"level": "custom"`) {
+		t.Fatalf("%s", out)
+	}
+	// level is human-only and validated
+	wantErr(t, "must be trust", "gate", "level", "strict", "--by", "x")
+	wantErr(t, "--by", "gate", "level", "trust")
+	wantErr(t, "for humans", "gate", "level", "trust", "--by", "x", "-s", "bot")
+	// workspace level
+	runAll(t, []string{"gate", "level", "spec", "--workspace", "--by", "me"})
+	runAll(t, []string{"tenant", "add", "other", "Other"})
+	out = captureOutput(t, func() { runAll(t, []string{"gate", "-t", "other"}) })
+	if !strings.HasPrefix(out, "level spec") {
+		t.Fatalf("%s", out)
+	}
+}
+
+func TestGatesLineShowsLevelName(t *testing.T) {
+	gateEnv(t)
+	if b := captureOutput(t, func() { runAll(t, []string{"board"}) }); !strings.Contains(b, "gates: proof") {
+		t.Fatalf("board:\n%s", b)
+	}
+	gateSet(t, "judge", "on")
+	if b := captureOutput(t, func() { runAll(t, []string{"board"}) }); !strings.Contains(b, "gates: evidence on, acceptance off, judge on") {
+		t.Fatalf("board:\n%s", b)
+	}
+	runAll(t, []string{"gate", "level", "trust", "--by", "t"})
+	if b := captureOutput(t, func() { runAll(t, []string{"board"}) }); strings.Contains(b, "gates:") {
+		t.Fatalf("board:\n%s", b)
+	}
+}
+
+// A board written before levels existed (gates untouched = auto, evidence last
+// seen off) now needs proof; the error says why and how a human lifts it.
+func TestUpgradeAutoBoardEvidenceHint(t *testing.T) {
+	path, _ := gateEnv(t)
+	runAll(t, []string{"add", "task", "A"}, []string{"add", "task", "B"})
+	w, _ := load(path)
+	w.Gates = nil
+	w.Tenants[0].Gates, w.Tenants[0].GateLatch = nil, nil
+	w.Tenants[0].GatesSeen = map[string]bool{"evidence": false, "acceptance": false, "judge": false}
+	resetRunState()
+	if err := save(path, w); err != nil {
+		t.Fatal(err)
+	}
+	wantErr(t, "a human can run `mw gate level trust -t SLUG`", "done", "TSK-001", "ok")
+	runAll(t, []string{"done", "TSK-002", "ok", "--no-evidence", "legacy"})
+	// an explicit evidence setting gets no hint
+	gateSet(t, "evidence", "on")
+	if err := run([]string{"done", "TSK-001", "ok"}); err == nil || strings.Contains(err.Error(), "0.2.5 default") {
+		t.Fatalf("hint on explicit setting: %v", err)
+	}
+}
+
+func TestWorkspaceLevelListsOverridesAndRecordsBy(t *testing.T) {
+	gateEnv(t)
+	runAll(t, []string{"tenant", "add", "other", "Other"})
+	runAll(t, []string{"gate", "level", "judged", "-t", "other", "--by", "alice"})
+	out := captureOutput(t, func() { runAll(t, []string{"gate", "level", "trust", "--workspace", "--by", "bob"}) })
+	if !strings.Contains(out, "overridden by: other (set their level with -t)") {
+		t.Fatalf("%s", out)
+	}
+	out = captureOutput(t, func() { runAll(t, []string{"gate", "-t", "other"}) })
+	if !strings.Contains(out, "set by alice "+time.Now().UTC().Format("2006-01-02")) {
+		t.Fatalf("%s", out)
+	}
+	out = captureOutput(t, func() { runAll(t, []string{"gate"}) })
+	if !strings.Contains(out, "workspace default off, set by bob ") {
+		t.Fatalf("%s", out)
+	}
+}
+
+func TestJSONCarriesLevel(t *testing.T) {
+	gateEnv(t)
+	runAll(t, []string{"add", "task", "A", "-S", "ready"})
+	for _, args := range [][]string{{"board", "-j"}, {"context", "-j"}, {"next", "-j"}} {
+		out := captureOutput(t, func() { runAll(t, args) })
+		if !strings.Contains(out, `"level": "proof"`) {
+			t.Fatalf("%v: %s", args, out)
+		}
 	}
 }

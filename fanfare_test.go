@@ -81,7 +81,7 @@ func plays(t *testing.T, log string, want int) []string {
 
 func TestFanfareConfigRoundTrip(t *testing.T) {
 	path := inTempDir(t)
-	runAll(t, []string{"init", "Ws"})
+	runAll(t, []string{"init", "Ws"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"})
 	got := captureOutput(t, func() { runAll(t, []string{"fanfare"}) })
 	if !strings.Contains(got, "fanfare: disabled") || !strings.Contains(got, "milestone_seconds: 15") || !strings.Contains(got, "finale_seconds: 300") || !strings.Contains(got, "~/fanfare-finale-songs") {
 		t.Fatalf("defaults: %s", got)
@@ -138,7 +138,7 @@ func TestFanfareTriggers(t *testing.T) {
 	log := stubPlayer(t)
 	path := inTempDir(t)
 	dir := fakeCollection(t)
-	runAll(t, []string{"init", "Ws"})
+	runAll(t, []string{"init", "Ws"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"})
 	runAll(t, []string{"add", "task", "One", "--status", "ready"}, []string{"add", "task", "Two", "--status", "ready"})
 	runAll(t, []string{"wave", "create", "W"}, []string{"wave", "add", "WAV-001", "TSK-001"})
 	// disabled: silence
@@ -176,7 +176,7 @@ func TestFanfareWaveCloseThatFinishesPlaysFinaleOnly(t *testing.T) {
 	log := stubPlayer(t)
 	inTempDir(t)
 	dir := fakeCollection(t)
-	runAll(t, []string{"init", "Ws"}, []string{"add", "task", "One", "--status", "ready"},
+	runAll(t, []string{"init", "Ws"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"}, []string{"add", "task", "One", "--status", "ready"},
 		[]string{"wave", "create", "W"}, []string{"wave", "add", "WAV-001", "TSK-001"}, []string{"done", "TSK-001", "ok"},
 		[]string{"fanfare", "set", "enabled=true", "dir=" + dir},
 		[]string{"wave", "step", "WAV-001", "--na-rest", "t"}, []string{"wave", "close", "WAV-001", "--no-evidence", "t"})
@@ -190,7 +190,7 @@ func TestFanfareTestCommandNeverBlocksOnMissingPlayer(t *testing.T) {
 	log := stubPlayer(t)
 	inTempDir(t)
 	dir := fakeCollection(t)
-	runAll(t, []string{"init", "Ws"}, []string{"fanfare", "set", "dir=" + dir})
+	runAll(t, []string{"init", "Ws"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"}, []string{"fanfare", "set", "dir=" + dir})
 	out := captureOutput(t, func() { runAll(t, []string{"fanfare", "test", "finale"}) })
 	if !strings.Contains(out, "playing") || !strings.Contains(out, "finale") {
 		t.Fatalf("%s", out)
@@ -471,7 +471,7 @@ func TestFanfareClampsAndSetDir(t *testing.T) {
 	if c.Dir != defaultFanfareDir || c.MilestoneSeconds != 3600 || c.FinaleSeconds != 3600 || c.Volume != 4 {
 		t.Fatalf("%+v", c)
 	}
-	runAll(t, []string{"init", "Ws"}, []string{"fanfare", "set", "dir=songs"})
+	runAll(t, []string{"init", "Ws"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"}, []string{"fanfare", "set", "dir=songs"})
 	w, _ := load(filepath.Join(testCwd(t), dataFile))
 	if !filepath.IsAbs(w.Fanfare.Dir) || !strings.HasSuffix(w.Fanfare.Dir, "songs") {
 		t.Fatalf("dir %q", w.Fanfare.Dir)
@@ -504,7 +504,7 @@ func TestFanfareJSONOutputUnchanged(t *testing.T) {
 	log := stubPlayer(t)
 	inTempDir(t)
 	dir := fakeCollection(t)
-	runAll(t, []string{"init", "Ws"}, []string{"add", "task", "One", "--status", "ready"})
+	runAll(t, []string{"init", "Ws"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"}, []string{"add", "task", "One", "--status", "ready"})
 	off := captureOutput(t, func() { runAll(t, []string{"done", "TSK-001", "ok"}) })
 	runAll(t, []string{"reopen", "TSK-001"}, []string{"fanfare", "set", "enabled=true", "dir=" + dir})
 	on := captureOutput(t, func() { runAll(t, []string{"done", "TSK-001", "ok"}) })
@@ -525,7 +525,7 @@ func TestFanfareArchiveEmptyingTenantRearms(t *testing.T) {
 	log := stubPlayer(t)
 	path := inTempDir(t)
 	dir := fakeCollection(t)
-	runAll(t, []string{"init", "Ws"}, []string{"fanfare", "set", "enabled=true", "dir=" + dir},
+	runAll(t, []string{"init", "Ws"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"}, []string{"fanfare", "set", "enabled=true", "dir=" + dir},
 		[]string{"add", "task", "One", "--status", "ready"}, []string{"done", "TSK-001", "ok"})
 	plays(t, log, 1)
 	runAll(t, []string{"archive", "--days", "0"})
