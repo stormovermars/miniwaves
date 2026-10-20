@@ -344,7 +344,7 @@ Change an item's acceptance (-c), body (-b) and/or parent (-p; "-" clears; kind 
 cycles are enforced, waves are not parents: use mw wave add). A session may set -c only while
 the acceptance is empty (drafting); changing a non-empty acceptance is humans only.`,
 		"fanfare": `mw fanfare [-j]
-mw fanfare set enabled=true milestone_seconds=15 finale_seconds=300 volume=1 dir=~/fanfare-finale-songs
+mw fanfare set enabled=true milestone_seconds=15 finale_seconds=60 volume=1 stop_dialog=true dir=~/fanfare-finale-songs
 mw fanfare test [milestone|finale]
 mw fanfare fetch
 mw fanfare list [-j]

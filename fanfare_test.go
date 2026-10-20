@@ -83,14 +83,14 @@ func TestFanfareConfigRoundTrip(t *testing.T) {
 	path := inTempDir(t)
 	runAll(t, []string{"init", "Ws"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"})
 	got := captureOutput(t, func() { runAll(t, []string{"fanfare"}) })
-	if !strings.Contains(got, "fanfare: disabled") || !strings.Contains(got, "milestone_seconds: 15") || !strings.Contains(got, "finale_seconds: 300") || !strings.Contains(got, "~/fanfare-finale-songs") {
+	if !strings.Contains(got, "fanfare: disabled") || !strings.Contains(got, "milestone_seconds: 15") || !strings.Contains(got, "finale_seconds: 60") || !strings.Contains(got, "~/fanfare-finale-songs") {
 		t.Fatalf("defaults: %s", got)
 	}
 	songs := filepath.Join(testCwd(t), "x", "songs")
 	runAll(t, []string{"fanfare", "set", "enabled=true", "milestone_seconds=20", "finale_seconds=240", "dir=" + songs, "volume=0.5"})
 	b, _ := os.ReadFile(path)
 	sj, _ := json.Marshal(songs)
-	if !strings.Contains(string(b), `"fanfare":{"enabled":true,"dir":`+string(sj)+`,"milestone_seconds":20,"finale_seconds":240,"volume":0.5}`) {
+	if !strings.Contains(string(b), `"fanfare":{"enabled":true,"dir":`+string(sj)+`,"milestone_seconds":20,"finale_seconds":240,"volume":0.5,"stop_dialog":true}`) {
 		t.Fatalf("not stored: %s", b)
 	}
 	w, _ := load(path)
@@ -590,5 +590,100 @@ func TestTenantProtocolShowIsReadOnly(t *testing.T) {
 		if got := readOnly(strings.Fields(args)); got != want {
 			t.Errorf("%s: readOnly=%v", args, got)
 		}
+	}
+}
+
+func TestStopControlCommand(t *testing.T) {
+	t.Setenv("MW_FANFARE_PLAYER", "")
+	t.Setenv("MW_FANFARE_STOP_CONTROL", "")
+	none := func(string) (string, error) { return "", errors.New("no") }
+	has := func(string) (string, error) { return "/x", nil }
+	n, a, ok := stopControlCommand("darwin", 4242, 60, none)
+	s := strings.Join(a, " ")
+	if !ok || n != "sh" || !strings.Contains(s, "osascript") || !strings.Contains(s, "giving up after 62") || !strings.Contains(s, "kill -TERM -4242") || !strings.Contains(s, "button returned:Stop") {
+		t.Fatalf("darwin: %s %v", n, a)
+	}
+	n, a, ok = stopControlCommand("windows", 77, 60, none)
+	s = strings.Join(a, " ")
+	if !ok || n != "powershell" || !strings.Contains(s, "Popup('Celebration playing - click OK to stop',62,") || !strings.Contains(s, "taskkill /PID 77 /T /F") {
+		t.Fatalf("windows: %s %v", n, a)
+	}
+	n, a, ok = stopControlCommand("linux", 9, 10, has)
+	s = strings.Join(a, " ")
+	if !ok || n != "sh" || !strings.Contains(s, "zenity") || !strings.Contains(s, "--timeout=12") || !strings.Contains(s, "kill -TERM -9") {
+		t.Fatalf("linux: %s %v", n, a)
+	}
+	if _, _, ok = stopControlCommand("linux", 9, 10, none); ok {
+		t.Fatal("linux without zenity must have no control")
+	}
+	t.Setenv("MW_FANFARE_PLAYER", "/stub")
+	if _, _, ok = stopControlCommand("darwin", 1, 5, none); ok {
+		t.Fatal("player stub must disable the control")
+	}
+	t.Setenv("MW_FANFARE_STOP_CONTROL", "/ctl")
+	if n, a, ok = stopControlCommand("darwin", 1, 5, none); !ok || n != "/ctl" || len(a) != 2 || a[0] != "1" || a[1] != "5" {
+		t.Fatalf("stub: %s %v", n, a)
+	}
+}
+
+func TestFinaleStopControlLaunchedAndRecorded(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh stub")
+	}
+	d := t.TempDir()
+	slow := filepath.Join(d, "slow.sh")
+	os.WriteFile(slow, []byte("#!/bin/sh\nsleep 30\n"), 0o755)
+	t.Setenv("MW_FANFARE_PLAYER", slow)
+	t.Setenv("MW_FANFARE_STOP_CONTROL", slow)
+	dir := filepath.Join(d, "songs")
+	os.MkdirAll(dir, 0o755)
+	if err := playFinale(dir, "/x/f.mp3", 5, 1, true); err != nil {
+		t.Fatal(err)
+	}
+	if rs := readPlayers(dir); len(rs) != 2 {
+		t.Fatalf("want player + control recorded: %+v", rs)
+	}
+	pids := []int{}
+	for _, r := range readPlayers(dir) {
+		pids = append(pids, r.PID)
+	}
+	if n := stopPlayers(dir); n != 2 {
+		t.Fatalf("stopped %d", n)
+	}
+	for _, pid := range pids {
+		for i := 0; i < 40 && procStamp(pid) != "" && !strings.Contains(procState(pid), "Z"); i++ {
+			time.Sleep(50 * time.Millisecond)
+		}
+		if procStamp(pid) != "" && !strings.Contains(procState(pid), "Z") {
+			t.Fatalf("pid %d still running", pid)
+		}
+	}
+	// milestone (playFile) and stop_dialog=false launch no control
+	if err := playFile(dir, "/x/f.mp3", 5, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := playFinale(dir, "/x/f.mp3", 5, 1, false); err != nil {
+		t.Fatal(err)
+	}
+	if rs := readPlayers(dir); len(rs) != 2 {
+		t.Fatalf("want 2 players, no control: %+v", rs)
+	}
+	stopPlayers(dir)
+}
+
+func TestStopDialogConfig(t *testing.T) {
+	path := inTempDir(t)
+	runAll(t, []string{"init", "Ws"})
+	w, _ := load(path)
+	if c := fanfareCfg(w); *c.StopDialog != true || c.FinaleSeconds != 60 {
+		t.Fatalf("defaults: %+v", c)
+	}
+	runAll(t, []string{"fanfare", "set", "stop_dialog=false"})
+	w, _ = load(path)
+	if c := fanfareCfg(w); *c.StopDialog {
+		t.Fatal("stop_dialog=false not stored")
+	}
+	if got := captureOutput(t, func() { runAll(t, []string{"fanfare"}) }); !strings.Contains(got, "stop_dialog: false") {
+		t.Fatal(got)
 	}
 }

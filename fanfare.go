@@ -37,6 +37,7 @@ type FanfareConfig struct {
 	MilestoneSeconds int     `json:"milestone_seconds"`
 	FinaleSeconds    int     `json:"finale_seconds"`
 	Volume           float64 `json:"volume"`
+	StopDialog       *bool   `json:"stop_dialog,omitempty"` // finale Stop dialog; nil = true
 }
 
 func fanfareCfg(w *Workspace) FanfareConfig {
@@ -52,7 +53,7 @@ func fanfareCfg(w *Workspace) FanfareConfig {
 		c.MilestoneSeconds = 15
 	}
 	if c.FinaleSeconds <= 0 {
-		c.FinaleSeconds = 300
+		c.FinaleSeconds = 60
 	}
 	c.MilestoneSeconds = min(c.MilestoneSeconds, 3600)
 	c.FinaleSeconds = min(c.FinaleSeconds, 3600)
@@ -60,6 +61,10 @@ func fanfareCfg(w *Workspace) FanfareConfig {
 		c.Volume = 1
 	}
 	c.Volume = math.Min(c.Volume, 4)
+	if c.StopDialog == nil {
+		t := true
+		c.StopDialog = &t
+	}
 	return c
 }
 
@@ -324,26 +329,91 @@ func playerCommand(goos, file string, secs int, vol float64, look func(string) (
 
 // playFile starts the player detached, records its pid for `mw fanfare stop` and returns at once.
 func playFile(dir, file string, secs int, vol float64) error {
-	name, args, err := playerCommand(runtime.GOOS, file, secs, vol, lookPath)
+	_, err := startPlayer(dir, file, secs, vol)
+	return err
+}
+
+// playFinale plays the finale and, when stopDialog is set, opens the Stop control beside it.
+func playFinale(dir, file string, secs int, vol float64, stopDialog bool) error {
+	pid, err := startPlayer(dir, file, secs, vol)
 	if err != nil {
 		return err
 	}
+	if stopDialog {
+		startStopControl(dir, pid, secs)
+	}
+	return nil
+}
+
+// stopControlCommand builds the command of the finale's Stop dialog: a dialog with a Stop button
+// that times out after secs+2 seconds and kills the player (pid) itself. ok is false when this
+// platform has no dialog. MW_FANFARE_PLAYER (test stub) disables it unless MW_FANFARE_STOP_CONTROL
+// names a stub, called as: STUB PLAYERPID SECONDS.
+func stopControlCommand(goos string, playerPID, secs int, look func(string) (string, error)) (string, []string, bool) {
+	if stub := os.Getenv("MW_FANFARE_STOP_CONTROL"); stub != "" {
+		return stub, []string{strconv.Itoa(playerPID), strconv.Itoa(secs)}, true
+	}
+	if os.Getenv("MW_FANFARE_PLAYER") != "" {
+		return "", nil, false
+	}
+	n := strconv.Itoa(secs + 2)
+	p := strconv.Itoa(playerPID)
+	switch goos {
+	case "darwin":
+		script := `r=$(osascript -e 'display dialog "Celebration playing" with title "miniwaves" buttons {"Stop"} default button 1 giving up after ` + n + `')` +
+			`; case "$r" in *"gave up:true"*) ;; *"button returned:Stop"*) kill -TERM -` + p + ` 2>/dev/null || kill -TERM ` + p + `;; esac`
+		return "sh", []string{"-c", script}, true
+	case "windows":
+		script := `$r=(New-Object -ComObject WScript.Shell).Popup('Celebration playing - click OK to stop',` + n + `,'miniwaves',0); if($r -eq 1){taskkill /PID ` + p + ` /T /F}`
+		return "powershell", []string{"-NoProfile", "-c", script}, true
+	}
+	if _, err := look("zenity"); err != nil {
+		return "", nil, false
+	}
+	script := `zenity --question --title=miniwaves --text='Celebration playing' --ok-label=Stop --cancel-label=Close --timeout=` + n + ` && kill -TERM -` + p + ` 2>/dev/null || true`
+	return "sh", []string{"-c", script}, true
+}
+
+// startStopControl launches the Stop dialog detached and records it (best effort, never fails).
+func startStopControl(dir string, playerPID, secs int) {
+	name, args, ok := stopControlCommand(runtime.GOOS, playerPID, secs, lookPath)
+	if !ok {
+		return
+	}
+	if pid, err := startDetached(name, args); err == nil {
+		recordPlayer(dir, pid)
+	}
+}
+
+func startPlayer(dir, file string, secs int, vol float64) (int, error) {
+	name, args, err := playerCommand(runtime.GOOS, file, secs, vol, lookPath)
+	if err != nil {
+		return 0, err
+	}
+	pid, err := startDetached(name, args)
+	if err != nil {
+		return 0, err
+	}
+	recordPlayer(dir, pid)
+	return pid, nil
+}
+
+func startDetached(name string, args []string) (int, error) {
 	cmd := exec.Command(name, args...)
 	detach(cmd, true)
 	if err := cmd.Start(); err != nil {
 		if runtime.GOOS != "windows" {
-			return err
+			return 0, err
 		}
 		cmd = exec.Command(name, args...) // a job object may refuse the breakaway: retry with the plain flags
 		detach(cmd, false)
 		if err := cmd.Start(); err != nil {
-			return err
+			return 0, err
 		}
 	}
 	pid := cmd.Process.Pid
 	cmd.Process.Release()
-	recordPlayer(dir, pid)
-	return nil
+	return pid, nil
 }
 
 // ---- players started by mw (mw fanfare stop) ----
@@ -467,6 +537,7 @@ func playClip(w *Workspace, kind string) error {
 	file, secs := p.Fanfare, c.MilestoneSeconds
 	if kind == "finale" {
 		file, secs = p.Finale, c.FinaleSeconds
+		return playFinale(expandHome(c.Dir), file, secs, c.Volume, *c.StopDialog)
 	}
 	return playFile(expandHome(c.Dir), file, secs, c.Volume)
 }
@@ -701,7 +772,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		if c.Enabled {
 			state = "enabled"
 		}
-		fmt.Printf("fanfare: %s\ndir: %s\nmilestone_seconds: %d\nfinale_seconds: %d\nvolume: %g\n", state, c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume)
+		fmt.Printf("fanfare: %s\ndir: %s\nmilestone_seconds: %d\nfinale_seconds: %d\nvolume: %g\nstop_dialog: %v\n", state, c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume, *c.StopDialog)
 		man := "manifest present"
 		if merr != nil {
 			man = "no manifest (mw fanfare fetch)"
@@ -712,7 +783,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		return printData(append([]pairInfo{}, scanPairs(dir)...), o)
 	case "set":
 		if len(pos) == 0 {
-			return errors.New("usage: mw fanfare set enabled=true milestone_seconds=N finale_seconds=N volume=V dir=PATH")
+			return errors.New("usage: mw fanfare set enabled=true milestone_seconds=N finale_seconds=N volume=V stop_dialog=true dir=PATH")
 		}
 		for _, kv := range pos {
 			k, v, ok := strings.Cut(kv, "=")
@@ -748,6 +819,12 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 				} else {
 					c.FinaleSeconds = n
 				}
+			case "stop_dialog":
+				b, e := strconv.ParseBool(v)
+				if e != nil {
+					return fmt.Errorf("stop_dialog: want true or false, got %q", v)
+				}
+				c.StopDialog = &b
 			case "volume":
 				f, e := strconv.ParseFloat(v, 64)
 				if e != nil || f <= 0 || f > 4 {
@@ -755,14 +832,14 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 				}
 				c.Volume = f
 			default:
-				return fmt.Errorf("unknown setting %q (enabled, dir, milestone_seconds, finale_seconds, volume)", k)
+				return fmt.Errorf("unknown setting %q (enabled, dir, milestone_seconds, finale_seconds, volume, stop_dialog)", k)
 			}
 		}
 		w.Fanfare = &c
 		if err := save(path, w); err != nil {
 			return err
 		}
-		fmt.Printf("fanfare saved: enabled=%v dir=%s milestone_seconds=%d finale_seconds=%d volume=%g\n", c.Enabled, c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume)
+		fmt.Printf("fanfare saved: enabled=%v dir=%s milestone_seconds=%d finale_seconds=%d volume=%g stop_dialog=%v\n", c.Enabled, c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume, *c.StopDialog)
 		return nil
 	case "test":
 		kind := "milestone"
@@ -777,11 +854,15 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 			return err
 		}
 		file, secs := p.Fanfare, c.MilestoneSeconds
+		var perr error
 		if kind == "finale" {
 			file, secs = p.Finale, c.FinaleSeconds
+			perr = playFinale(dir, file, secs, c.Volume, *c.StopDialog)
+		} else {
+			perr = playFile(dir, file, secs, c.Volume)
 		}
-		if err := playFile(dir, file, secs, c.Volume); err != nil {
-			return err
+		if perr != nil {
+			return perr
 		}
 		fmt.Printf("playing %s %s (%ds): %s\n", p.Name, kind, secs, file)
 		return nil
