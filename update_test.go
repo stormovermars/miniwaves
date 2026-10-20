@@ -115,11 +115,16 @@ func TestVersionLinks(t *testing.T) {
 
 func TestAssetURLPinned(t *testing.T) {
 	for u, ok := range map[string]bool{
-		"https://github.com/x/y/releases/download/v1/a.tar.gz": true,
-		"https://objects.githubusercontent.com/a":              true,
-		"http://github.com/a":                                  false,
-		"https://evil.example/a":                               false,
-		"https://github.com.evil.example/a":                    false,
+		"https://github.com/x/y/releases/download/v1/a.tar.gz":                             true,
+		"https://objects.githubusercontent.com/a":                                          true,
+		"https://release-assets.githubusercontent.com/github-production-release-asset/1/a": true,
+		"http://github.com/a":                                         false,
+		"http://release-assets.githubusercontent.com/a":               false,
+		"https://evil.example/a":                                      false,
+		"https://evilgithubusercontent.com/a":                         false,
+		"https://github.com.evil.example/a":                           false,
+		"https://release-assets.githubusercontent.com.evil.example/a": false,
+		"https://x.release-assets.githubusercontent.com/a":            false,
 	} {
 		pu, _ := url.Parse(u)
 		if err := assetURLCheck(pu); (err == nil) != ok {

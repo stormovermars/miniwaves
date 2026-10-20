@@ -42,7 +42,7 @@ var (
 	}}
 	// assetURLCheck pins download URLs to GitHub (tests swap it for the httptest host).
 	assetURLCheck = func(u *url.URL) error {
-		if u.Scheme == "https" && (u.Host == "github.com" || u.Host == "objects.githubusercontent.com") {
+		if u.Scheme == "https" && (u.Host == "github.com" || u.Host == "objects.githubusercontent.com" || u.Host == "release-assets.githubusercontent.com") {
 			return nil
 		}
 		return fmt.Errorf("refusing download from %s", u.Redacted())

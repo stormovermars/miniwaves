@@ -315,6 +315,10 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 
 ## Changelog
 
+### 0.2.6
+
+- `mw update` accepts the `release-assets.githubusercontent.com` redirect GitHub now uses for release downloads (0.2.5 and older refuse it; update those once via `install.sh` or the plugin update). Hosts still match exactly over https.
+
 ### 0.2.5
 
 - Gate levels: `mw gate level trust|proof|spec|judged [-t SLUG|--workspace]` sets evidence/acceptance/judge cumulatively (trust none, proof evidence, spec + acceptance, judged + judge). The default is now `proof`: evidence is on for every tenant, not only product tenants; `mw gate level trust` restores the old non-product behaviour.
