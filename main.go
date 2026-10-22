@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "ticket": true, "format": true, "width": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "ticket": true, "format": true, "width": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -526,7 +526,10 @@ ready, start, block, done, reopen, accept, reject, note, ask, answer, decide, ed
 (-j: {events, next}; text: a last "next: CURSOR" line). The cursor is opaque and bounded (the newest time plus 8-byte hashes of the events
 of the 24h before it, so an event that reaches the board late with an older stamp is still delivered once); --since "" or start returns everything.
 --since-file PATH reads the cursor from PATH (missing = start) and writes the next one back atomically, instead of --since.
-An event stamped after the cursor time that arrives later (a git merge) is returned once; one stamped before it is not (read from start). -n keeps the first N.`,
+An event stamped after the cursor time that arrives later (a git merge) is returned once; one stamped before it is not (read from start). -n keeps the first N.
+mw log [-t SLUG | -A] --follow [--since CURSOR|start] [--poll SECONDS] [--exec] [-j]
+--follow is a live feed: new events as they arrive, oldest first, from now unless --since names a cursor (default poll 2s; -j prints one JSON object per line; Ctrl-C stops it; not with -n or --since-file).
+--exec also runs your alerts.exec (mw user set alerts.exec='["notify-send","mw"]') for each event whose action is in alerts.on (mw user set alerts.on=block,ask; empty means no event). The command is an argv array, never run through a shell; the event is a JSON file (ts, tenant, item, action, by, note, key) in a private temp file whose path is added as the last argument; stdin is closed; 30 s limit; a failure is reported on stderr and the feed goes on. MW_ALERT_EXEC (the same JSON array) overrides alerts.exec.`,
 		"wave": `mw wave create TITLE... [-t SLUG] [-p WAVE] [-b TEXT]
 mw wave add|remove WAVE ID... [-t SLUG]
 mw wave step WAVE KEY=NOTE [KEY=NOTE...] [--na] [-t SLUG]   (several steps in one call; --na applies to all)
@@ -875,7 +878,7 @@ func options(args []string) (map[string]string, []string, error) {
 		if key == "" || !validOptions[key] {
 			return nil, nil, fmt.Errorf("unknown option %s", a)
 		}
-		if key == "json" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "archived" {
+		if key == "json" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "archived" || key == "follow" || key == "exec" {
 			o[key] = "true"
 			continue
 		}
