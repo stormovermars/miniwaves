@@ -41,7 +41,7 @@ All embedded prompts use one retrieval command:
 
 ```text
 mw get-prompt session NAME [-t TENANT] [-a ROLE] [--headless]
-mw get-prompt dispatcher [NAME]
+mw get-prompt dispatcher|newsdesk [NAME] [--job ID]
 mw get-prompt coach [NAME]
 ```
 
@@ -109,7 +109,7 @@ mw session start NAME [-t SLUG] [-a ROLE]   # optional: `start` registers an unk
 mw session list [-t SLUG] [-j] [-v] | stop NAME [--release]
 mw session reap [-t SLUG | -A] [--older-than DUR] [--except NAME,NAME] [-n|--dry-run] [-j]
 mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]   # exit 3 if NAME exists
-mw get-prompt dispatcher|coach [NAME] [-j]
+mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
 mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
 mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]   # -c under a session only while acceptance is empty
 mw gate [-t SLUG] [-j] | mw gate level trust|proof|spec|judged [-t SLUG] [--workspace] [--by NAME] | mw gate evidence|acceptance|judge on|off|auto [--by NAME] [--workspace]
@@ -339,6 +339,17 @@ mw jobs show [ID] [-j]              # effective values (defaults applied) and th
 | `pane.style` | none | `^[a-z0-9-]{1,32}$` |
 
 Job ids match `^[a-z0-9][a-z0-9-]{0,31}$`. `jobs show` is a read; the other three write the index. Values are data: nothing here is executed.
+
+### Roles (prompts)
+
+```text
+mw get-prompt dispatcher [NAME] [--job ID] [-j]
+mw get-prompt newsdesk [NAME] [--job ID] [-j]
+```
+
+- **dispatcher** routes work and reviews it. For sessions it spawns, the review loop is: the worker signals `mw note ID "ready for review"` and stays `doing`; the dispatcher reviews the diff, merges, re-runs the tests, then runs `mw done`. One task per session; a brief ends with "ping when ready, need input, or idle"; a question only a human can answer goes through `mw ask`. wr builders are unchanged: they keep `mw done` / `mw block`.
+- **newsdesk** runs `mw news`, tells the human what changed in a few lines, keeps the human docs current, and alerts only on two events: a milestone closed or a new needs-you item. It never edits code, the board or the plan.
+- `--job ID` fills the variables from `jobs.<ID>`: `max_workers`, `worktrees`, `lock` (the dispatcher), `title`, `news.out`, `news.url` (the newsdesk). Without `--job` the defaults apply (4 workers, worktrees on, no lock). An unknown job is an error. Prompts are embedded in mw and never read from repo files.
 
 ## Fanfare
 

@@ -29,7 +29,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "lookback": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true,
+	"since": true, "lookback": true, "job": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -342,7 +342,7 @@ cleared, a note appended) and then stops it. reap releases and stops every sessi
 session's last activity is set by session start and by every start/ready/block/done/reopen, note and
 edit it runs. The implicit local session is never reaped.`,
 		"get-prompt": `mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]
-mw get-prompt dispatcher|coach [NAME] [-j]
+mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
 Print a minimal embedded prompt to paste into an assistant. Retrieval changes no state.
 session: exit code 3 when the session NAME already exists (-j prints {"error":"session_exists","session":NAME}).
 --headless drops the Setup block, Loop, folders hint and reply format (a runner handles those) and
@@ -529,7 +529,7 @@ Usage:
   mw session start NAME [-t SLUG] [-a ROLE]
   mw session list [-t SLUG] [-j] [-v] | stop NAME [--release] | reap [-t SLUG | -A] [--older-than DUR] [--except NAMES] [-n] [-j]
   mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]
-  mw get-prompt dispatcher|coach [NAME] [-j]
+  mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
   mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]
   mw user show [-j] | mw user set KEY=VALUE...
