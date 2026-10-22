@@ -50,7 +50,7 @@ const previous = atom({ plugin: 'mw-jobs', key: 'previous' } as const, {})
 const staleSince = atom({ plugin: 'mw-jobs', key: 'staleSince' } as const, {})
 const selected = atom({ plugin: 'mw-jobs', key: 'selected' } as const, '')
 const muted = atom({ plugin: 'mw-jobs', key: 'muted' } as const, false)
-const refreshEvery = atom({ plugin: 'mw-jobs', key: 'refreshEvery' } as const, '1m')
+const refreshEvery = atom({ plugin: 'mw-jobs', key: 'refreshEvery' } as const, '30s')
 const newsSeen = atom({ plugin: 'mw-jobs', key: 'newsSeen' } as const, {})
 const jobDesc = atom({ plugin: 'mw-jobs', key: 'jobDesc' } as const, {})
 const inChat = atom({ plugin: 'mw-jobs', key: 'inChat' } as const, {})
@@ -91,10 +91,95 @@ const isoHhmm = (iso: string) => {
   return Number.isNaN(ms) ? '--:--' : hhmm(ms)
 }
 
+/** An absolute path on any OS: `/x`, `C:\x` or `C:/x`, or a UNC `\\host`. */
+export const isAbs = (p: string) => p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\')
 const expand = (path: string, home: string, base?: string) => {
-  if (path.startsWith('~')) return `${home}${path.slice(1)}`
-  if (path.startsWith('/')) return path
+  if (path === '~' || path.startsWith('~/') || path.startsWith('~\\')) return `${home}${path.slice(1)}`
+  if (isAbs(path)) return path
   return base ? `${base}/${path}` : path
+}
+
+/** The user's home folder: HOME, else USERPROFILE (Windows). */
+const homeOf = async ($: any): Promise<string> => {
+  let h: unknown
+  try {
+    h = await $.env.get('HOME')
+  } catch {
+    h = undefined
+  }
+  if (typeof h === 'string' && h !== '') return h
+  try {
+    h = await $.env.get('USERPROFILE')
+  } catch {
+    h = undefined
+  }
+  return typeof h === 'string' ? h : ''
+}
+
+let osCache: 'windows' | 'mac' | 'linux' | undefined
+/** The OS: Windows from the OS variable, else `uname -s` (a failed run counts as macOS). */
+const osKind = async ($: any): Promise<'windows' | 'mac' | 'linux'> => {
+  if (osCache !== undefined) return osCache
+  let env: unknown
+  try {
+    env = await $.env.get('OS')
+  } catch {
+    env = undefined
+  }
+  if (env === 'Windows_NT') return (osCache = 'windows')
+  try {
+    const r = await $.process.run(['uname', '-s'], { timeoutMs: 5000 })
+    const u = String(r.stdout ?? '').trim()
+    if (r.exitCode === 0 && u !== '') return (osCache = u === 'Darwin' ? 'mac' : 'linux')
+  } catch {
+    // default
+  }
+  return (osCache = 'mac')
+}
+
+/** The command that opens a plain file in a text editor, per OS: `open -t`, `xdg-open`, `cmd /c start "" FILE` (argv only, no shell string). */
+export const openerArgv = (os: 'windows' | 'mac' | 'linux', path: string): string[] =>
+  os === 'windows' ? ['cmd', '/c', 'start', '', path] : os === 'linux' ? ['xdg-open', path] : ['open', '-t', path]
+
+let mwBin: string | undefined
+let mwProbed = false
+/** The mw binary as an absolute path: PATH first, then the usual install folders (a desktop app's PATH lacks ~/.local/bin). Undefined when not found: the bare name is used. */
+const resolveMw = async ($: any): Promise<string | undefined> => {
+  if (mwBin !== undefined || mwProbed) return mwBin
+  mwProbed = true
+  const os = await osKind($)
+  try {
+    const r = await $.process.run(os === 'windows' ? ['where.exe', 'mw'] : ['/bin/sh', '-c', 'command -v mw'], { timeoutMs: 5000 })
+    const first = String(r.stdout ?? '').split(/\r?\n/)[0]?.trim() ?? ''
+    if (r.exitCode === 0 && isAbs(first)) return (mwBin = first)
+  } catch {
+    // fall through to the known folders
+  }
+  const home = await homeOf($)
+  let local = ''
+  try {
+    local = (await $.env.get('LOCALAPPDATA')) ?? ''
+  } catch {
+    local = ''
+  }
+  const known =
+    os === 'windows'
+      ? [...(home !== '' ? [`${home}\\.local\\bin\\mw.exe`] : []), ...(local !== '' ? [`${local}\\Programs\\mw\\mw.exe`, `${local}\\mw\\mw.exe`] : [])]
+      : [...(home !== '' ? [`${home}/.local/bin/mw`, `${home}/go/bin/mw`] : []), '/opt/homebrew/bin/mw', '/usr/local/bin/mw', '/usr/bin/mw']
+  for (const p of known) {
+    try {
+      if (await $.fs.exists(p)) return (mwBin = p)
+    } catch {
+      // next
+    }
+  }
+  return undefined
+}
+
+/** Every process the panes run: `mw` becomes its absolute path when found; anything else runs as given. */
+const proc = async ($: any, argv: string[], init?: Record<string, unknown>): Promise<any> => {
+  const bin = argv[0] === 'mw' ? await resolveMw($) : undefined
+  return $.process.run(bin !== undefined ? [bin, ...argv.slice(1)] : argv, init)
 }
 
 const isPlaceholder = (w: MwJobsWave) => w.state === 'done' && memberParts(w).total === 0
@@ -1818,7 +1903,7 @@ const resolvedDir = new Map<string, string[]>()
 const unq = (t: string) => t.replace(/^['"]|['"]$/g, '')
 const absDir = (p: string, cwd: string, home: string): string => {
   const x = unq(p)
-  const a = x === '~' ? home : x.startsWith('~/') ? `${home}${x.slice(1)}` : x.startsWith('/') ? x : `${cwd.replace(/\/$/, '')}/${x}`
+  const a = x === '~' ? home : x.startsWith('~/') ? `${home}${x.slice(1)}` : isAbs(x) ? x : `${cwd.replace(/[\\/]$/, '')}/${x}`
   return a.replace(/\/\.(?=\/|$)/g, '').replace(/\/+$/, '') || '/'
 }
 
@@ -1834,7 +1919,7 @@ export const boardHints = (tool: string, input: Record<string, unknown>, cwd: st
     for (const part of cmd.split(/&&|\|\||;|\n/)) {
       const words = part.trim().split(/\s+/).filter(w => w !== '')
       if (words[0] === 'cd' && words[1] !== undefined) { here = absDir(words[1], here, home); continue }
-      const at = words.findIndex(w => w === 'mw' || w.endsWith('/mw'))
+      const at = words.findIndex(w => w === 'mw' || /[\\/]mw(?:\.exe)?$/.test(w))
       if (at < 0) continue
       add(here)
       const rest = words.slice(at + 1)
@@ -1862,7 +1947,7 @@ const noteUsed = async ($: any, dirs: string[]): Promise<boolean> => {
     let found: ScanBoard[] = []
     if (roots === undefined) {
       try {
-        const r = await $.process.run(['mw', 'boards', d, '--up', '--depth', '0', '-j'], { cwd: '/', timeoutMs: 20_000 })
+        const r = await proc($, ['mw', 'boards', d, '--up', '--depth', '0', '-j'], { cwd: '/', timeoutMs: 20_000 })
         found = (r.exitCode === 0 ? parseBoards(String(r.stdout)) : undefined) ?? []
       } catch {
         found = []
@@ -1883,7 +1968,7 @@ const noteUsed = async ($: any, dirs: string[]): Promise<boolean> => {
 /** After a tool call: note the boards it used; a new one rescans the pane's list (only when the list comes from discovery). */
 const watchUse = async ($: any, e: any) => {
   try {
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     const cwd: string = (await $.session.cwd().catch(() => '')) || sessionCwd || home
     const dirs = boardHints(String(e?.tool ?? ''), (e ?? {}) as Record<string, unknown>, cwd, home)
     if (dirs.length === 0) return
@@ -1902,7 +1987,7 @@ const watchUse = async ($: any, e: any) => {
 /** At start and on reload: the transcript so far (and its agents') for mw runs and .miniwaves files, read only. */
 const replayTranscript = async ($: any) => {
   try {
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     const cwd: string = (await $.session.cwd().catch(() => '')) || sessionCwd || home
     const msgs = await $.session.messages()
     if (!Array.isArray(msgs)) return
@@ -1931,11 +2016,11 @@ const replayTranscript = async ($: any) => {
 }
 
 /** One discovery, first hit first, the rest appended, deduped by root: the boards this session used ("this session"), then up from the session's folders (3 deep); only when both are empty the home folder (4 deep). Then `mw jobs show -j` on each board. An mw without `boards` gives the hint. */
-const scanBoards = async ($: any): Promise<ScanResult> => {
-  const home: string = (await $.env.get('HOME')) ?? ''
+const scanBoards = async ($: any, dir?: string): Promise<ScanResult> => {
+  const home: string = (await homeOf($))
   const run = async (argv: string[], cwd: string): Promise<string | undefined> => {
     try {
-      const r = await $.process.run(argv, { cwd, timeoutMs: 30_000 })
+      const r = await proc($, argv, { cwd, timeoutMs: 30_000 })
       return r.exitCode === 0 ? String(r.stdout) : undefined
     } catch {
       return undefined
@@ -1949,21 +2034,21 @@ const scanBoards = async ($: any): Promise<ScanResult> => {
   } catch {
     root = ''
   }
-  const folders = [cwd, ...(root && root !== cwd ? [root] : [])]
+  const folders = dir !== undefined ? [expand(dir, home)] : [cwd, ...(root && root !== cwd ? [root] : [])]
   const boards: ScanBoard[] = [...used]
   const addAll = (l: ScanBoard[]) => { for (const b of l) if (!boards.some(x => x.dir === b.dir)) boards.push(b) }
   let old = false
+  // discover.home / discover.depth (mw keys): whether and how deep ~ (or an asked-for folder) is scanned
+  const scanHome = (await cfgGet($, 'discover.home')) !== 'false'
+  const depth0 = Number(await cfgGet($, 'discover.depth'))
+  const depth = Number.isInteger(depth0) && depth0 >= 1 && depth0 <= 6 ? depth0 : 4
   for (const f of folders) {
-    const got = parseBoards(await run(['mw', 'boards', f, '--up', '--depth', '3', '-j'], f))
+    const got = parseBoards(await run(dir !== undefined ? ['mw', 'boards', f, '--depth', String(depth), '-j'] : ['mw', 'boards', f, '--up', '--depth', '3', '-j'], f))
     if (got === undefined) old = true
     else addAll(got)
   }
   if (old && boards.length === 0) return { jobs: [], hint: SCAN_OLD_HINT, error: null }
-  // discover.home / discover.depth (mw keys): whether and how deep ~ is scanned when nothing nearer is found
-  const scanHome = (await cfgGet($, 'discover.home')) !== 'false'
-  const depth0 = Number(await cfgGet($, 'discover.depth'))
-  const depth = Number.isInteger(depth0) && depth0 >= 1 && depth0 <= 9 ? depth0 : 4
-  if (boards.length === 0 && home !== '' && scanHome) addAll(parseBoards(await run(['mw', 'boards', home, '--depth', String(depth), '-j'], home)) ?? [])
+  if (boards.length === 0 && dir === undefined && home !== '' && scanHome) addAll(parseBoards(await run(['mw', 'boards', home, '--depth', String(depth), '-j'], home)) ?? [])
   if (boards.length === 0) return { jobs: [], hint: null, error: `no mw boards found under ${cwd} or ~` }
   const outs = await Promise.all(boards.map(async b => [b.dir, await run(['mw', 'jobs', 'show', '-j'], b.dir)] as const))
   const usedDirs = new Set(used.map(b => b.dir))
@@ -1973,25 +2058,33 @@ const scanBoards = async ($: any): Promise<ScanResult> => {
 }
 
 /** The discovery result, run once per session (or again with force, the Scan button); concurrent callers share one run. */
-const scanned = async ($: any, force = false): Promise<ScanResult> => {
+const scanned = async ($: any, force = false, dir?: string): Promise<ScanResult> => {
   if (!force && scanCache !== undefined) return scanCache
   if (scanRun === undefined) {
-    scanRun = scanBoards($).finally(() => { scanRun = undefined })
+    scanRun = scanBoards($, dir).finally(() => { scanRun = undefined })
   }
   scanCache = await scanRun
   return scanCache
 }
 
 /** The Scan button: discover the boards again, then refresh. */
-const rescan = async ($: any) => {
-  await scanned($, true)
+const rescan = async ($: any, dir?: string) => {
+  await scanned($, true, dir)
   await loadRegistry($)
   await refreshAll($)
 }
 
+/** `/mw-watch scan [DIR]`: look for boards again (under DIR, else the usual places), then open the jobs pane. */
+const scanCommand = async ($: any, dir?: string) => {
+  await rescan($, dir)
+  await openMain($, true)
+  const reg: MwJobsRegistry = await read($, registry)
+  return { text: reg.jobs.length === 0 ? 'Jobs: no mw boards found.' : `Jobs: found ${reg.jobs.length} job${reg.jobs.length === 1 ? '' : 's'}.` }
+}
+
 /** The one place the panes' job list comes from: the registry file, else the boards discovery finds. */
 const loadRegistry = async ($: any) => {
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   let reg: MwJobsRegistry
   try {
     reg = { ...parseRegistry(await $.fs.read(expand(registryPath(), home))), source: 'registry' }
@@ -2057,7 +2150,10 @@ const markSeen = async ($: any, id: string) => {
 // ---- per-job log files: <dirname(registry)>/logs/<job-id>/{alerts,decisions}.log, written with $.fs only, nowhere else ----
 export const LOG_MAX = 1_000_000
 const logRoot = (home: string) => `${dirOf(expand(registryPath(), home))}/logs`
-const dirOf = (p: string) => (p.lastIndexOf('/') > 0 ? p.slice(0, p.lastIndexOf('/')) : '.')
+const dirOf = (p: string) => {
+  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
+  return i > 0 ? p.slice(0, i) : '.'
+}
 const safeId = (id: string) => /^[A-Za-z0-9_.-]+$/.test(id) && !id.includes('..')
 let logChain: Promise<void> = Promise.resolve()
 
@@ -2066,7 +2162,7 @@ export const appendLog = ($: any, jobId: string, file: 'alerts.log' | 'decisions
   if (lines.length === 0 || !safeId(jobId)) return Promise.resolve()
   logChain = logChain.then(async () => {
     try {
-      const home: string = (await $.env.get('HOME')) ?? ''
+      const home: string = (await homeOf($))
       const path = `${logRoot(home)}/${jobId}/${file}`
       let cur = ''
       try {
@@ -2091,7 +2187,7 @@ const logWriteFailed = async ($: any) => {
   const m = (await read($, alerted)) as Record<string, string[]>
   if ((m._sys ?? []).includes('fail:logwrite')) return
   await update($, alerted, (x: Record<string, string[]>) => ({ ...x, _sys: capAlerted(x._sys ?? [], ['fail:logwrite']) }))
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   $.ui.toast(`Jobs: could not write the log files in ${logRoot(home)}`, { timeoutMs: 8000 })
 }
 
@@ -2132,7 +2228,7 @@ const syncDecisions = async ($: any, job: MwJobsJob, cwd: string) => {
     }
     let out: { events?: unknown; next?: unknown } | undefined
     try {
-      const r = await $.process.run(['mw', 'log', '-t', tenant, '--since', cursor, '-j'], { cwd, timeoutMs: 20_000 })
+      const r = await proc($, ['mw', 'log', '-t', tenant, '--since', cursor, '-j'], { cwd, timeoutMs: 20_000 })
       out = r.exitCode === 0 ? (parseJson(r.stdout) as { events?: unknown; next?: unknown } | undefined) : undefined
     } catch {
       out = undefined
@@ -2330,12 +2426,12 @@ const refreshJobRun = async ($: any, job: MwJobsJob): Promise<void> => {
   inFlight.add(job.id)
   await setBusy($, job.id, true)
   try {
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     const cwd = expand(job.board, home)
     let lastWhy = ''
     const run = async (argv: string[]): Promise<unknown> => {
       try {
-        const r = await $.process.run(argv, { cwd, timeoutMs: 20_000 })
+        const r = await proc($, argv, { cwd, timeoutMs: 20_000 })
         if (r.exitCode !== 0) {
           lastWhy = await whyFailed($, cwd, { stderr: String(r.stderr ?? '') })
           return undefined
@@ -2749,11 +2845,11 @@ export const fanfareNextArgs = (f: MwJobsFanfare): string[] => {
 const fanfareBusy = new Set<string>()
 
 const loadFanfare = async ($: any, job: MwJobsJob): Promise<MwJobsFanfare | null> => {
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   const cwd = expand(job.board, home)
   const out = async (argv: string[]) => {
     try {
-      const r = await $.process.run(argv, { cwd, timeoutMs: 20_000 })
+      const r = await proc($, argv, { cwd, timeoutMs: 20_000 })
       return r.exitCode === 0 ? String(r.stdout) : undefined
     } catch {
       return undefined
@@ -2772,11 +2868,11 @@ const fanfareCycle = async ($: any, job: MwJobsJob) => {
   try {
     const cur = ((await read($, fanfare)) as Record<string, MwJobsFanfare | null>)[job.id] ?? (await loadFanfare($, job))
     if (!cur) return
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     let ok = false
     try {
       // the newer mw: `mw configure` (the same keys); an older one: `mw user set`
-      const r = await $.process.run(['mw', ...(cfgOk === true ? ['configure'] : ['user', 'set']), ...fanfareNextArgs(cur)], { cwd: expand(job.board, home), timeoutMs: 20_000 })
+      const r = await proc($, ['mw', ...(cfgOk === true ? ['configure'] : ['user', 'set']), ...fanfareNextArgs(cur)], { cwd: expand(job.board, home), timeoutMs: 20_000 })
       ok = r.exitCode === 0
     } catch {
       ok = false
@@ -2841,9 +2937,9 @@ const cfgApplied = new Map<string, string>()
 let cfgOk: boolean | null = null
 
 const mwHome = async ($: any, args: string[]) => {
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   try {
-    return (await $.process.run(['mw', ...args], { cwd: home || '/', timeoutMs: 20_000 })) as { exitCode: number; stdout: unknown; stderr: unknown }
+    return (await proc($, ['mw', ...args], { cwd: home || '/', timeoutMs: 20_000 })) as { exitCode: number; stdout: unknown; stderr: unknown }
   } catch (err) {
     return { exitCode: -1, stdout: '', stderr: String((err as Error)?.message ?? err) }
   }
@@ -3182,7 +3278,7 @@ const mainTitle = async ($: any) => {
 
 /** Reads <board>/docs/news/status.md with $.fs only (never a script), capped at 9,500 characters (the Markdown element's own limit is 10,000). */
 const loadNews = async ($: any, job: MwJobsJob) => {
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   let text: string | null = null
   let truncated = false
   try {
@@ -3207,12 +3303,12 @@ const runNewsOut = async ($: any, job: MwJobsJob, kind: 'text' | 'md', cols: num
   if (outInFlight.has(key)) return
   outInFlight.add(key)
   try {
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     const argv = kind === 'text' ? ['mw', 'news', '--job', job.id, '--format', 'text', '--width', String(cols)] : ['mw', 'news', '--job', job.id, '--format', 'md', '-o', '-']
     let ok = false
     let text = ''
     try {
-      const r = await $.process.run(argv, { cwd: expand(job.board, home), timeoutMs: 30_000 })
+      const r = await proc($, argv, { cwd: expand(job.board, home), timeoutMs: 30_000 })
       ok = r.exitCode === 0 && String(r.stdout).trim() !== ''
       text = ok ? String(r.stdout) : ''
     } catch {
@@ -3332,7 +3428,7 @@ const loadModels = async ($: any, job: MwJobsJob, js?: Record<string, unknown>):
   modelInFlight.add(key)
   modelProbed.add(key)
   try {
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     const cwd = expand(job.board, home)
     if (js !== undefined) lastJobShow[key] = js
     const dir = releasesDirOf(lastJobShow[key], cwd, home)
@@ -3355,11 +3451,11 @@ const loadModels = async ($: any, job: MwJobsJob, js?: Record<string, unknown>):
     entry.latest = Math.max(entry.latest, entry.nums[entry.nums.length - 1] ?? 0)
     try {
       const full = (await wantsFull($)) && !fullUnsupported.has(job.id)
-      let r = await $.process.run(['mw', 'news', '--job', job.id, '--format', 'json', ...(full ? ['--full'] : [])], { cwd, timeoutMs: 30_000 })
+      let r = await proc($, ['mw', 'news', '--job', job.id, '--format', 'json', ...(full ? ['--full'] : [])], { cwd, timeoutMs: 30_000 })
       if (full && r.exitCode !== 0) {
         // an mw before --full: the capped lists, and the pane says why
         fullUnsupported.add(job.id)
-        r = await $.process.run(['mw', 'news', '--job', job.id, '--format', 'json'], { cwd, timeoutMs: 30_000 })
+        r = await proc($, ['mw', 'news', '--job', job.id, '--format', 'json'], { cwd, timeoutMs: 30_000 })
       }
       entry.full = full && !fullUnsupported.has(job.id) && r.exitCode === 0
       if (r.exitCode === 0) {
@@ -3376,7 +3472,7 @@ const loadModels = async ($: any, job: MwJobsJob, js?: Record<string, unknown>):
     const chosenTenant = (((await read($, tenantSel)) as Record<string, string>)[job.id] ?? '') as string
     if (chosenTenant !== '' && entry.draft !== undefined) {
       try {
-        const r = await $.process.run(['mw', 'news', '--job', job.id, '--format', 'json', '--tenant', chosenTenant], { cwd, timeoutMs: 30_000 })
+        const r = await proc($, ['mw', 'news', '--job', job.id, '--format', 'json', '--tenant', chosenTenant], { cwd, timeoutMs: 30_000 })
         const res = r.exitCode === 0 ? parseModel(String(r.stdout), metricsOfModel) : {}
         if (res.model) entry.tdraft = { slug: chosenTenant, model: { ...res.model, only: chosenTenant } }
       } catch {
@@ -3455,11 +3551,11 @@ const doRelease = async ($: any, job: MwJobsJob) => {
 
 const doReleaseRun = async ($: any, job: MwJobsJob) => {
   await setNewsView($, job.id, { confirm: false })
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   let out = ''
   let code = 1
   try {
-    const r = await $.process.run(['mw', 'news', '--job', job.id, '--release'], { cwd: expand(job.board, home), timeoutMs: 60_000 })
+    const r = await proc($, ['mw', 'news', '--job', job.id, '--release'], { cwd: expand(job.board, home), timeoutMs: 60_000 })
     code = r.exitCode
     out = `${String(r.stdout)}\n${String(r.stderr)}`.trim()
   } catch (err) {
@@ -3845,7 +3941,7 @@ const openNewsTab = async ($: any, id: string, focus: boolean) => {
   if (focus) await markNewsSeen($, id)
   const title = await newsTitleOf($, id)
   lastNewsTitle = title
-  if (focus) await openChecked($, { id: NEWS_PANE, title, focus: true }, 'news', '/jobs news')
+  if (focus) await openChecked($, { id: NEWS_PANE, title, focus: true }, 'news', '/mw-news')
   else await $.ui.open({ id: NEWS_PANE, title })
 }
 const openNews = (($: any, id: string) => openNewsTab($, id, true))
@@ -3877,7 +3973,7 @@ const openMain = async ($: any, focus = false, first?: string) => {
   const job = reg.jobs.find(j => j.id === sel) ?? reg.jobs[0]
   if (job) await openNewsTab($, job.id, false)
   const spec = { id: PANE, title: await mainTitle($) }
-  if (focus) await openChecked($, { ...spec, focus: true }, 'jobs', '/jobs')
+  if (focus) await openChecked($, { ...spec, focus: true }, 'jobs', '/mw-jobs')
   else await $.ui.open(spec)
   // pane.open=news (mw key): the news pane is the one in front
   if (first === 'news' && job) await $.ui.open({ id: NEWS_PANE, title: await newsTitleOf($, job.id), focus: true })
@@ -3885,7 +3981,7 @@ const openMain = async ($: any, focus = false, first?: string) => {
 
 /** A file: Link is refused on every surface, so the panel button asks the OS to open status.md (no script of the repo runs). */
 const openPanel = async ($: any, job: MwJobsJob) => {
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   const path = `${expand(job.board, home)}/docs/news/status.md`
   // a repo could commit status.md as a link to an .app or .command: only a plain .md file is ever opened, and only in the text editor
   let why = ''
@@ -3904,7 +4000,7 @@ const openPanel = async ($: any, job: MwJobsJob) => {
     return
   }
   try {
-    await $.process.run(['open', '-t', path])
+    await proc($, openerArgv(await osKind($), path))
   } catch {
     // no opener
   }
@@ -3920,13 +4016,13 @@ const splitRef = (tenant: string, id: string) => (id.includes(':') ? { tenant: i
 const loadDetail = async ($: any, r: MwJobsDetailRef) => {
   const reg: MwJobsRegistry = await read($, registry)
   const job = reg.jobs.find(j => j.id === r.jobId)
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   const argv = r.kind === 'item' ? ['mw', 'show', r.id, '-t', r.tenant, '-j'] : ['mw', 'wave', 'show', r.id, '-t', r.tenant, '-j']
   let next: { text?: string; why?: string }
   if (job === undefined) next = { why: `unknown job ${r.jobId}` }
   else {
     try {
-      const out = await $.process.run(argv, { cwd: expand(job.board, home), timeoutMs: 20_000 })
+      const out = await proc($, argv, { cwd: expand(job.board, home), timeoutMs: 20_000 })
       next = out.exitCode === 0 ? { text: String(out.stdout) } : { why: String(out.stderr || out.stdout || `exit ${out.exitCode}`).trim().split('\n')[0]!.slice(0, 200) }
     } catch (err) {
       next = { why: String((err as Error)?.message ?? err).slice(0, 200) }
@@ -4038,7 +4134,7 @@ const backToJobs = async ($: any, id: string) => {
   const sel: string = await read($, selected)
   const job = reg.jobs.find(j => j.id === sel) ?? reg.jobs[0]
   if (job) await refreshJob($, job)
-  await openChecked($, { id: PANE, title: await mainTitle($), focus: true }, 'jobs', '/jobs')
+  await openChecked($, { id: PANE, title: await mainTitle($), focus: true }, 'jobs', '/mw-jobs')
 }
 
 const tenantCursor = new Map<string, number>()
@@ -4823,7 +4919,7 @@ const runCommand = async ($: any, args: string, alias: string | undefined) => {
     await stepBy($, word === 'bigger' ? 1 : word === 'smaller' ? -1 : 0)
     return { text: `Jobs: density ${word === 'reset' ? 'default' : word}.` }
   }
-  const m = /^every\s+(off|30s|1m|5m)$/.exec(word)
+  const m = /^every\s+(off|15s|30s|1m|5m)$/.exec(word)
   if (m) {
     await setEvery($, m[1]!)
     return { text: `Jobs: auto-refresh ${m[1]}.` }
@@ -4858,27 +4954,30 @@ const runCommand = async ($: any, args: string, alias: string | undefined) => {
 }
 
 const MW_USAGE = [
-  '/mw jobs [id]            open the jobs pane',
-  '/mw news [id]            open the news pane',
-  '/mw release [id]         cut a news release (asks, then run it again)',
-  '/mw ask [id]             ask in chat about what needs you',
-  '/mw review [id]          ask in chat about the items to review',
-  '/mw style n|b|g|a|k [jobs|news]   normal, blocks, gopher, agile, kanban',
-  '/mw size -|#|+           text size',
-  '/mw log [id] [work|alerts|decisions]   open the job log',
-  '/mw mute                 sound and notifications on/off',
-  '/mw configure            the settings pane (also /mw-configure)',
-  '/mw every off|30s|1m|5m  auto refresh',
-  '/mw fanfare stop|test [milestone|finale]',
+  '/mw-watch                open the jobs pane (zero setup); /mw-watch scan [DIR] finds boards',
+  '/mw-jobs [id]            open the jobs pane',
+  '/mw-news [id]            open the news pane',
+  '/mw-jobs release [id]    publish a news issue (asks, then run it again)',
+  '/mw-jobs ask [id]        ask in chat about what needs you',
+  '/mw-jobs review [id]     ask in chat about the items to review',
+  '/mw-jobs style n|b|g|a|k [jobs|news]   normal, blocks, gopher, agile, kanban',
+  '/mw-jobs size -|#|+      text size',
+  '/mw-jobs log [id] [work|alerts|decisions]   open the job log',
+  '/mw-jobs mute            alerts on/off',
+  '/mw-jobs every off|15s|30s|1m|5m  auto refresh',
+  '/mw-configure            the settings pane',
+  '/mw-fanfare [next|on|off|use NAME|test [milestone|finale]|stop]',
 ]
-const STYLE_KEYS: Record<string, string> = { n: 'normal', b: 'blocks', g: 'gopher', a: 'agile', k: 'kanban', j: 'kanban' }
+/** The first words /mw-jobs hands to runMw; anything else is a job id (or `stalled N`) for runCommand. */
+const MW_SUBS = new Set(['list', 'release', 'ask', 'review', 'style', 'size', 'log', 'mute', 'every', 'news', 'jobs', 'configure', 'fanfare'])
+const STYLE_KEYS: Record<string, string> = { n: 'normal', b: 'blocks', g: 'gopher', a: 'agile', k: 'kanban', j: 'kanban', normal: 'normal', blocks: 'blocks', gopher: 'gopher', agile: 'agile', kanban: 'kanban', thin: 'blocks', board: 'kanban' }
 const LOG_FILES: Record<string, string> = { work: 'work.md', alerts: 'alerts.log', decisions: 'decisions.log' }
 /** A release asked for by command arms for a minute; the second /mw release inside it runs. */
 const releaseArmed = new Map<string, number>()
 
 /** Opens a job log in the text editor the way the status.md button does: a plain file only, and a missing one is said in a toast. */
 const openLogFile = async ($: any, job: MwJobsJob, which: string) => {
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   const file = LOG_FILES[which]!
   const path = `${logRoot(home)}/${job.id}/${file}`
   let why = ''
@@ -4898,19 +4997,77 @@ const openLogFile = async ($: any, job: MwJobsJob, which: string) => {
     return `Not opening ${file}: ${why}.`
   }
   try {
-    await $.process.run(['open', '-t', path])
+    await proc($, openerArgv(await osKind($), path))
   } catch {
     // no opener
   }
   return `Opened ${file} for ${job.id}.`
 }
 
-/** `/mw`: panes, release, ask/review, style, size, log, mute, every, fanfare. Arguments are checked against fixed sets; nothing a person types reaches a shell. */
+/** `/mw-fanfare [next|on|off|use NAME|test [milestone|finale]|stop]`: the same settings as the pane's button, one word. Arguments are checked against fixed sets. */
+const fanfareCommand = async ($: any, args: string) => {
+  const words = args.trim().split(/\s+/).filter(Boolean)
+  const reg = await loadRegistry($)
+  const sel: string = await read($, selected)
+  const job = reg.jobs.find(x => x.id === sel) ?? reg.jobs[0]
+  const home: string = await homeOf($)
+  const bad = (why: string) => {
+    $.ui.toast(`Jobs: ${why}`, { timeoutMs: 6000 })
+    return { text: `${why}\n/mw-fanfare [next|on|off|use NAME|test [milestone|finale]|stop]` }
+  }
+  const sub = words[0] ?? 'next'
+  const cwd = job ? expand(job.board, home) : home || '/'
+  if (sub === 'next') {
+    if (job === undefined) return bad('no job to read the fanfare from')
+    await fanfareCycle($, job)
+    return { text: 'Fanfare: next setting.' }
+  }
+  if (sub === 'on' || sub === 'off') {
+    if (words.length !== 1) return bad(`/mw-fanfare ${sub} takes nothing`)
+    const ok = await cfgWriteOrSet($, [`fanfare.enabled=${sub === 'on' ? 'true' : 'false'}`], cwd)
+    if (job) await loadFanfare($, job)
+    return { text: ok ? `Fanfare ${sub}.` : 'Could not change the fanfare setting.' }
+  }
+  if (sub === 'use') {
+    const name = words[1]
+    if (words.length !== 2 || name === undefined || !/^[A-Za-z0-9_.-]{1,60}$/.test(name)) return bad('/mw-fanfare use needs one set name or all')
+    const ok = await cfgWriteOrSet($, [`fanfare.use=${name}`], cwd)
+    if (job) await loadFanfare($, job)
+    return { text: ok ? `Fanfare: using ${name}.` : 'Could not change the fanfare setting.' }
+  }
+  const kind = words[1]
+  const okStop = sub === 'stop' && words.length === 1
+  const okTest = sub === 'test' && words.length <= 2 && (kind === undefined || kind === 'milestone' || kind === 'finale')
+  if (!okStop && !okTest) return bad('/mw-fanfare needs next, on, off, use NAME, stop, or test [milestone|finale]')
+  const argv = okStop ? ['mw', 'fanfare', 'stop'] : kind === undefined ? ['mw', 'fanfare', 'test'] : ['mw', 'fanfare', 'test', kind]
+  let out = ''
+  try {
+    const r = await proc($, argv, { cwd, timeoutMs: 20_000 })
+    out = `${String(r.stdout)}${String(r.stderr)}`.trim().split('\n')[0] ?? ''
+    if (r.exitCode !== 0) out = out || `exit ${r.exitCode}`
+  } catch {
+    out = 'mw not available'
+  }
+  $.ui.toast(`Jobs: ${argv.slice(1).join(' ')}${out ? ` \u2014 ${out.slice(0, 120)}` : ''}`, { timeoutMs: 6000 })
+  return { text: `Ran ${argv.join(' ')}.` }
+}
+
+/** `mw configure KEY=VALUE…` when this mw has it, else `mw user set`. */
+const cfgWriteOrSet = async ($: any, kv: string[], cwd: string): Promise<boolean> => {
+  try {
+    const r = await proc($, ['mw', ...(cfgOk === true ? ['configure'] : ['user', 'set']), ...kv], { cwd, timeoutMs: 20_000 })
+    return r.exitCode === 0
+  } catch {
+    return false
+  }
+}
+
+/** `/mw-jobs` and friends: panes, release, ask/review, style, size, log, mute, every, fanfare. Arguments are checked against fixed sets; nothing a person types reaches a shell. */
 const runMw = async ($: any, args: string) => {
   const words = args.trim().split(/\s+/).filter(Boolean)
   const reg = await loadRegistry($)
   const usage = (why: string) => {
-    $.ui.toast(`Jobs: ${why}. Try /mw for the list.`, { timeoutMs: 6000 })
+    $.ui.toast(`Jobs: ${why}. Try /mw-jobs list for the list.`, { timeoutMs: 6000 })
     return { text: `${why}\n${MW_USAGE.join('\n')}` }
   }
   const listJobs = async () => {
@@ -4919,7 +5076,7 @@ const runMw = async ($: any, args: string) => {
     const lines = reg.jobs.length === 0 ? ['no jobs registered'] : reg.jobs.map(j => `${statusSegment(j, snaps[j.id], stale[j.id])}  \u2014 ${j.title}`)
     return { text: [...lines, '', ...MW_USAGE].join('\n') }
   }
-  if (words.length === 0) return listJobs()
+  if (words.length === 0 || (words.length === 1 && words[0] === 'list')) return listJobs()
   const cmdWord = words[0]!
   const rest = words.slice(1)
   // [id]: the one given, else the job open in the pane, else the only job, else the list
@@ -4938,11 +5095,11 @@ const runMw = async ($: any, args: string) => {
   switch (cmdWord) {
     case 'jobs':
     case 'news': {
-      if (rest.length > 1) return usage(`/mw ${cmdWord} takes one job id`)
+      if (rest.length > 1) return usage(`/mw-${cmdWord === 'news' ? 'news' : 'jobs ' + cmdWord} takes one job id`)
       return runCommand($, cmdWord === 'news' ? `news${rest[0] ? ` ${rest[0]}` : ''}` : (rest[0] ?? ''), undefined)
     }
     case 'release': {
-      if (rest.length > 1) return usage('/mw release takes one job id')
+      if (rest.length > 1) return usage('/mw-jobs release takes one job id')
       const j = await pick(rest[0])
       if (!isJob(j)) return j
       const now: number = await $.clock.now()
@@ -4955,12 +5112,12 @@ const runMw = async ($: any, args: string) => {
       releaseArmed.set(j.id, now)
       await openNews($, j.id)
       await setNewsView($, j.id, { page: 0, list: false, confirm: true })
-      $.ui.toast(`Jobs: release ${j.id}? Run /mw release ${j.id} again within a minute, or press Release.`, { timeoutMs: 8000 })
-      return { text: `Release of ${j.id} is armed: run /mw release ${j.id} again to confirm.` }
+      $.ui.toast(`Jobs: release ${j.id}? Run /mw-jobs release ${j.id} again within a minute, or press Release.`, { timeoutMs: 8000 })
+      return { text: `Release of ${j.id} is armed: run /mw-jobs release ${j.id} again to confirm.` }
     }
     case 'ask':
     case 'review': {
-      if (rest.length > 1) return usage(`/mw ${cmdWord} takes one job id`)
+      if (rest.length > 1) return usage(`/mw-jobs ${cmdWord} takes one job id`)
       const j = await pick(rest[0])
       if (!isJob(j)) return j
       await askGroup($, j, cmdWord === 'ask' ? 'needs' : 'review')
@@ -4969,20 +5126,20 @@ const runMw = async ($: any, args: string) => {
     case 'style': {
       const st = STYLE_KEYS[rest[0] ?? '']
       const pane = rest[1]
-      if (st === undefined || rest.length > 2 || (pane !== undefined && pane !== 'jobs' && pane !== 'news')) return usage('/mw style needs n, b, g, a or k, and optionally jobs or news')
+      if (st === undefined || rest.length > 2 || (pane !== undefined && pane !== 'jobs' && pane !== 'news')) return usage('/mw-jobs style needs n, b, g, a or k, and optionally jobs or news')
       await setBarStyle($, st, pane === undefined ? 'both' : pane)
       return { text: `Jobs: style ${st}${pane ? ` (${pane})` : ''}.` }
     }
     case 'size': {
       const d = rest[0] === '+' ? 1 : rest[0] === '-' ? -1 : rest[0] === '#' ? 0 : undefined
-      if (d === undefined || rest.length !== 1) return usage('/mw size needs -, # or +')
+      if (d === undefined || rest.length !== 1) return usage('/mw-jobs size needs -, # or +')
       await stepBy($, d)
       return { text: `Jobs: density ${d === 0 ? 'default' : d > 0 ? 'bigger' : 'smaller'}.` }
     }
     case 'log': {
       const which = rest.find(x => x in LOG_FILES) ?? 'work'
       const idTok = rest.find(x => !(x in LOG_FILES))
-      if (rest.length > 2 || (rest.length === 2 && idTok === undefined)) return usage('/mw log takes an optional job id and work, alerts or decisions')
+      if (rest.length > 2 || (rest.length === 2 && idTok === undefined)) return usage('/mw-jobs log takes an optional job id and work, alerts or decisions')
       const j = await pick(idTok)
       if (!isJob(j)) return j
       return { text: await openLogFile($, j, which) }
@@ -4992,33 +5149,15 @@ const runMw = async ($: any, args: string) => {
       return { text: 'Opened the mw settings pane.' }
     }
     case 'mute': {
-      if (rest.length > 0) return usage('/mw mute takes nothing')
+      if (rest.length > 0) return usage('/mw-jobs mute takes nothing')
       return toggleMute($)
     }
     case 'every': {
-      if (rest.length !== 1 || !['off', '30s', '1m', '5m'].includes(rest[0]!)) return usage('/mw every needs off, 30s, 1m or 5m')
+      if (rest.length !== 1 || !['off', '15s', '30s', '1m', '5m'].includes(rest[0]!)) return usage('/mw-jobs every needs off, 15s, 30s, 1m or 5m')
       return runCommand($, `every ${rest[0]}`, undefined)
     }
     case 'fanfare': {
-      const sub = rest[0]
-      const kind = rest[1]
-      const okStop = sub === 'stop' && rest.length === 1
-      const okTest = sub === 'test' && rest.length <= 2 && (kind === undefined || kind === 'milestone' || kind === 'finale')
-      if (!okStop && !okTest) return usage('/mw fanfare needs stop, or test [milestone|finale]')
-      const argv = okStop ? ['mw', 'fanfare', 'stop'] : kind === undefined ? ['mw', 'fanfare', 'test'] : ['mw', 'fanfare', 'test', kind]
-      const sel: string = await read($, selected)
-      const job = reg.jobs.find(x => x.id === sel) ?? reg.jobs[0]
-      const home: string = (await $.env.get('HOME')) ?? ''
-      let out = ''
-      try {
-        const r = await $.process.run(argv, { cwd: job ? expand(job.board, home) : home, timeoutMs: 20_000 })
-        out = `${String(r.stdout)}${String(r.stderr)}`.trim().split('\n')[0] ?? ''
-        if (r.exitCode !== 0) out = out || `exit ${r.exitCode}`
-      } catch {
-        out = 'mw not available'
-      }
-      $.ui.toast(`Jobs: ${argv.slice(1).join(' ')}${out ? ` \u2014 ${out.slice(0, 120)}` : ''}`, { timeoutMs: 6000 })
-      return { text: `Ran ${argv.join(' ')}.` }
+      return fanfareCommand($, rest.join(' '))
     }
     default: {
       // a bare job id still opens that job
@@ -5427,11 +5566,11 @@ const listPage = (ui: any, $: any, o: PageIn) => {
 export const register: Register = (on, options) => {
   opts = options as Record<string, unknown>
   on('session.start', async ($, e, next) => {
-    // a model-callable way to open the panes (the same as /mw jobs|news [id]); it only opens a pane
+    // a model-callable way to open the panes (the same as /mw-jobs or /mw-news [id]); it only opens a pane
     try {
       await $.tool.register({
         name: 'mw_panes_open',
-        description: 'Open the mw jobs pane or the mw news pane on a registered job (the same as /mw jobs [id] or /mw news [id]). Read-only apart from showing the pane.',
+        description: 'Open the mw jobs pane or the mw news pane on a registered job (the same as /mw-jobs [id] or /mw-news [id]). Read-only apart from showing the pane.',
         inputSchema: { type: 'object', properties: { pane: { type: 'string', enum: ['jobs', 'news'] }, job: { type: 'string', description: 'a job id from the registry; default the job open in the pane' } }, required: ['pane'], additionalProperties: false },
         isDeferred: false,
       })
@@ -5440,10 +5579,13 @@ export const register: Register = (on, options) => {
     }
     sessionCwd = typeof e?.cwd === 'string' ? e.cwd : ''
     scanCache = undefined
+    mwProbed = false
     await replayTranscript($)
-    await $.command.register({ name: 'mw', description: 'mw panes: /mw jobs [id] | /mw news [id] | mute | every …' })
+    await $.command.register({ name: 'mw-watch', description: 'Open the mw jobs pane; it finds your boards on its own. /mw-watch scan [DIR] looks for more.' })
+    await $.command.register({ name: 'mw-jobs', description: 'mw jobs pane: /mw-jobs [id | release | ask | review | style | size | log | mute | every …]' })
+    await $.command.register({ name: 'mw-news', description: 'mw news pane: /mw-news [id]' })
     await $.command.register({ name: 'mw-configure', description: 'mw settings: refresh, style, zoom, fit, alerts, fanfare, status, discovery (the mw configure keys)' })
-    await $.command.register({ name: 'jobs', description: 'Show coordinated mw jobs: /jobs [id | news [id] | mute | every off|30s|1m|5m]' })
+    await $.command.register({ name: 'mw-fanfare', description: 'mw fanfare: /mw-fanfare [next | on | off | use NAME | test [milestone|finale] | stop]' })
     // a new session starts from nothing: what survives a reload is in $.store
     await update($, chosen, () => false)
     await update($, favorites, () => ({ jobs: [], tenants: {} }))
@@ -5451,7 +5593,7 @@ export const register: Register = (on, options) => {
     await update($, sw, () => ({}))
     try {
       const saved = await $.store.get('refreshEvery')
-      if (typeof saved === 'string' && (EVERY as readonly string[]).includes(saved)) {
+      if (typeof saved === 'string' && EVERY_ALL.includes(saved)) {
         await update($, refreshEvery, () => saved)
       }
       const savedSeen = await $.store.get('seen')
@@ -5555,11 +5697,24 @@ export const register: Register = (on, options) => {
     return { result: r.text ?? `${input.pane} pane opened` }
   })
 
-  on('command.run', { command: 'mw' }, async ($, e) => runMw($, String((e as { args?: string }).args ?? '')))
-
-  on('command.run', { command: 'jobs' }, async ($, e) =>
-    runCommand($, String((e as { args?: string }).args ?? ''), undefined),
-  )
+  const argsOf = (e: unknown) => String((e as { args?: string }).args ?? '').trim()
+  // /mw-watch: the zero-setup entry (opens the jobs pane); `scan [DIR]` looks for more boards
+  on('command.run', { command: 'mw-watch' }, async ($, e) => {
+    const a = argsOf(e)
+    const m = /^scan(?:\s+(.+))?$/.exec(a)
+    if (m) return scanCommand($, m[1]?.trim())
+    return runCommand($, a, undefined)
+  })
+  // /mw-jobs [id] and its subcommands; /mw-news [id]
+  on('command.run', { command: 'mw-jobs' }, async ($, e) => {
+    const a = argsOf(e)
+    const first = a.split(/\s+/)[0] ?? ''
+    if (a === '' || MW_SUBS.has(first) || /^(stalled\s+\d+|bigger|smaller|reset)$/.test(a)) return MW_SUBS.has(first) ? runMw($, a) : runCommand($, a, undefined)
+    const reg = await loadRegistry($)
+    return reg.jobs.some(j => j.id === a) ? runCommand($, a, undefined) : runMw($, a)
+  })
+  on('command.run', { command: 'mw-news' }, async ($, e) => runMw($, `news ${argsOf(e)}`.trim()))
+  on('command.run', { command: 'mw-fanfare' }, async ($, e) => fanfareCommand($, argsOf(e)))
 
   // the news pane closed: it is not open any more, the refresh stops loading its news (T8)
   on('ui.close', async ($, e, next) => {
@@ -5635,7 +5790,7 @@ export const register: Register = (on, options) => {
     const baseWidth = Number.isFinite(given) && given > 0 ? Math.max(300, Math.min(520, given * 8)) : 420
     const paneW = Number.isFinite(given) && given > 0 ? given * 8 : 420
     const isMissing = entry !== undefined && entry.text === null
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     // mw's own render (text for blocks and the terminal, md for normal); status.md only when mw fails
     lastTerminal = !canSvg
     lastPaneW = paneW

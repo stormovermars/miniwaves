@@ -181,7 +181,7 @@ for (const surface of ['desktop', 'terminal'] as const) {
       const t0 = now()
       await $.session.start({ cwd: '/', surface, isInteractive: true })
       emit('STRESS', { kind: 'session-start', style, surface, ms: r1(now() - t0), statusShown: state.statuses[state.statuses.length - 1], statusWouldBeLen: fullStatus().length, statusWouldBeHead: fullStatus().slice(0, 240), toasts: state.toasts.length, notifies: state.notifies.length })
-      await $.command.run({ command: 'jobs', args: `style ${style}`, origin: { kind: 'user' }, presentation: {} } as never)
+      await $.command.run({ command: 'mw-jobs', args: `style ${style}`, origin: { kind: 'user' }, presentation: {} } as never)
       for (const width of [40, 80, 160]) {
         await measureMount($, state, PANE, surface, style, width)
         await measureMount($, state, NEWS_PANE, surface, style, width)
@@ -257,7 +257,7 @@ for (const [label, body] of [['max', D.metricsMax], ['invalid', INVALID], ['badn
   test(`stress metrics: ${label}`, async ($, on) => {
     const { state } = rig($, on, { metrics: body, n: 25 })
     await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-    await $.command.run({ command: 'jobs', args: 'style normal', origin: { kind: 'user' }, presentation: {} } as never)
+    await $.command.run({ command: 'mw-jobs', args: 'style normal', origin: { kind: 'user' }, presentation: {} } as never)
     const rec: Record<string, unknown> = { kind: 'metrics', label, statuses: state.statuses.length }
     for (const [which, pane] of [['jobs', PANE], ['news', NEWS_PANE]] as const) {
       const t0 = now()
@@ -286,7 +286,7 @@ for (const surface of ['desktop', 'terminal'] as const) {
         const rec: Record<string, unknown> = { kind: 'scale', style, surface, n, items: subset(n).items.length }
         try {
           await $.session.start({ cwd: '/', surface, isInteractive: true })
-          await $.command.run({ command: 'jobs', args: `style ${style}`, origin: { kind: 'user' }, presentation: {} } as never)
+          await $.command.run({ command: 'mw-jobs', args: `style ${style}`, origin: { kind: 'user' }, presentation: {} } as never)
           const ui = await $.ui.mount({ ...PANE, surface } as never)
           rec.renderMs = r1(now() - t0)
           const svgs = (await ui.findAll({ type: 'Svg' })).map((x: any) => String(x.props.source))
@@ -314,7 +314,7 @@ for (const rows of [1, 5, 10, 20, 30, 40]) {
     m.sections = m.sections.map((sec: any) => ({ ...sec, rows: sec.rows.slice(0, rows) }))
     rig($, on, { metrics: JSON.stringify(m), n: 10 })
     await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-    await $.command.run({ command: 'jobs', args: 'style normal', origin: { kind: 'user' }, presentation: {} } as never)
+    await $.command.run({ command: 'mw-jobs', args: 'style normal', origin: { kind: 'user' }, presentation: {} } as never)
     const rec: Record<string, unknown> = { kind: 'metricsrows', rows }
     try {
       const u = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)

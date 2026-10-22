@@ -6,7 +6,7 @@ import { REAL_BOARDS, REAL_BOARD_JOBS } from '../tests/fixtures/boards'
 import { SHOW_TSK001, SHOW_STR002, WAVE_002, WAVE_004 } from '../tests/fixtures/detail'
 import { parseItemDetail, parseWaveDetail } from './detail'
 import { REAL_DRAFT, SMALL_DRAFT, SMALL_RELEASE, STRESS_DRAFT, releases30, tenantsDraft, tenantSlug, manyJobs, jobDraft } from '../tests/fixtures/model'
-import { alertText, alertAllowed, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, groupToast, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
+import { alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, groupToast, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
 import { REAL_USER_KEYS } from '../tests/fixtures/userkeys'
 
 declare const console: { log: (...a: unknown[]) => void }
@@ -55,9 +55,10 @@ const item = (tenant: string, id: string, state: string, note = '', updated = is
 const ok = (out: unknown) => ({ value: { exitCode: 0, stdout: JSON.stringify(out), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
 
 const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, chosenJob = true) => {
-  const state = { round: 0, zetaCalls: 0, toasts: [] as string[], logs: [] as string[], statuses: [] as unknown[], sounds: [] as string[], osa: [] as string[], store: new Map<string, unknown>(chosenJob ? [['selectedJob', 'zeta']] : []), opens: [] as { id: string; title: string; focus?: boolean }[], closes: [] as string[], failWrite: false, files: new Map<string, string>(), logSince: [] as string[], decisions: [] as Array<Record<string, string>>, logNext: 'C1', fills: [] as { text: string; mode: string }[], submitted: [] as string[], fillOk: true, hide: [] as string[], asks: [] as unknown[], extra: [] as unknown[], runs: [] as string[], newsReads: 0, linked: false, kind: 'file', mwNews: {} as Record<string, string>, mwNewsFail: true, placeFail: '', jobShow: undefined as unknown, mwCalls: [] as string[], newsFiles: {} as Record<string, string>, draft: undefined as string | undefined, releaseOut: undefined as { code: number; text: string } | undefined, drafts: {} as Record<string, string>, tdrafts: {} as Record<string, string>, draftText: '', commands: [] as string[], fan: undefined as unknown, user: undefined as Record<string, unknown> | undefined, userSets: [] as string[], boards: undefined as Record<string, unknown> | undefined, boardJobs: {} as Record<string, unknown>, resolves: [] as string[], shows: {} as Record<string, unknown>, waveShows: {} as Record<string, unknown>, fullOk: true, fullDraft: undefined as string | undefined, cfg: undefined as { keys: Array<{ key: string; value: string; default: string; source: string; group: string; choices: string[] }> } | undefined, configures: [] as string[] }
+  const state = { absRuns: [] as string[], round: 0, zetaCalls: 0, toasts: [] as string[], logs: [] as string[], statuses: [] as unknown[], sounds: [] as string[], osa: [] as string[], store: new Map<string, unknown>(chosenJob ? [['selectedJob', 'zeta']] : []), opens: [] as { id: string; title: string; focus?: boolean }[], closes: [] as string[], failWrite: false, files: new Map<string, string>(), logSince: [] as string[], decisions: [] as Array<Record<string, string>>, logNext: 'C1', fills: [] as { text: string; mode: string }[], submitted: [] as string[], fillOk: true, hide: [] as string[], asks: [] as unknown[], extra: [] as unknown[], runs: [] as string[], newsReads: 0, linked: false, kind: 'file', mwNews: {} as Record<string, string>, mwNewsFail: true, placeFail: '', jobShow: undefined as unknown, mwCalls: [] as string[], newsFiles: {} as Record<string, string>, draft: undefined as string | undefined, releaseOut: undefined as { code: number; text: string } | undefined, drafts: {} as Record<string, string>, tdrafts: {} as Record<string, string>, draftText: '', commands: [] as string[], fan: undefined as unknown, user: undefined as Record<string, unknown> | undefined, userSets: [] as string[], boards: undefined as Record<string, unknown> | undefined, boardJobs: {} as Record<string, unknown>, resolves: [] as string[], shows: {} as Record<string, unknown>, waveShows: {} as Record<string, unknown>, fullOk: true, fullDraft: undefined as string | undefined, cfg: undefined as { keys: Array<{ key: string; value: string; default: string; source: string; group: string; choices: string[] }> } | undefined, configures: [] as string[] }
   const clock = mock.clock(on, { now: BASE })
-  on('store.get', (_: any, e: any) => ({ value: state.store.get(e.key) }))
+  // without mw settings the panes poll every 30 s; most tests are written for one poll a minute
+  on('store.get', (_: any, e: any) => ({ value: e.key === 'refreshEvery' && state.cfg === undefined && !state.store.has('refreshEvery') ? '1m' : state.store.get(e.key) }))
   on('store.set', (_: any, e: any) => { state.store.set(e.key, e.value); return { value: undefined } })
   on('command.register', (_: any, e: any) => { state.commands.push(String(e.name)); return { value: { command: 'x' } } })
   on('prompt.read', () => ({ value: { text: state.draftText } }))
@@ -96,7 +97,12 @@ const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, cho
   on('audio.play', (_: any, e: any) => { state.sounds.push(JSON.stringify(e)); return { value: undefined } })
   on('process.run', (_: any, e: any) => {
     const cmd = e.argv.join(' ')
-    state.runs.push(cmd)
+    // the OS probe and the mw lookup are plumbing: the test machine is macOS and mw is found by name
+    if (cmd === 'uname -s') return { value: { exitCode: 0, stdout: 'Darwin\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
+    if (cmd === '/bin/sh -c command -v mw' && (state as any).mwPath !== undefined) return { value: { exitCode: 0, stdout: `${(state as any).mwPath}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
+    if (cmd === '/bin/sh -c command -v mw') return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
+    state.runs.push((state as any).mwPath !== undefined ? cmd.replace(`${(state as any).mwPath} `, 'mw ') : cmd)
+    if ((state as any).mwPath !== undefined && e.argv[0] === (state as any).mwPath) state.absRuns.push(cmd)
     if (e.argv[0] === 'osascript') { state.osa.push(cmd); return ok('') }
     if (cmd.startsWith('mw log') && e.argv.includes('--since')) {
       const tenant = e.argv[e.argv.indexOf('-t') + 1]
@@ -232,7 +238,7 @@ const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, cho
 test('two jobs: status, switching, per-job alerts, refresh, timer', async ($, on) => {
   const { state, clock } = rig($, on, true)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.command.run({ command: 'jobs', args: 'style blocks', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'style blocks', origin: { kind: 'user' }, presentation: {} } as never)
 
   expect(state.toasts.length).toBe(0)
   const status = String(state.statuses.at(-1))
@@ -341,11 +347,11 @@ test('two jobs: status, switching, per-job alerts, refresh, timer', async ($, on
   await ui.unmount()
 
   // /jobs <id> selects that job
-  await $.command.run({ command: 'jobs', args: 'demo', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'demo', origin: { kind: 'user' }, presentation: {} } as never)
   const ui2 = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect((await jt(ui2))).toContain('✓1 closed')
   await ui2.unmount()
-  await $.command.run({ command: 'jobs', args: 'zeta', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'zeta', origin: { kind: 'user' }, presentation: {} } as never)
   const ui3 = await $.ui.mount({ ...PANE, surface: 'desktop' })
   const s3 = (await jt(ui3))
   expect(s3).toContain('need you')
@@ -353,8 +359,8 @@ test('two jobs: status, switching, per-job alerts, refresh, timer', async ($, on
   await ui3.unmount()
 
   // mute silences sound and notifications; Off stops the timer
-  await $.command.run({ command: 'jobs', args: 'every off', origin: { kind: 'user' }, presentation: {} } as never)
-  await $.command.run({ command: 'jobs', args: 'mute', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'every off', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'mute', origin: { kind: 'user' }, presentation: {} } as never)
   const stopped = state.zetaCalls
   await clock.advance(600_000)
   expect(state.zetaCalls).toBe(stopped)
@@ -379,7 +385,7 @@ const flat = (el: unknown): string => {
 test('styles: normal and blocks; blocks is cell-counted on the terminal and a shared mono Svg elsewhere', async ($, on) => {
   const { state } = rig($, on, true)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const run = (args: string) => $.command.run({ command: 'jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
+  const run = (args: string) => $.command.run({ command: 'mw-jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
   const mount = (surface: 'terminal' | 'desktop', props: Record<string, unknown> = {}) =>
     $.ui.mount({ ...PANE, props: { ...PANE.props, ...props }, surface } as never)
 
@@ -530,7 +536,7 @@ test('styles: normal and blocks; blocks is cell-counted on the terminal and a sh
 test('one job shows its title instead of tabs', async ($, on) => {
   const { state } = rig($, on, true, { jobs: [{ ...REG.jobs[0]! }] })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.command.run({ command: 'jobs', args: 'style thin', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'style thin', origin: { kind: 'user' }, presentation: {} } as never)
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await ui.find({ type: 'Text', text: /^Zeta consolidation$/ })).toBeDefined()
   expect(await ui.find({ key: 'job-zeta' })).toBeUndefined()
@@ -550,7 +556,7 @@ test('a missing registry shows "no jobs registered"', async ($, on) => {
 test('titles follow the job, and the news pane renders docs/news/status.md with $.fs only', async ($, on) => {
   const { state, clock } = rig($, on, true)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const run = (args: string) => $.command.run({ command: 'jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
+  const run = (args: string) => $.command.run({ command: 'mw-jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
   const lastOpen = (id: string) => state.opens.filter(o => o.id === id).at(-1)
   expect(lastOpen('mw-jobs')?.title).toBe('mw jobs · zeta')
 
@@ -584,8 +590,8 @@ test('titles follow the job, and the news pane renders docs/news/status.md with 
   expect(state.runs.some(r => r.includes('status.md') || r.includes('docs/news'))).toBe(false)
 
   // the same controls as the jobs pane drive this pane: style, size and the refresh timer
-  await $.command.run({ command: 'jobs', args: 'reset', origin: { kind: 'user' }, presentation: {} } as never)
-  await $.command.run({ command: 'jobs', args: 'style normal', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'reset', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'style normal', origin: { kind: 'user' }, presentation: {} } as never)
   // size: Text has no font size, the step is the density (stored)
   await nu.press({ key: 'bigger' })
   expect(state.store.get('fontStep')).toBe(1)
@@ -603,11 +609,11 @@ test('titles follow the job, and the news pane renders docs/news/status.md with 
   await nu.press({ key: 'every' })
   expect(state.store.get('refreshEvery')).toBe('off')
   await nu.unmount()
-  await $.command.run({ command: 'jobs', args: 'every 30s', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'every 30s', origin: { kind: 'user' }, presentation: {} } as never)
   const readsBefore = state.newsReads
   await clock.advance(30_000)
   expect(state.newsReads).toBeGreaterThan(readsBefore)
-  await $.command.run({ command: 'jobs', args: 'every off', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'every off', origin: { kind: 'user' }, presentation: {} } as never)
   const readsOff = state.newsReads
   await clock.advance(600_000)
   expect(state.newsReads).toBe(readsOff)
@@ -702,7 +708,7 @@ test('the markdown renderer decodes entities and backslash escapes, and the Svg 
 })
 
 const NEWS_PANE = { ...PANE, requestId: 'mw-news', props: { ...PANE.props, title: 'mw news' } } as const
-const cmd = ($: any, args: string) => $.command.run({ command: 'jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
+const cmd = ($: any, args: string) => $.command.run({ command: 'mw-jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
 
 test('news styling: heading colour per section, id and @name colours, table bar, code chip', () => {
   const md = '# Status\n\nUpdated 10:00\n\n## Needs you\n\n- BUG-12 @sir waits for `x`\n\n## Blocked\n\nA\n\n## Headline\n\n2 need you, 1 blocked, 0 stalled\n\n## Milestones\n\n| Wave | Done |\n|---|---|\n| C2 | 5/6 |\n| M4 | 0/16 |\n\n## Last events\n\n- 10:00 zetasheet A-1 start'
@@ -1147,9 +1153,9 @@ test('related controls are grouped: attention, refresh, view, alerts, open elsew
   }
 })
 
-const mwCmd = ($: any, args: string) => $.command.run({ command: 'mw', args, origin: { kind: 'user' }, presentation: {} } as never)
+const mwCmd = ($: any, args: string) => $.command.run({ command: 'mw-jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
 
-test('/mw: no argument lists the jobs and every subcommand; jobs, news, mute, every, style, size, ask, review, release, log, fanfare', async ($, on) => {
+test('/mw-jobs list: one line per job and every subcommand; jobs, news, mute, every, style, size, ask, review, release, log, fanfare', async ($, on) => {
   const reg3 = { jobs: [...REG.jobs, { id: 'mw', title: 'mw itself', board: '~/apps/miniwaves', tenants: ['miniwaves'], news: '', summary: '', coordinator: 'c', desk: 'd', alerts: {} }] }
   const { state } = rig($, on, true, reg3)
   state.newsFiles.zeta = '# S\n\nx'
@@ -1158,9 +1164,9 @@ test('/mw: no argument lists the jobs and every subcommand; jobs, news, mute, ev
   const text = async (r: any) => String((await r)?.text ?? (await r)?.value?.text ?? JSON.stringify(await r))
 
   // alone: one line per job, then every usage
-  const all = await text(mwCmd($, ''))
+  const all = await text(mwCmd($, 'list'))
   for (const id of ['zeta', 'demo', 'mw itself']) expect(all).toContain(id)
-  for (const sub of ['/mw jobs', '/mw news', '/mw release', '/mw ask', '/mw review', '/mw style', '/mw size', '/mw log', '/mw mute', '/mw every', '/mw fanfare']) expect(all).toContain(sub)
+  for (const sub of ['/mw-jobs [id]', '/mw-news', '/mw-jobs release', '/mw-jobs ask', '/mw-jobs review', '/mw-jobs style', '/mw-jobs size', '/mw-jobs log', '/mw-jobs mute', '/mw-jobs every', '/mw-fanfare', '/mw-watch', '/mw-configure']) expect(all).toContain(sub)
 
   // jobs / news open the panes; the registry id "mw" is just another id
   await mwCmd($, 'jobs demo')
@@ -1237,7 +1243,7 @@ test('/mw rejects unknown values with a usage toast and runs nothing', async ($,
   const { state } = rig($, on, true)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const runsBefore = state.runs.length
-  for (const bad of ['bogus', 'style x', 'style g sideways', 'size 3', 'every 2h', 'log zeta nope extra', 'fanfare test; rm -rf ~', 'fanfare test loud', 'fanfare', 'release nosuch', 'ask nosuch', 'jobs a b', 'mute now']) {
+  for (const bad of ['bogus', 'style x', 'style g sideways', 'size 3', 'every 2h', 'log zeta nope extra', 'fanfare test; rm -rf ~', 'fanfare test loud', 'release nosuch', 'ask nosuch', 'jobs a b', 'mute now']) {
     const t = state.toasts.length
     await mwCmd($, bad)
     expect(state.toasts.length).toBe(t + 1)
@@ -1354,7 +1360,7 @@ test('a pane that is not placed toasts why', async ($, on) => {
   state.placeFail = 'narrow terminal'
   const nu = await $.ui.mount({ ...NEWS_PANE, surface: 'desktop' } as never)
   await nu.press({ key: 'back-jobs' })
-  expect(state.toasts.some(t => t.includes('could not show the jobs pane') && t.includes('narrow terminal') && t.includes('/jobs'))).toBe(true)
+  expect(state.toasts.some(t => t.includes('could not show the jobs pane') && t.includes('narrow terminal') && t.includes('/mw-jobs'))).toBe(true)
   await nu.unmount()
 })
 
@@ -2023,6 +2029,65 @@ test('metric counts: one non-wrapping Text per row, the same width, with 4-digit
   await cmd($, 'every off')
 })
 
+test('commands: /mw-watch /mw-jobs /mw-news /mw-fanfare /mw-configure are registered; /mw and /jobs are not', async ($, on) => {
+  const { state } = rig($, on, true)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (const c of ['mw-watch', 'mw-jobs', 'mw-news', 'mw-fanfare', 'mw-configure']) expect(state.commands).toContain(c)
+  expect(state.commands).not.toContain('mw')
+  expect(state.commands).not.toContain('jobs')
+})
+
+test('/mw-watch opens the jobs pane and `scan DIR` looks in DIR; /mw-news opens the news pane', async ($, on) => {
+  const { state } = rig($, on, false)
+  state.boards = { '/home': REAL_BOARDS, '/srv/boards': REAL_BOARDS }
+  state.boardJobs = REAL_BOARD_JOBS
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'mw-watch', args: '', origin: { kind: 'user' }, presentation: {} } as never)
+  expect(state.opens.at(-1)?.id).toBe('mw-jobs')
+  await $.command.run({ command: 'mw-watch', args: 'scan /srv/boards', origin: { kind: 'user' }, presentation: {} } as never)
+  expect(state.runs.some(r => r === 'mw boards /srv/boards --depth 4 -j')).toBe(true)
+  await $.command.run({ command: 'mw-news', args: '', origin: { kind: 'user' }, presentation: {} } as never)
+  expect(state.opens.at(-1)?.id).toBe('mw-news')
+})
+
+test('/mw-fanfare: next, on, off, use NAME, test, stop run only fixed mw arguments; anything else is refused', async ($, on) => {
+  const { state } = rig($, on, true)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ff = (args: string) => $.command.run({ command: 'mw-fanfare', args, origin: { kind: 'user' }, presentation: {} } as never)
+  await ff('test')
+  expect(state.runs).toContain('mw fanfare test')
+  await ff('test finale')
+  expect(state.runs).toContain('mw fanfare test finale')
+  await ff('stop')
+  expect(state.runs).toContain('mw fanfare stop')
+  await ff('on')
+  expect(state.runs.some(r => /^mw user set fanfare\.enabled=true$/.test(r))).toBe(true)
+  await ff('use films')
+  expect(state.runs.some(r => /^mw user set fanfare\.use=films$/.test(r))).toBe(true)
+  const n = state.runs.length
+  for (const bad of ['use', 'use a b', 'use ; rm -rf ~', 'on now', 'test loud', 'bogus']) {
+    const t = state.toasts.length
+    await ff(bad)
+    expect(state.toasts.length, bad).toBe(t + 1)
+  }
+  expect(state.runs.length).toBe(n)
+})
+
+test('mw is run by its absolute path when found, and the opener is per OS', async ($, on) => {
+  const { state } = rig($, on, true)
+  ;(state as any).mwPath = '/opt/tools/bin/mw'
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(state.absRuns.length).toBeGreaterThan(0)
+  expect(state.absRuns.every(r => r.startsWith('/opt/tools/bin/mw '))).toBe(true)
+  expect(openerArgv('mac', '/a/b.md')).toEqual(['open', '-t', '/a/b.md'])
+  expect(openerArgv('linux', '/a/b.md')).toEqual(['xdg-open', '/a/b.md'])
+  expect(openerArgv('windows', 'C:\\a\\b.md')).toEqual(['cmd', '/c', 'start', '', 'C:\\a\\b.md'])
+  expect(isAbs('/x')).toBe(true)
+  expect(isAbs('C:\\x')).toBe(true)
+  expect(isAbs('C:/x')).toBe(true)
+  expect(isAbs('x/y')).toBe(false)
+})
+
 test('an invalid or newer metrics file shows a one-line dim notice instead of the section', async ($, on) => {
   const { state } = rig($, on, true, REG_M)
   state.newsFiles.zeta = '# S'
@@ -2033,7 +2098,7 @@ test('an invalid or newer metrics file shows a one-line dim notice instead of th
   expect((await jt(ui))).toContain('newer metrics format')
   await ui.unmount()
   state.files.set(MPATH, '{ nope')
-  await $.command.run({ command: 'jobs', args: '', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: '', origin: { kind: 'user' }, presentation: {} } as never)
   await $.ui.mount({ ...PANE, surface: 'desktop' } as never).then(async u => { ui = u })
   void ui
 })
@@ -2216,7 +2281,7 @@ test('after a question is asked, both panes refresh: on the press, on the submit
   state.asks = [{ tenant: 'zetasheet', item: 'TSK-9', question: 'which?', by: 'coordinator', at: iso(BASE) }]
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await cmd($, 'every off')
-  await $.command.run({ command: 'jobs', args: 'zeta', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'zeta', origin: { kind: 'user' }, presentation: {} } as never)
   const waveRuns = () => state.runs.filter(r => r.startsWith('mw wave list')).length
   const q = askText(state.extra[0] as never, { waves: [], items: [], events: [], updatedAt: 0, asks: state.asks } as never).text
   const settle = async () => { for (let i = 0; i < 6; i++) await clock.advance(1) }
@@ -3960,7 +4025,7 @@ test('settings: alerts.kinds without done drops the milestone and done alerts (n
   const ju = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
   state.round = 1
   await clock.advance(60_000)
-  expect(JSON.stringify(await ju.find({ key: 'alerts' }) ?? '')).not.toContain('Milestone closed')
+  expect(JSON.stringify(await ju.find({ key: 'alerts' }) ?? '')).not.toContain('Milestone done')
   await ju.unmount()
 })
 
