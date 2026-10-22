@@ -29,6 +29,8 @@ var userModeCheck = runtime.GOOS != "windows"
 type UserConfig struct {
 	Alerts  UserAlerts  `json:"alerts"`
 	Fanfare UserFanfare `json:"fanfare"`
+	// Settings holds the table keys of userkeys.go (pane.*, alerts.kinds, status.*, ...) as canonical strings.
+	Settings map[string]string `json:"settings,omitempty"`
 }
 
 type UserAlerts struct {
@@ -139,9 +141,32 @@ func setUserKey(c *UserConfig, key, val string) error {
 		}
 		c.Fanfare.Use = val
 	default:
-		return fmt.Errorf("unknown user key %q (keys: alerts.on, alerts.exec, fanfare.enabled, fanfare.use)", key)
+		k := userKeyByName(key)
+		if k == nil {
+			return fmt.Errorf("unknown user key %q (keys: alerts.on, alerts.exec, %s)", key, strings.Join(userKeyNames(), ", "))
+		}
+		if val == "" {
+			delete(c.Settings, key)
+			return nil
+		}
+		v, err := k.normalize(val)
+		if err != nil {
+			return err
+		}
+		if c.Settings == nil {
+			c.Settings = map[string]string{}
+		}
+		c.Settings[key] = v
 	}
 	return nil
+}
+
+func writeUserConfig(c UserConfig, p string) error {
+	b, _ := json.MarshalIndent(c, "", "  ")
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return err
+	}
+	return writeFileAtomic(p, append(b, '\n'))
 }
 
 // userView is the -j form of mw user show.
@@ -155,7 +180,7 @@ type userView struct {
 }
 
 func userCommand(args []string) error {
-	const use = "usage: mw user show [-j] | mw user set KEY=VALUE...  (keys: alerts.on, alerts.exec, fanfare.enabled, fanfare.use)"
+	const use = "usage: mw user show [-j] | mw user get [KEY] [-j] | mw user set KEY=VALUE...  (keys: alerts.on, alerts.exec, " + "fanfare.enabled, fanfare.use, ...: mw user get lists them)"
 	if len(args) == 0 {
 		return errors.New(use)
 	}
@@ -220,15 +245,23 @@ func userCommand(args []string) error {
 				return err
 			}
 		}
-		b, _ := json.MarshalIndent(c, "", "  ")
-		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-			return err
-		}
-		if err := writeFileAtomic(p, append(b, '\n')); err != nil {
+		if err := writeUserConfig(c, p); err != nil {
 			return err
 		}
 		fmt.Println("saved", p)
 		return nil
+	case "get":
+		if len(pos) > 1 {
+			return errors.New(use)
+		}
+		key := ""
+		if len(pos) == 1 {
+			key = strings.TrimSpace(pos[0])
+			if userKeyByName(key) == nil {
+				return fmt.Errorf("unknown user key %q (keys: %s)", key, strings.Join(userKeyNames(), ", "))
+			}
+		}
+		return printUserSettings(c, key, o["json"] == "true")
 	}
 	return errors.New(use)
 }

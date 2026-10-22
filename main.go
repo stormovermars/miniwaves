@@ -126,6 +126,9 @@ func run(args []string) error {
 	if args[0] == "user" {
 		return userCommand(args[1:])
 	}
+	if args[0] == "configure" {
+		return configureCommand(args[1:])
+	}
 	if args[0] == "migrate" {
 		return migrateCommand(args[1:])
 	}
@@ -426,12 +429,21 @@ Open to humans and sessions: with -s (or MW_SESSION) the event is recorded by th
 note as "(for NAME)"; else by --by NAME (required when stdin is not a terminal), else the login name. Record a decision as a "decide" event on item ID (-p), else on the tenant's "Decisions" chore, which is created
 (already done, so it holds nothing open) on first use. -b WHY is kept in the note as "(why: WHY)". Any board, no gate.`,
 		"user": `mw user show [-j]
+mw user get [KEY] [-j]
 mw user set KEY=VALUE...
 Per-user choices, kept out of the committed board, in os.UserConfigDir()/miniwaves/mw-user.json (MW_USER_CONFIG overrides the path).
-Works without a board. Keys: alerts.on (comma list of event names), alerts.exec (a JSON argv array, never run through a shell),
-fanfare.enabled (true|false; overrides the board's fanfare enabled), fanfare.use (a set name or all). An empty VALUE unsets a key.
+Works without a board. get lists every settings key (or one) with its effective value and source (default|user); -j:
+{"keys":[{"key","value","default","source","group","choices"}]}. Keys: pane.refresh, pane.style, pane.zoom, pane.fit, pane.open,
+alerts.enabled, alerts.kinds, alerts.message, alerts.sound, fanfare.enabled, fanfare.use, status.show, status.detail,
+discover.home, discover.depth (see mw configure). Also alerts.on (comma list of event names) and alerts.exec (a JSON argv
+array, never run through a shell). fanfare.enabled overrides the board's fanfare enabled. An empty VALUE unsets a key.
 On Unix a file that is group- or world-writable is refused (chmod 600); on Windows there is no mode check.
-Example: mw user set fanfare.enabled=false alerts.on=ask,block`,
+Example: mw user set fanfare.enabled=false pane.style=kanban`,
+		"configure": `mw configure [--show [-j]] | mw configure KEY=VALUE...
+Walk your per-user settings (Pane, Alerts, Fanfare, Chat bar, Discovery) with plain prompts: Enter keeps the value, a number
+picks a choice, d resets to the default, t test-plays a fanfare. A summary and Save/Discard prompt end the walk; nothing is
+written before Save. --show prints the settings like mw user get. KEY=VALUE... validates and saves without prompting.
+Without a terminal on stdin it prints the settings and a hint, and exits 0. Works without a board.`,
 		"gate": `mw gate [-t SLUG] [-j]
 mw gate level trust|proof|spec|judged [-t SLUG | --workspace] [--by NAME]
 mw gate evidence|acceptance|judge on|off|auto [-t SLUG] [--by NAME]
@@ -572,7 +584,8 @@ Usage:
   mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
   mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [--ticket KEY]
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY]
-  mw user show [-j] | mw user set KEY=VALUE...
+  mw user show [-j] | get [KEY] [-j] | set KEY=VALUE...
+  mw configure [--show [-j]] | KEY=VALUE...
   mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]
   mw news [--job ID] [--format md|html|text|json] [--release [--force]] [-o PATH] [-j]
   mw ask ID QUESTION... [-s NAME] | mw answer ID TEXT... --by NAME | mw decide TEXT... [--by NAME] [-b WHY] [-p ID]
