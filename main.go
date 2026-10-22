@@ -132,6 +132,9 @@ func run(args []string) error {
 	if args[0] == "migrate" {
 		return migrateCommand(args[1:])
 	}
+	if args[0] == "boards" {
+		return boardsCommand(args[1:])
+	}
 	path, err := findWorkspace()
 	if err != nil {
 		if args[0] == "dirs" {
@@ -320,6 +323,10 @@ func usage(topic string) error {
 		"description": `mw description [-j]
 Explain what miniwaves does and show the human and coding-assistant workflows.
 Works before initialization. Output is TOON by default; -j selects JSON.`,
+		"boards": `mw boards [DIR] [--depth N] [--up] [-j]
+Read-only discovery of mw boards: scans DIR (default .) down to --depth (default 3, max 8) for
+.miniwaves.json; --up also adds the nearest ancestor board. Skips dot folders, node_modules, build,
+dist, vendor and symlinks; capped at 200 boards and 5 s. Reads only the index files.`,
 		"migrate": `mw migrate [--dry-run] [PATH]
 Upgrade an old workspace file (schema 5 to 8) to schema 9 in place (the index stays .miniwaves.json, each tenant moves to .miniwaves/<slug>.json); PATH defaults to the
 .miniwaves.json found upward from the current folder. Backs it up to <file>.bak<schema> (e.g. .miniwaves.json.bak7) and
@@ -572,6 +579,7 @@ TOON by default; use -j for JSON and -v for more detail.
 
 Usage:
   mw description [-j]
+  mw boards [DIR] [--depth N] [--up] [-j]
   mw migrate [--dry-run] [PATH]
   mw version [-j]
   mw update [--check] [--plugins]
