@@ -16,7 +16,7 @@ code{font:13px ui-monospace,monospace}
 <div class=mut>Updated <NOW> local</div>
 <section><h2>Tiny &lt;job&gt;</h2>
 <div class=mut>https://example.com/news?a=1&amp;b=2</div>
-<h3>Headline</h3><div>1 need you; 1 blocked; 1 in progress; 2 of 5 done; first run.</div>
+<h3>Headline</h3><div>1 need you; 1 blocked; 1 in progress; 2 of 5 done.</div>
 <h3>Needs you (1)</h3><ul>
 <li>TSK-001 Doc work (doc): Keep | or cut `X`? @carol</li>
 </ul>

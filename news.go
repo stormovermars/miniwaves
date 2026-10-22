@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // mw news: a status page per coordinated job (or for the whole workspace when no job exists), built from
@@ -31,10 +33,27 @@ const (
 	newsMovedMarker = "\x00moved\x00" // replaced by "; N moved since the last run", by "" when hashing
 )
 
-// newsMD escapes text for a Markdown line or table cell: < > & ` | \ and newlines.
+// newsMD escapes text for a Markdown line or table cell: control characters and newlines are dropped, < > & become
+// entities and every other ASCII punctuation character is backslash-escaped, so no link, image, autolink,
+// emphasis or table syntax survives (escaping ":" also defuses bare URLs).
 func newsMD(s string) string {
-	r := strings.NewReplacer("\\", "\\\\", "&", "&amp;", "<", "&lt;", ">", "&gt;", "`", "\\`", "|", "\\|", "\r\n", " ", "\n", " ", "\r", " ")
-	return r.Replace(s)
+	var b strings.Builder
+	for _, r := range newsClean(s, false) {
+		switch {
+		case r == '&':
+			b.WriteString("&amp;")
+		case r == '<':
+			b.WriteString("&lt;")
+		case r == '>':
+			b.WriteString("&gt;")
+		case r < 0x80 && unicode.IsPunct(r) || r < 0x80 && unicode.IsSymbol(r):
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 type newsPart struct {
@@ -115,7 +134,10 @@ func newsSummary(root, rel string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	f, err := os.Open(p)
+	if fi, err := os.Stat(p); err == nil && !fi.Mode().IsRegular() {
+		return "", nil // a FIFO or device would block the open under the board lock
+	}
+	f, err := openNoBlock(p)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
@@ -138,13 +160,14 @@ func newsSummary(root, rel string) (string, error) {
 }
 
 func newsCollect(p newsPart, since time.Time) newsData {
+	c := func(s string) string { return newsClean(s, false) }
 	var d newsData
 	d.hasPrev = !since.IsZero()
 	var rows []newsEvent
 	for _, t := range p.tenants {
 		title := map[string]string{}
 		for _, it := range t.Items {
-			title[it.ID] = it.Title
+			title[it.ID] = c(it.Title)
 			if it.Kind == "wave" {
 				dn := 0
 				m := waveMembers(t, it.ID)
@@ -153,7 +176,7 @@ func newsCollect(p newsPart, since time.Time) newsData {
 						dn++
 					}
 				}
-				d.miles = append(d.miles, newsMile{it.ID, t.Slug, it.Title, fmt.Sprintf("%d/%d", dn, len(m)), it.Status})
+				d.miles = append(d.miles, newsMile{it.ID, t.Slug, c(it.Title), fmt.Sprintf("%d/%d", dn, len(m)), it.Status})
 				continue
 			}
 			d.total++
@@ -165,27 +188,27 @@ func newsCollect(p newsPart, since time.Time) newsData {
 				reason := ""
 				for _, e := range it.Events {
 					if e.Action == "block" {
-						reason = e.Note
+						reason = c(e.Note)
 					}
 				}
-				d.blocked = append(d.blocked, newsLine{it.ID, t.Slug, it.Title, reason})
+				d.blocked = append(d.blocked, newsLine{it.ID, t.Slug, c(it.Title), reason})
 			case "doing":
 				who := ""
 				if it.Assignee != "" {
 					who = "@" + displayName(it.Assignee)
 				}
-				d.doing = append(d.doing, newsLine{it.ID, t.Slug, it.Title, who})
+				d.doing = append(d.doing, newsLine{it.ID, t.Slug, c(it.Title), who})
 			}
 			if e, ok := openAsk(it); ok {
 				by := ""
 				if e.By != "" {
 					by = "@" + displayName(e.By)
 				}
-				d.needs = append(d.needs, newsLine{it.ID, t.Slug, it.Title, strings.TrimSpace(e.Note + " " + by)})
+				d.needs = append(d.needs, newsLine{it.ID, t.Slug, c(it.Title), c(strings.TrimSpace(e.Note + " " + by))})
 			}
 		}
 		for _, r := range tenantRows(t) {
-			rows = append(rows, newsEvent{r, title[r.Item]})
+			rows = append(rows, newsEvent{newsCleanRow(r), title[r.Item]})
 			if d.hasPrev && r.sortKey.After(since) {
 				d.moved++
 			}
@@ -275,13 +298,13 @@ func renderNewsMD(p newsPart, d newsData, events, summaryMax int) string {
 	multi := len(p.tenants) > 1
 	fmt.Fprintf(&b, "# %s\n", newsMD(compactText(p.title, 72)))
 	if p.desc != "" {
-		fmt.Fprintf(&b, "_%s_\n", strings.ReplaceAll(strings.ReplaceAll(newsMD(p.desc), "*", "\\*"), "_", "\\_"))
+		fmt.Fprintf(&b, "_%s_\n", newsMD(p.desc))
 	}
 	fmt.Fprintf(&b, "Updated %s\n", newsStampMarker)
 	if p.url != "" {
 		fmt.Fprintf(&b, "Page: %s\n", newsMD(p.url))
 	}
-	fmt.Fprintf(&b, "\n## Headline\n%s.\n", newsMD(newsHeadline(d)))
+	fmt.Fprintf(&b, "\n## Headline\n%s.\n", newsMD(strings.TrimSuffix(newsHeadline(d), newsMovedMarker))+newsMovedMarker)
 	list := func(head string, rows []newsLine) {
 		fmt.Fprintf(&b, "\n## %s\n", head)
 		if len(rows) == 0 {
@@ -332,7 +355,6 @@ func renderNewsMD(p newsPart, d newsData, events, summaryMax int) string {
 		if len(s) > summaryMax {
 			s = strings.ToValidUTF8(s[:summaryMax], "") + "\n[trimmed]"
 		}
-		s = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s) // no raw tags, even inside the fence
 		f := newsFence(s)
 		fmt.Fprintf(&b, "\n## Summary\n%stext\n%s\n%s\n", f, s, f)
 	}
@@ -515,6 +537,9 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	}
 	stdout := o["out"] == "-"
 	text := format == "text"
+	if o["json"] == "true" && (stdout || text && o["out"] == "") {
+		return errors.New("-j needs a file target (-o PATH or news.out)")
+	}
 	// everything is validated and rendered before anything is written
 	var parts []newsPart
 	var datas []newsData
@@ -534,7 +559,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		}
 		target := ""
 		switch {
-		case stdout:
+		case stdout, text && o["out"] == "": // no file, so no news.out and no sidecar
 		case o["out"] != "":
 			target = htmlPath(path, o["out"])
 		default:
@@ -544,12 +569,16 @@ func newsCommand(path string, w *Workspace, args []string) error {
 			}
 			target = filepath.Join(d, "status."+format)
 			if other, dup := seen[target]; dup {
-				return fmt.Errorf("jobs %q and %q share the news file %s: give one a different news.out", other, id, target)
+				return fmt.Errorf("jobs %q and %q share the news file %s: set news.out per job (mw jobs set ID news.out=docs/news/ID/)", other, id, target)
 			}
 			seen[target] = id
 		}
 		parts, targets = append(parts, p), append(targets, target)
-		datas = append(datas, newsCollect(p, newsPrevStamp(target)))
+		since := time.Time{}
+		if target != "" {
+			since = newsPrevStamp(target)
+		}
+		datas = append(datas, newsCollect(p, since))
 	}
 	if text { // stdout by default; a file only with -o PATH; no news.out, no sidecar
 		out := ""
@@ -572,7 +601,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	var results []newsResult
 	put := func(job, target, content string, moved int, hasPrev bool) error {
 		if target == "" {
-			fmt.Print(newsFill(content, now, moved, hasPrev, false))
+			fmt.Print(newsFill(strings.ReplaceAll(content, newsMovedMarker, ""), now, 0, false, false)) // no sidecar: no "moved"
 			return nil
 		}
 		wrote, err := newsWrite(target, content, now, moved, hasPrev)

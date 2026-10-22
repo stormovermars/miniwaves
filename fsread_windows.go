@@ -30,3 +30,5 @@ func openShared(path string) (*os.File, error) {
 func transientShareErr(err error) bool {
 	return errors.Is(err, errSharingViolation) || errors.Is(err, syscall.ERROR_ACCESS_DENIED)
 }
+
+func openNoBlock(p string) (*os.File, error) { return openShared(p) }

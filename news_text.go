@@ -41,26 +41,6 @@ func newsTextWidth(flag string) (int, error) {
 	return w, nil
 }
 
-// newsClean makes board text safe for a terminal: whitespace controls become spaces, every other control,
-// format (bidi, zero-width) and invalid rune is dropped. keepNL keeps newlines (summary text).
-func newsClean(s string, keepNL bool) string {
-	s = strings.ToValidUTF8(s, "")
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r == '\n':
-			if keepNL {
-				return r
-			}
-			return ' '
-		case r == '\t' || r == '\r':
-			return ' '
-		case unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == 0xFFFD:
-			return -1
-		}
-		return r
-	}, s)
-}
-
 // newsRuneWidth is the terminal cell width of a rune: 0 for combining marks, 2 for East Asian wide and
 // emoji ranges, else 1. There is no width helper elsewhere in mw and no x/text dependency, so this is a
 // small built-in table, not a full wcwidth.

@@ -350,7 +350,7 @@ Job ids match `^[a-z0-9][a-z0-9-]{0,31}$`. `jobs show` is a read; the other thre
 mw news [--job ID] [--format md|html|text] [--width N] [-o PATH|-] [-j]
 ```
 
-- Default: every job, one file each at `<news.out>/status.md` (`.html` with `--format html`); with no job at all, the workspace to `docs/news/status.md`. Two jobs that resolve to the same file are refused. `-j` prints `[{job, path, written}]`.
+- Default: every job, one file each at `<news.out>/status.md` (`.html` with `--format html`); with no job at all, the workspace to `docs/news/status.md`. Two jobs that resolve to the same file are refused (set `news.out` per job, e.g. `docs/news/ID/`). `-j` prints `[{job, path, written}]`; it is an error with `-o -` or `--format text` (nothing is written).
 - `--format text` is plain text for terminals: no ANSI or colour codes, styled with characters only (`══` title, `── NEEDS YOU ──` heads marked `!` `◐` `✓`, `▸` bullets, a `│` milestone table with a 20-cell `█░` bar, the summary in a `┌─┐` box, one-line events cut to the width). It prints to stdout; it writes a file only with `-o PATH` and uses neither `news.out` nor the hash sidecar (so no "moved since the last run" count).
 - `--width N` (text only): else exactly 80 (`$COLUMNS` is not read); clamped to 40..160. Long lines wrap with a hanging indent; wide (CJK, emoji) runes count as two cells.
 - Text strips control characters (ESC included) and bidi/zero-width marks from board text, so nothing can inject terminal codes, and shows real characters (no `\|` or `&lt;`).
@@ -358,7 +358,7 @@ mw news [--job ID] [--format md|html|text] [--width N] [-o PATH|-] [-j]
 - `summary` is read as data (never run): a regular file, at most 20 KB, shown as a code block (a `<pre>` block in HTML).
 - The Markdown is kept under 9,500 characters per job (the tidewatch pane's limit); the events are trimmed first, then the summary.
 - Markdown cells and lines escape the characters < > & ` | \ and newlines; HTML uses the same escaping as `board --html`, so a title such as `<script>` stays inert.
-- It writes only when the content changed. The generated-at line is left out of the hash, which sits in `PATH.hash` beside the page (`unix time` then `sha256`). Otherwise it prints `unchanged PATH`. `news` takes the board lock like any write.
+- It writes only when the content changed. The generated-at line is left out of the hash, which sits in `PATH.hash` beside the page (`unix time` then `sha256`). Otherwise it prints `unchanged PATH`. `news` takes the board lock like any write, except `-o -` and `--format text` without `-o` (shared lock, no file, no "moved" segment). Board text is stripped of control characters and bidi marks in every format; Markdown escapes all ASCII punctuation, so titles can't become links or images. A `summary` that is not a regular file (FIFO, device) is ignored.
 
 ### Roles (prompts)
 

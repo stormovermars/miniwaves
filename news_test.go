@@ -70,7 +70,7 @@ func TestNewsGoldens(t *testing.T) {
 		got = captureOutput(t, func() { runAll(t, []string{"news", "--job", "tiny", "--format", f, "-o", "-"}) })
 		got = strings.ReplaceAll(got, time.Now().Format("2006-01-02 15:04"), "<NOW>")
 		checkGolden(t, "news-"+f, got)
-		if strings.Contains(got, "<script>") || strings.Contains(got, "\r") {
+		if head, _, _ := strings.Cut(got, "## Summary"); strings.Contains(head, "<script>") || strings.Contains(got, "\r") {
 			t.Fatalf("%s: raw <script> or CR in output", f)
 		}
 	}
@@ -96,7 +96,7 @@ func TestNewsDefaultPathAndUnchanged(t *testing.T) {
 	if out = captureOutput(t, func() { runAll(t, []string{"news"}) }); !strings.HasPrefix(out, "wrote ") {
 		t.Fatalf("after change: %q", out)
 	}
-	if b, _ = os.ReadFile(file); !strings.Contains(string(b), "moved since the last run") || !strings.Contains(string(b), "note: TSK-002") {
+	if b, _ = os.ReadFile(file); !strings.Contains(string(b), "moved since the last run") || !strings.Contains(string(b), "note\\: TSK\\-002") {
 		t.Fatalf("change not shown:\n%s", b)
 	}
 	// deleting the page rewrites it even though the hash matches
@@ -114,6 +114,14 @@ func TestNewsDefaultPathAndUnchanged(t *testing.T) {
 func TestNewsEscapingMD(t *testing.T) {
 	if got := newsMD("a<b>&`c`|d\\e\nf"); got != "a&lt;b&gt;&amp;\\`c\\`\\|d\\\\e f" {
 		t.Fatalf("escape: %q", got)
+	}
+	// no link, image, autolink or raw ESC survives (CommonMark: every ASCII punctuation may be escaped)
+	for _, in := range []string{"![](http://track.example/p.png) [click](https://evil.example) *bold*", "<https://e> www.e.com https://e.com", "q \x1b[31mRED\x1b[0m"} {
+		got := newsMD(in)
+		if strings.Contains(got, "](") || strings.Contains(got, "![") || strings.Contains(got, "\x1b") || strings.Contains(strings.ReplaceAll(got, "\\:", ""), "://") ||
+			strings.Contains(got, "<") || strings.Contains(strings.ReplaceAll(got, "\\:", ""), ":") {
+			t.Fatalf("unsafe: %q -> %q", in, got)
+		}
 	}
 }
 
@@ -432,7 +440,7 @@ func TestNewsDescription(t *testing.T) {
 	p := newsPart{title: "T", desc: "Hi <b>|x * _y_ \x1b[31m"}
 	var d newsData
 	md := renderNewsMD(p, d, 10, 1000)
-	if !strings.Contains(md, "# T\n_Hi &lt;b&gt;\\|x \\* \\_y\\_ \x1b[31m_\n") {
+	if !strings.Contains(md, "# T\n_Hi &lt;b&gt;\\|x \\* \\_y\\_ \\[31m_\n") {
 		t.Fatalf("md: %q", md)
 	}
 	if !strings.Contains(renderNewsHTML([]newsPart{p}, []newsData{d}, "T"), "<em>Hi &lt;b&gt;|x * _y_ \x1b[31m</em>") {

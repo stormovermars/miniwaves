@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	toon "github.com/toon-format/toon-go"
 )
@@ -301,6 +302,9 @@ func readOnly(args []string) bool {
 		return sub != "set" && sub != "use" && !(sub == "sets" && (has("add") || has("drop")))
 	case "jobs":
 		return sub == "show"
+	case "news": // stdout only (-o - or --format text without -o) writes no file and no sidecar
+		o, _, err := options(args[1:])
+		return err == nil && (o["out"] == "-" || o["format"] == "text" && o["out"] == "")
 	}
 	return false
 }
@@ -866,8 +870,28 @@ func allowOptions(o map[string]string, allowed ...string) error {
 	return nil
 }
 
+// newsClean makes board text safe for a terminal: whitespace controls become spaces, every other control,
+// format (bidi, zero-width) and invalid rune is dropped. keepNL keeps newlines (summary text).
+func newsClean(s string, keepNL bool) string {
+	s = strings.ToValidUTF8(s, "")
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n':
+			if keepNL {
+				return r
+			}
+			return ' '
+		case r == '\t' || r == '\r':
+			return ' '
+		case unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == 0xFFFD:
+			return -1
+		}
+		return r
+	}, s)
+}
+
 func compactText(s string, limit int) string {
-	s = strings.Join(strings.Fields(s), " ")
+	s = strings.Join(strings.Fields(newsClean(s, false)), " ")
 	r := []rune(s)
 	if len(r) <= limit {
 		return s
