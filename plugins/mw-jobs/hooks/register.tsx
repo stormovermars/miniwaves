@@ -2323,7 +2323,7 @@ const readMetrics = async ($: any, path: string): Promise<MetricsResult | undefi
 
 /** What an alert is about; alerts.kinds (an mw key) picks among these. Decided from the item's structured field, never from the text. */
 export type AlertKind = 'ask' | 'review' | 'blocked' | 'done' | 'new' | 'release' | 'metrics'
-export type AlertEvent = { type: AlertType; kind: AlertKind; text: string; who?: string; key?: string }
+export type AlertEvent = { type: AlertType; kind: AlertKind; text: string; who?: string; key?: string; ref?: string; link?: { kind: 'item' | 'wave'; tenant: string; id: string } }
 
 export const ALERT_TITLE_MAX = 60
 /** `<job> ▸ <What>: <ref> <title>`: the one text of every alert (toast and pane row). The ref is dropped when the title already starts with it; the title is cut to 60 characters. */
@@ -2351,7 +2351,7 @@ export const modelEvents = (job: { id: string; tenants?: string[] }, old: Model,
     for (const i of list.items) {
       const k = `${i.tenant}:${i.id}`
       if (was.has(k)) continue
-      out.push({ type, kind: ak, text: alertText(job.id, what, itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `${kind}|${k}|${i.since}` })
+      out.push({ type, kind: ak, text: alertText(job.id, what, itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `${kind}|${k}|${i.since}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: kind === 'milestone' ? 'wave' : 'item', tenant: i.tenant, id: i.id } })
     }
   }
   add('milestone', 'Milestone done', 'done', old.happened.closed_milestones, next.happened.closed_milestones, 'milestone')
@@ -2380,7 +2380,7 @@ const legacyEvents = (job: MwJobsJob, old: MwJobsSnapshot, next: MwJobsSnapshot)
   for (const w of next.waves) {
     const was = oldWaves.get(w.id)
     if (was !== undefined && was.state !== 'done' && w.state === 'done') {
-      out.push({ type: 'milestone', kind: 'done', text: alertText(job.id, 'Milestone done', waveName(w, labels), w.title), who: w.id.replace(':', ' '), key: `milestone|${w.id}` })
+      out.push({ type: 'milestone', kind: 'done', text: alertText(job.id, 'Milestone done', waveName(w, labels), w.title), who: w.id.replace(':', ' '), key: `milestone|${w.id}`, ref: waveName(w, labels), link: { kind: 'wave', tenant: w.id.split(':')[0] ?? '', id: w.id } })
     }
   }
   for (const i of next.items) {
@@ -2388,15 +2388,15 @@ const legacyEvents = (job: MwJobsJob, old: MwJobsSnapshot, next: MwJobsSnapshot)
     const k = `${i.tenant}:${i.id}`
     if (i.state !== 'done' && !isReview(i) && flag(i, next) && (was === undefined || !flag(was, old))) {
       const blocked = i.state === 'blocked'
-      out.push({ type: 'needs', kind: blocked ? 'blocked' : 'ask', text: alertText(job.id, blocked ? 'Blocked' : 'Needs you', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `${blocked ? 'blocked' : 'needs'}|${k}` })
+      out.push({ type: 'needs', kind: blocked ? 'blocked' : 'ask', text: alertText(job.id, blocked ? 'Blocked' : 'Needs you', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `${blocked ? 'blocked' : 'needs'}|${k}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
     }
   }
   for (const i of next.items) {
     const was = oldKeys.get(`${i.tenant}:${i.id}`)
-    if (was !== undefined && was.state !== i.state && i.state === 'done') out.push({ type: 'done', kind: 'done', text: alertText(job.id, 'Done', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `done|${i.tenant}:${i.id}` })
+    if (was !== undefined && was.state !== i.state && i.state === 'done') out.push({ type: 'done', kind: 'done', text: alertText(job.id, 'Done', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `done|${i.tenant}:${i.id}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
   }
   for (const i of next.items) {
-    if (!oldKeys.has(`${i.tenant}:${i.id}`)) out.push({ type: 'new', kind: 'new', text: alertText(job.id, 'New', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `new|${i.tenant}:${i.id}` })
+    if (!oldKeys.has(`${i.tenant}:${i.id}`)) out.push({ type: 'new', kind: 'new', text: alertText(job.id, 'New', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `new|${i.tenant}:${i.id}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
   }
   out.push(...metricDrops(old.metrics, next.metrics).map(d => metricEvent(job.id, d)))
   return out
@@ -2596,10 +2596,10 @@ export const ALERT_ROWS_SHOWN = 5
 let alertSeq = 0
 
 /** Adds raised alerts as pane rows (newest first, at most ALERT_ROWS_MAX kept) and saves them, so a reload still shows them. */
-export const addAlertRows = async ($: any, job: MwJobsJob, events: Array<{ type: string; text: string }>, at?: number) => {
+export const addAlertRows = async ($: any, job: MwJobsJob, events: Array<{ type: string; text: string; ref?: string; link?: MwJobsAlertRow['link'] }>, at?: number) => {
   if (events.length === 0) return
   const now: number = at ?? (await $.clock.now())
-  const rows: MwJobsAlertRow[] = events.map(x => ({ id: `${now}-${(alertSeq += 1)}`, at: now, job: job.id, type: x.type, text: x.text })).reverse()
+  const rows: MwJobsAlertRow[] = events.map(x => ({ id: `${now}-${(alertSeq += 1)}`, at: now, job: job.id, type: x.type, text: x.text, ...(x.link !== undefined ? { ref: x.ref, link: x.link } : {}) })).reverse()
   await update($, alertRows, (l: MwJobsAlertRow[]) => [...rows, ...l].slice(0, ALERT_ROWS_MAX))
   await saveAlertRows($)
 }
@@ -2617,10 +2617,27 @@ const dismissAlert = async ($: any, id: string | null) => {
 export const parseAlertRows = (v: unknown): MwJobsAlertRow[] =>
   (Array.isArray(v) ? v : [])
     .filter((r): r is MwJobsAlertRow => r !== null && typeof r === 'object' && typeof r.id === 'string' && typeof r.text === 'string' && typeof r.at === 'number')
-    .map(r => ({ id: r.id, at: r.at, job: String(r.job ?? ''), type: String(r.type ?? ''), text: r.text }))
+    .map(r => ({ id: r.id, at: r.at, job: String(r.job ?? ''), type: String(r.type ?? ''), text: r.text, ...(r.link !== undefined && r.link !== null && typeof r.link.id === 'string' && (r.link.kind === 'item' || r.link.kind === 'wave') ? { ref: typeof r.ref === 'string' ? r.ref : undefined, link: { kind: r.link.kind, tenant: String(r.link.tenant ?? ''), id: r.link.id } } : {}) }))
     .slice(0, ALERT_ROWS_MAX)
 
 /** The alert rows above a pane's own drawing: one row each (time, text, x), newest first; past ALERT_ROWS_SHOWN a "+N more · Clear all" line. */
+/** An alert row's text; its id (item or milestone) is a link to the detail panel. */
+const alertText2 = (ui: any, $: any, r: MwJobsAlertRow) => {
+  const { Box, Text, Button } = ui
+  const bare = (t: string) => (t.includes('\u00b7') ? t.slice(t.indexOf('\u00b7') + 1) : t)
+  const tok = r.link === undefined || r.ref === undefined ? undefined : [r.ref, bare(r.ref)].find(t => t !== '' && r.text.indexOf(t, Math.max(0, r.text.indexOf('\u25b8'))) >= 0)
+  if (tok === undefined) return <Text key={`alert-text-${r.id}`}>{r.text}</Text>
+  const at = r.text.indexOf(tok, Math.max(0, r.text.indexOf('\u25b8')))
+  const link = r.link!
+  return (
+    <Box key={`alert-text-${r.id}`}>
+      <Text>{r.text.slice(0, at)}</Text>
+      <Button key={`alert-id-${r.id}`} plain label={tok} onPress={() => void openDetail($, { kind: link.kind, jobId: r.job, tenant: link.tenant, id: link.id }, 'jobs')} />
+      <Text>{r.text.slice(at + tok.length)}</Text>
+    </Box>
+  )
+}
+
 const alertBox = ($: any, e: any, rows: MwJobsAlertRow[]) => {
   if (rows.length === 0) return null
   const { Box, Text, Button } = $.ui.resolve(e) as any
@@ -2632,7 +2649,7 @@ const alertBox = ($: any, e: any, rows: MwJobsAlertRow[]) => {
           <Text color="warning">{'\u25cf'}</Text>
           <Text dimColor>{hhmm(r.at)}</Text>
           <Box flexGrow={1} flexShrink={1}>
-            <Text key={`alert-text-${r.id}`}>{r.text}</Text>
+            {alertText2({ Box, Text, Button }, $, r)}
           </Box>
           <Button key={`alert-x-${r.id}`} plain dimColor label="x" onPress={() => void dismissAlert($, r.id)} />
         </Box>
@@ -4123,12 +4140,27 @@ const meterBar = (ui: any, key: string, parts: Array<{ n: number; color?: string
 
 /** The ids that exist on a job's board (items and milestones of its snapshot), cached per snapshot. */
 const idIndexCache = new WeakMap<object, IdIndex>()
-const idIndexOf = (snap: MwJobsSnapshot): IdIndex => {
-  const hit = idIndexCache.get(snap)
+const modelIndexCache = new WeakMap<object, IdIndex>()
+const idIndexOf = (snap: MwJobsSnapshot, model?: Model): IdIndex => {
+  let base = idIndexCache.get(snap)
+  if (base === undefined) {
+    base = buildIdIndex(snap.items.map(i => ({ tenant: i.tenant, id: i.id })), snap.waves.map(w => ({ id: w.id, title: w.title })))
+    idIndexCache.set(snap, base)
+  }
+  if (model === undefined) return base
+  const hit = modelIndexCache.get(model)
   if (hit !== undefined) return hit
-  const built = buildIdIndex(snap.items.map(i => ({ tenant: i.tenant, id: i.id })), snap.waves.map(w => ({ id: w.id, title: w.title })))
-  idIndexCache.set(snap, built)
-  return built
+  // a news model carries its own lists: items and milestones the snapshot may not hold
+  const itemLists = [model.now.needs, model.now.review, model.now.blocked, model.now.doing, model.now.backlog, model.now.recentDone, model.happened.done, model.happened.accepted, model.happened.sent_back, model.happened.new_items, model.happened.moved_to_review, model.happened.moved_to_doing, model.next.ready]
+  const waveLists = [model.now.milestones, model.happened.closed_milestones, model.next.next_milestones]
+  const extra = buildIdIndex(
+    itemLists.flatMap(l => l.items.map(i => ({ tenant: i.tenant, id: i.id }))),
+    waveLists.flatMap(l => l.items.map(i => ({ id: i.id.includes(':') ? i.id : `${i.tenant}:${i.id}`, title: i.title }))),
+  )
+  const merged = new Map(base)
+  for (const [k, v] of extra) if (!merged.has(k)) merged.set(k, v)
+  modelIndexCache.set(model, merged)
+  return merged
 }
 
 /** Text whose ids that exist on the board are link-style Buttons: an item id opens its detail panel, a milestone id its milestone panel. Unknown ids stay text. */
@@ -4137,7 +4169,7 @@ const linkedText = (ui: any, $: any, jobId: string, text: string, index: IdIndex
   const parts = splitIds(text, index)
   if (!parts.some(p => p.ref !== undefined)) return <Text key={key} dimColor={o.dimColor} color={o.color} wrap={o.wrap ?? 'truncate-end'}>{text}</Text>
   return (
-    <Box key={key} flexShrink={1} overflow="hidden">
+    <Box key={key} flexShrink={1} overflow={o.wrap === 'wrap' ? undefined : 'hidden'} flexWrap={o.wrap === 'wrap' ? 'wrap' : undefined}>
       {parts.map((p, i) =>
         p.ref !== undefined ? (
           <Button key={`${key}-id${i}`} plain dimColor={o.dimColor} label={p.text} onPress={() => void openDetail($, { kind: p.ref!.kind, jobId, tenant: p.ref!.tenant, id: p.ref!.id }, from)} />
@@ -4174,8 +4206,10 @@ const detailBack = async ($: any) => {
 const STATE_TONE: Record<string, string | undefined> = { blocked: 'error', needs: 'error', review: 'warning', doing: 'warning', done: 'success', closed: 'success' }
 
 /** The detail pane's tree: title row ending in ¦ < Back, then the item's or the milestone's fields as selectable Text. */
-const detailTree = (ui: any, $: any, d: MwJobsDetail, data: Record<string, { text?: string; why?: string }>) => {
+const detailTree = (ui: any, $: any, d: MwJobsDetail, data: Record<string, { text?: string; why?: string }>, index: IdIndex = new Map()) => {
   const { Box, Text, Button, Link } = ui
+  // free text with the board's ids as links (a milestone's own children and log included)
+  const lk = (text: string, key: string, o: { dimColor?: boolean; color?: string; wrap?: 'wrap' | 'truncate-end' } = {}) => linkedText(ui, $, d.cur?.jobId ?? '', text, index, key, 'detail', o)
   const back = <Button key="detail-back" plain label={BACK_LABEL} onPress={() => void detailBack($)} />
   const titleRow = (title: string) => (
     <Box key="detail-title" gap={1}>
@@ -4207,13 +4241,13 @@ const detailTree = (ui: any, $: any, d: MwJobsDetail, data: Record<string, { tex
         {field('tenant', 'tenant', it.tenant)}
         {field('wave', 'milestone', it.wave === '' ? '\u2014' : <Button key="df-wave-open" plain label={it.wave} onPress={() => void openDetail($, { kind: 'wave', jobId: r.jobId, tenant: it.tenant, id: it.wave }, 'detail')} />)}
         {field('owner', 'owner', it.owner || '\u2014')}
-        {it.reason !== null && field('reason', it.reason.label.toLowerCase(), <Text wrap="wrap" color={it.reason.label === 'Blocked' ? 'error' : undefined}>{it.reason.text}</Text>)}
+        {it.reason !== null && field('reason', it.reason.label.toLowerCase(), lk(it.reason.text, 'df-reason', { wrap: 'wrap', color: it.reason.label === 'Blocked' ? 'error' : undefined }))}
         {it.evidence.length > 0 && field('evidence', 'evidence', <Box flexDirection="column">{it.evidence.slice(0, 8).map((e, i) => <Text key={`ev-${i}`} dimColor wrap="truncate-end">{e}</Text>)}</Box>)}
         {it.ticket !== null && field('ticket', 'ticket', it.ticket.url !== '' ? <Link key="df-ticket-link" href={it.ticket.url}>{it.ticket.label}</Link> : it.ticket.label)}
-        {it.acceptance !== '' && field('acc', 'acceptance', it.acceptance)}
-        {it.children.length > 0 && field('children', 'children', <Box flexDirection="column">{it.children.map(c => <Box key={`ch-${c.id}`} gap={1}>{itemBtn(`ch-open-${c.id}`, it.tenant, c.id, c.id)}<Text color={STATE_TONE[c.state]}>{c.state}</Text><Text wrap="truncate-end">{c.title}</Text></Box>)}</Box>)}
+        {it.acceptance !== '' && field('acc', 'acceptance', lk(it.acceptance, 'df-acc', { wrap: 'wrap' }))}
+        {it.children.length > 0 && field('children', 'children', <Box flexDirection="column">{it.children.map(c => <Box key={`ch-${c.id}`} gap={1}>{itemBtn(`ch-open-${c.id}`, it.tenant, c.id, c.id)}<Text color={STATE_TONE[c.state]}>{c.state}</Text>{lk(c.title, `ch-title-${c.id}`)}</Box>)}</Box>)}
         <Text key="log-head" bold dimColor>RECENT LOG</Text>
-        {it.log.length === 0 ? <Text dimColor>{'\u2014'}</Text> : it.log.map((l, i) => <Text key={`log-${i}`} wrap="truncate-end"><Text dimColor>{`${l.at.slice(0, 16).replace('T', ' ')} `}</Text><Text>{l.action}</Text><Text dimColor>{`${l.by ? ` ${l.by}` : ''}${l.note ? ` \u2014 ${l.note}` : ''}`}</Text></Text>)}
+        {it.log.length === 0 ? <Text dimColor>{'\u2014'}</Text> : it.log.map((l, i) => <Box key={`log-${i}`} overflow="hidden"><Text dimColor>{`${l.at.slice(0, 16).replace('T', ' ')} `}</Text><Text>{l.action}</Text><Text dimColor>{l.by ? ` ${l.by}` : ''}</Text>{l.note ? <Text dimColor>{' \u2014 '}</Text> : null}{l.note ? lk(l.note, `log-note-${i}`, { dimColor: true }) : null}</Box>)}
       </Box>
     )
   }
@@ -4229,7 +4263,7 @@ const detailTree = (ui: any, $: any, d: MwJobsDetail, data: Record<string, { tex
       {w.groups.map(g => (
         <Box key={`grp-${g.state}`} flexDirection="column">
           <Text bold color={STATE_TONE[g.state]} dimColor={STATE_TONE[g.state] === undefined}>{`${g.state.toUpperCase()} ${g.items.length}`}</Text>
-          {g.items.map(i => <Box key={`wi-${i.id}`} gap={1}>{itemBtn(`wi-open-${i.id}`, w.tenant, i.id, i.id)}<Text wrap="truncate-end">{i.title}</Text></Box>)}
+          {g.items.map(i => <Box key={`wi-${i.id}`} gap={1}>{itemBtn(`wi-open-${i.id}`, w.tenant, i.id, i.id)}{lk(i.title, `wi-title-${i.id}`)}</Box>)}
         </Box>
       ))}
     </Box>
@@ -5832,7 +5866,10 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: DETAIL_PANE }, async ($, e) => guardDraw('detail', $, e, async () => {
     const ui = $.ui.resolve(e) as any
-    return detailTree(ui, $, (await read($, detail)) as MwJobsDetail, (await read($, detailData)) as Record<string, { text?: string; why?: string }>)
+    const dd = (await read($, detail)) as MwJobsDetail
+    const snap = dd.cur === null ? undefined : (((await read($, snapshots)) as Record<string, MwJobsSnapshot>)[dd.cur.jobId])
+    const dm = dd.cur === null ? undefined : (((await read($, newsModel)) as Record<string, NewsEntry>)[dd.cur.jobId])?.draft
+    return detailTree(ui, $, dd, (await read($, detailData)) as Record<string, { text?: string; why?: string }>, snap === undefined ? new Map() : idIndexOf(snap, dm))
   }))
   on('ui.render', { component: 'Pane', requestId: SETTINGS_PANE }, async ($, e) => guardDraw('settings', $, e, async () => {
     const ui = $.ui.resolve(e) as any
@@ -6258,7 +6295,7 @@ export const register: Register = (on, options) => {
       <Text {...sz("caption")} {...wt} color={color} dimColor={color === undefined}>{text.toUpperCase()}</Text>
     )
     const pid = (tenant: string, id: string) => (labels[tenant] ? `${labels[tenant]}·${id}` : id)
-    const idx = idIndexOf(snap)
+    const idx = idIndexOf(snap, (((await read($, newsModel)) as Record<string, NewsEntry>)[job.id])?.draft)
     const lt = (text: string, key: string, dim = false) => linkedText({ Box, Text, Button }, $, job.id, text, idx, key, 'jobs', { dimColor: dim })
     // an item row's name: its id as a link, then the title with any other board ids linked
     const itemName = (i: MwJobsItem, key: string) => (

@@ -2195,6 +2195,45 @@ test('blocks bars: 5/6 fills 5/6 of the box (± one column), the track is presen
   await term.unmount()
 })
 
+test('alert rows: the item or milestone id in the text is a Button that opens its detail panel', async ($, on) => {
+  const { state, clock } = rig($, on, true)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ju = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
+  state.round = 1
+  await clock.advance(60_000)
+  const alerts = JSON.stringify(await ju.find({ key: 'alerts' }))
+  expect(alerts).toContain('zeta ▸ New: ')
+  const labels = [...alerts.matchAll(/"type":"Button","props":\{[^}]*"label":"([^"]+)"/g)].map(m => m[1])
+  expect(labels).toContain('S·A-9')
+  expect(labels).toContain('C2')
+  const btns = (await ju.findAll({ type: 'Button' })).filter((b: any) => String(b.props?.key ?? '').startsWith('alert-id-'))
+  const a9 = btns.find((b: any) => b.props.label === 'S·A-9') as any
+  await ju.press({ key: a9.props.key })
+  expect(state.opens.at(-1)).toMatchObject({ id: DETAIL_PANE, focus: true })
+  expect(state.runs).toContain('mw show A-9 -t zetasheet -j')
+  await ju.unmount()
+})
+
+test('detail panel: ids in the acceptance text and the log notes are Buttons when they exist on the board; unknown ones stay Text', async ($, on) => {
+  const state = await detailSetup($, on)
+  state.shows['zeta|TSK-203'] = { ...SHOW_TSK001, id: 'TSK-203', acceptance: 'Same as STR-002, not TSK-9999', events: [{ at: '2026-10-22T10:00:00', action: 'note', by: 'x', note: 'see TSK-203 and BUG-404' }] }
+  await cmd($, 'style kanban')
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
+  await ui.press({ key: 'job-zeta' })
+  await ui.press({ key: (await btn(ui, 'zeta/TSK-203')).props.key })
+  await ui.unmount()
+  const dp = await $.ui.mount({ ...PANE, requestId: DETAIL_PANE, surface: 'desktop' } as never)
+  const labels = (await dp.findAll({ type: 'Button' })).map((b: any) => String(b.props?.label))
+  expect(labels).toContain('STR-002')
+  expect(labels).toContain('TSK-203')
+  expect(labels).not.toContain('TSK-9999')
+  expect(labels).not.toContain('BUG-404')
+  const txt = (await dp.findAll({ type: 'Text' })).map((t: any) => flat(t)).join('|')
+  expect(txt).toContain('TSK-9999')
+  expect(txt).toContain('BUG-404')
+  await dp.unmount()
+})
+
 test('an invalid or newer metrics file shows a one-line dim notice instead of the section', async ($, on) => {
   const { state } = rig($, on, true, REG_M)
   state.newsFiles.zeta = '# S'
