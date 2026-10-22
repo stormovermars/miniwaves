@@ -504,3 +504,45 @@ func TestFanfareBoardEnabledTriState(t *testing.T) {
 		t.Fatalf("board on, user off: %v %v", fanfareOn(c), src)
 	}
 }
+
+// TSK-058: a board written before 0.3.4 carries "enabled": false for "never set"; that reads the same as a deliberate
+// off, so mw cannot clear it. When it silences a user who switched fanfare on, status says how to fix it.
+func TestFanfareStatusHintBoardOffSilencesUser(t *testing.T) {
+	path := inTempDir(t)
+	t.Setenv("MW_NO_FANFARE", "")
+	t.Setenv("MW_NO_PLUGINS", "")
+	runAll(t, []string{"init", "Old board"})
+	// a pre-0.3.4 board: the fanfare object has the plain-bool "enabled": false
+	b, _ := os.ReadFile(path)
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["fanfare"] = map[string]any{"enabled": false, "dir": "~/fanfare-finale-songs", "milestone_seconds": 15, "finale_seconds": 60, "volume": 1}
+	b, _ = json.Marshal(raw)
+	os.WriteFile(path, b, 0o600)
+	hint := "board says off; mw fanfare set enabled=true to follow your setting"
+	// user off or unset: nothing to follow, no hint
+	if s := out(t, "fanfare"); strings.Contains(s, hint) {
+		t.Fatalf("hint without a user setting:\n%s", s)
+	}
+	out(t, "user", "set", "fanfare.enabled=false")
+	if s := out(t, "fanfare"); strings.Contains(s, hint) {
+		t.Fatalf("hint with user off:\n%s", s)
+	}
+	// user on, board explicitly off: silenced, so the hint shows (text and JSON)
+	out(t, "user", "set", "fanfare.enabled=true")
+	s := out(t, "fanfare")
+	if !strings.Contains(s, "fanfare: disabled") || !strings.Contains(s, "hint: "+hint) {
+		t.Fatalf("no hint:\n%s", s)
+	}
+	if j := out(t, "fanfare", "-j"); !strings.Contains(j, `"hint": "`+hint+`"`) {
+		t.Fatalf("no JSON hint:\n%s", j)
+	}
+	// following the hint: board true, the user layer decides
+	out(t, "fanfare", "set", "enabled=true")
+	s = out(t, "fanfare")
+	if strings.Contains(s, hint) || !strings.Contains(s, "fanfare: enabled (user; board: enabled)") {
+		t.Fatalf("after set enabled=true:\n%s", s)
+	}
+}
