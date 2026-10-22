@@ -1,0 +1,11 @@
+id: tiny
+title: Tiny corpus
+tenants[2]: sheet,doc
+max_workers: 2
+worktrees: on
+lock: ""
+news.out: docs/news/
+news.url: "https://example.com/news"
+summary: ""
+pane: on
+pane.style: ""

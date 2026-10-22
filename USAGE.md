@@ -114,6 +114,7 @@ mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
 mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]   # -c under a session only while acceptance is empty
 mw gate [-t SLUG] [-j] | mw gate level trust|proof|spec|judged [-t SLUG] [--workspace] [--by NAME] | mw gate evidence|acceptance|judge on|off|auto [--by NAME] [--workspace]
 mw version [-j]   # {version, schema, board_schema, board}: nearest workspace and its schema (null if none)
+mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]   # coordinated-job config (see "Coordinated jobs")
 mw review [-t SLUG] [-j]
 mw judge ID [-t SLUG]
 mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]
@@ -272,6 +273,31 @@ Without the key the defaults above apply.
 `mw note ID TEXT...` appends a timestamped note to any item or wave (any
 status); `mw show ID` lists the notes. It never changes the status or the
 block/done note.
+
+## Coordinated jobs
+
+A job groups tenants under one coordinator. mw only stores the config and ships prompts and data; it never starts a session. The config lives in `.miniwaves.json` as an omitempty `jobs` object keyed by job id (a tenant carries `"job": ID`), in schema 8 with no migration: a board that never opts in is unchanged.
+
+```text
+mw jobs enable ID -t SLUG...        # create the job if needed and put the tenants in it (-t repeats or takes a comma list)
+mw jobs disable ID [-t SLUG]        # clear the tenants (all, or one); the job's data stays
+mw jobs set ID KEY=VALUE...         # every key and value is validated; nothing is stored when one is refused; an empty VALUE resets the key
+mw jobs show [ID] [-j]              # effective values (defaults applied) and the job's tenants
+```
+
+| Key | Default | Rule |
+|---|---|---|
+| `title` | the id | up to 120 characters |
+| `max_workers` | `4` | 1..32 |
+| `worktrees` | `on` | `on` or `off` |
+| `lock` | none | a command name only (`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`), never a command line |
+| `news.out` | `docs/news/` | relative, cleaned, inside the workspace: no `..`, no absolute path, no `~`, no drive |
+| `news.url` | none | an `http(s)` URL |
+| `summary` | none | a path with the `news.out` rules |
+| `pane` | `on` | `on` or `off` |
+| `pane.style` | none | `^[a-z0-9-]{1,32}$` |
+
+Job ids match `^[a-z0-9][a-z0-9-]{0,31}$`. `jobs show` is a read; the other three write the index. Values are data: nothing here is executed.
 
 ## Fanfare
 

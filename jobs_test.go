@@ -1,0 +1,157 @@
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"strings"
+	"testing"
+)
+
+func jobsBoard(t *testing.T) string {
+	t.Helper()
+	path := inTempDir(t)
+	t.Setenv("MW_SESSION", "")
+	t.Setenv("MW_TENANT", "")
+	runAll(t,
+		[]string{"init", "Jobs app"},
+		[]string{"tenant", "add", "sheet", "Sheet"},
+		[]string{"tenant", "add", "doc", "Doc"},
+	)
+	return path
+}
+
+func TestJobsEnableSetShowDisable(t *testing.T) {
+	path := jobsBoard(t)
+	runAll(t,
+		[]string{"jobs", "enable", "tiny", "-t", "sheet", "-t", "doc"},
+		[]string{"jobs", "set", "tiny", "title=Tiny corpus", "max_workers=3", "worktrees=off", "lock=buildlock.sh",
+			"news.out=docs/n/", "news.url=https://example.com/n", "summary=out/summary.txt", "pane=off", "pane.style=blocks"},
+	)
+	w, err := load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := w.Jobs["tiny"]
+	if c.Title != "Tiny corpus" || c.MaxWorkers != 3 || c.Worktrees != "off" || c.Lock != "buildlock.sh" || c.NewsOut != "docs/n/" ||
+		c.NewsURL != "https://example.com/n" || c.Summary != "out/summary.txt" || c.Pane != "off" || c.PaneStyle != "blocks" {
+		t.Fatalf("job: %+v", c)
+	}
+	if w.Version != 8 {
+		t.Fatalf("schema %d", w.Version)
+	}
+	jobOf := map[string]string{}
+	for _, tn := range w.Tenants {
+		jobOf[tn.Slug] = tn.Job
+	}
+	if jobOf["sheet"] != "tiny" || jobOf["doc"] != "tiny" || jobOf["jobs-app"] != "" {
+		t.Fatalf("tenant jobs: %v", jobOf)
+	}
+	// the index carries jobs and tenant job, nothing else changed shape
+	b, _ := os.ReadFile(path)
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw["jobs"].(map[string]any)["tiny"].(map[string]any)["news.out"]; !ok {
+		t.Fatalf("index: %s", b)
+	}
+
+	out := captureOutput(t, func() { runAll(t, []string{"jobs", "show", "tiny", "-j"}) })
+	var v JobView
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if v.ID != "tiny" || len(v.Tenants) != 2 || v.MaxWorkers != 3 || v.NewsOut != "docs/n/" {
+		t.Fatalf("show: %+v", v)
+	}
+	// reset to defaults with an empty value
+	runAll(t, []string{"jobs", "set", "tiny", "max_workers=", "news.out=", "pane=", "title="})
+	out = captureOutput(t, func() { runAll(t, []string{"jobs", "show", "-j"}) })
+	var all []JobView
+	if err := json.Unmarshal([]byte(out), &all); err != nil || len(all) != 1 {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if all[0].MaxWorkers != 4 || all[0].NewsOut != "docs/news/" || all[0].Pane != "on" || all[0].Title != "tiny" || all[0].Worktrees != "off" {
+		t.Fatalf("defaults: %+v", all[0])
+	}
+
+	runAll(t, []string{"jobs", "disable", "tiny", "-t", "doc"})
+	w, _ = load(path)
+	if w.Tenants[2].Job != "" || w.Tenants[1].Job != "tiny" {
+		t.Fatalf("disable -t: %+v", w.Tenants)
+	}
+	if err := run([]string{"jobs", "disable", "tiny", "-t", "doc"}); err == nil {
+		t.Fatal("disable of a tenant outside the job should fail")
+	}
+	runAll(t, []string{"jobs", "disable", "tiny"})
+	w, _ = load(path)
+	if w.Tenants[1].Job != "" || w.Tenants[2].Job != "" || w.Jobs["tiny"].Worktrees != "off" {
+		t.Fatalf("disable keeps job data: %+v %+v", w.Tenants, w.Jobs)
+	}
+	if err := run([]string{"jobs", "disable", "nope"}); err == nil {
+		t.Fatal("unknown job")
+	}
+}
+
+func TestJobsValidation(t *testing.T) {
+	jobsBoard(t)
+	runAll(t, []string{"jobs", "enable", "j1", "-t", "sheet"})
+	bad := [][]string{
+		{"jobs", "enable", "Bad_ID", "-t", "sheet"},
+		{"jobs", "enable", "-x", "-t", "sheet"},
+		{"jobs", "enable", "UPPER", "-t", "sheet"},
+		{"jobs", "enable", strings.Repeat("a", 33), "-t", "sheet"},
+		{"jobs", "enable", "j2"},
+		{"jobs", "enable", "j2", "-t", "nope"},
+		{"jobs", "set", "j1", "news.out=../x"},
+		{"jobs", "set", "j1", "news.out=a/../../x"},
+		{"jobs", "set", "j1", "news.out=/abs/x"},
+		{"jobs", "set", "j1", "news.out=~/x"},
+		{"jobs", "set", "j1", `news.out=C:\x`},
+		{"jobs", "set", "j1", `news.out=..\x`},
+		{"jobs", "set", "j1", "summary=../s.txt"},
+		{"jobs", "set", "j1", "summary=/s.txt"},
+		{"jobs", "set", "j1", "summary=~"},
+		{"jobs", "set", "j1", "summary=."},
+		{"jobs", "set", "j1", "pane.style=Bad"},
+		{"jobs", "set", "j1", "pane.style=" + strings.Repeat("a", 33)},
+		{"jobs", "set", "j1", "pane.style=a b"},
+		{"jobs", "set", "j1", "max_workers=0"},
+		{"jobs", "set", "j1", "max_workers=33"},
+		{"jobs", "set", "j1", "max_workers=x"},
+		{"jobs", "set", "j1", "worktrees=maybe"},
+		{"jobs", "set", "j1", "lock=rm -rf /"},
+		{"jobs", "set", "j1", "news.url=javascript:alert(1)"},
+		{"jobs", "set", "j1", "nokey=1"},
+		{"jobs", "set", "j1", "title"},
+		{"jobs", "set", "ghost", "title=x"},
+		{"jobs", "show", "ghost"},
+	}
+	for _, args := range bad {
+		if err := run(args); err == nil {
+			t.Errorf("%v: expected an error", args)
+		}
+	}
+	// a failed set stores nothing, even for the valid keys before the bad one
+	if err := run([]string{"jobs", "set", "j1", "title=Half", "max_workers=99"}); err == nil {
+		t.Fatal("expected error")
+	}
+	out := captureOutput(t, func() { runAll(t, []string{"jobs", "show", "j1", "-j"}) })
+	if strings.Contains(out, "Half") {
+		t.Fatalf("partial write: %s", out)
+	}
+	// clean forms are accepted and normalized
+	runAll(t, []string{"jobs", "set", "j1", "news.out=docs//news/./", "summary=out\\s.txt", "max_workers=32", "pane.style=a-1"})
+	out = captureOutput(t, func() { runAll(t, []string{"jobs", "show", "j1", "-j"}) })
+	var v JobView
+	_ = json.Unmarshal([]byte(out), &v)
+	if v.NewsOut != "docs/news/" || v.Summary != "out/s.txt" || v.MaxWorkers != 32 {
+		t.Fatalf("normalized: %+v", v)
+	}
+}
+
+func TestJobsReadOnlyShow(t *testing.T) {
+	if !readOnly([]string{"jobs", "show"}) || readOnly([]string{"jobs", "set", "a", "b=c"}) || readOnly([]string{"jobs", "enable", "a"}) {
+		t.Fatal("jobs show is a read; the rest write")
+	}
+}

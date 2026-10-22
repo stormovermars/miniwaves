@@ -29,7 +29,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true,
+	"since": true, "lookback": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -218,6 +218,8 @@ func dispatch(path string, w *Workspace, args []string) error {
 		return waveCommand(path, w, args[1:])
 	case "fanfare":
 		return fanfareCommand(path, w, args[1:])
+	case "jobs":
+		return jobsCommand(path, w, args[1:])
 	case "gate":
 		return gateCommand(path, w, args[1:])
 	case "edit":
@@ -275,6 +277,8 @@ func readOnly(args []string) bool {
 		return sub != "set" && sub != "init"
 	case "fanfare":
 		return sub != "set"
+	case "jobs":
+		return sub == "show"
 	}
 	return false
 }
@@ -352,6 +356,16 @@ mw fanfare stop
 Play a short clip when a wave closes and a longer finale when a tenant is finished (items exist, none inbox/ready/doing/blocked, no open wave; once per transition).
 Playback is a detached player (afplay, ffplay, mpv, paplay, Windows .wav) and never fails a board command. "fetch" downloads public-domain, CC0 and CC-BY pairs; the
 bring-your-own pair folders stay empty until you add fanfare.<ext> and finale.<ext>. Example: mw fanfare set enabled=true`,
+		"jobs": `mw jobs enable ID -t SLUG...
+mw jobs disable ID [-t SLUG]
+mw jobs set ID KEY=VALUE...
+mw jobs show [ID] [-j]
+Coordinated-job config (data only; mw starts no sessions). Jobs live in .miniwaves.json, a tenant joins one with enable.
+-t repeats or takes a comma list. disable clears the tenants (all, or -t SLUG) and keeps the job's data.
+Keys (defaults): title (the id), max_workers 1..32 (4), worktrees on|off (on), lock (a command name, none),
+news.out (docs/news/), news.url (http/https), summary (none), pane on|off (on), pane.style ([a-z0-9-]{1,32}).
+news.out and summary must be relative, inside the workspace (no .., no absolute path, no ~). An empty VALUE resets a key.
+Job ids match ^[a-z0-9][a-z0-9-]{0,31}$. Example: mw jobs enable tiny -t sheet,doc && mw jobs set tiny max_workers=3`,
 		"gate": `mw gate [-t SLUG] [-j]
 mw gate level trust|proof|spec|judged [-t SLUG | --workspace] [--by NAME]
 mw gate evidence|acceptance|judge on|off|auto [-t SLUG] [--by NAME]
@@ -484,6 +498,7 @@ Usage:
   mw get-prompt dispatcher|coach [NAME] [-j]
   mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]
+  mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]
   mw gate [-t SLUG] [-j] | gate level trust|proof|spec|judged | gate evidence|acceptance|judge on|off|auto [--by NAME]
   mw review [-t SLUG] [-j]
   mw judge ID [-t SLUG]
