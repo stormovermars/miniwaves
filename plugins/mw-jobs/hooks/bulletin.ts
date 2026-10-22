@@ -179,7 +179,7 @@ export const total = (l: MList, counted?: number) => Math.max(counted ?? 0, l.it
 const HAPPENED_KEYS = ['closed_milestones', 'done', 'accepted', 'sent_back', 'answers', 'decisions', 'new_items'] as const
 export const happenedCount = (m: Model, key: (typeof HAPPENED_KEYS)[number]) => total(m.happened[key], m.happened.counts[key])
 
-/** How many things happened in the span: the draft's "N changes since release M". */
+/** How many things happened in the span: the draft's "N changes since issue M". */
 export const changeCount = (m: Model): number => m.release.changes ?? HAPPENED_KEYS.reduce((n, k) => n + happenedCount(m, k), 0)
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
@@ -327,7 +327,7 @@ export const shortLines = (m: Model): string[] => {
   const doing = total(m.now.doing, c.doing)
   const ongoing = [needs > 0 ? `${needs} need you` : '', review > 0 ? `${review} to review` : '', blocked > 0 ? `${blocked} blocked` : '', doing > 0 ? `${doing} in progress` : ''].filter(Boolean)
   const ready = total(m.next.ready, c.ready)
-  const lines = [happened.length > 0 ? happened.join(', ') : m.release.number === null ? 'nothing new yet' : 'nothing happened in this release']
+  const lines = [happened.length > 0 ? happened.join(', ') : m.release.number === null ? 'nothing new yet' : 'nothing happened in this issue']
   if (ongoing.length > 0) lines.push(ongoing.join(', '))
   if (ready > 0 || m.next.next_milestones.items.length > 0) lines.push([ready > 0 ? `${ready} ready` : '', m.next.next_milestones.items.length > 0 ? `${plural(total(m.next.next_milestones), 'milestone')} open next` : ''].filter(Boolean).join(', '))
   return lines.slice(0, 3)
@@ -431,9 +431,9 @@ export const bulletin = (m: Model, o: BulletinOpts): BLine[] => {
   const rule = (ch: string): BLine => ({ t: ch.repeat(w), tone: 'dim' })
   const draft = m.release.number === null
   const title = `${ascii(m.job.title || m.job.id).toUpperCase()} BULLETIN`
-  const head1 = lr(` ${title}`, draft ? 'DRAFT - NOT RELEASED ' : `RELEASE ${m.release.number} / ${releaseDate(m)} `, w)
+  const head1 = lr(` ${title}`, draft ? 'DRAFT - NOT PUBLISHED ' : `ISSUE ${m.release.number} / ${releaseDate(m)} `, w)
   const since = m.release.since
-  const left2 = draft ? (since.number !== null ? ` since release ${since.number}${o.prevAt ? ` (${date10(o.prevAt)})` : ''}` : ' since the start') : since.number !== null ? ` vs release ${since.number}${o.prevAt ? ` (${date10(o.prevAt)})` : ''}` : ' since the start'
+  const left2 = draft ? (since.number !== null ? ` since issue ${since.number}${o.prevAt ? ` (${date10(o.prevAt)})` : ''}` : ' since the start') : since.number !== null ? ` vs issue ${since.number}${o.prevAt ? ` (${date10(o.prevAt)})` : ''}` : ' since the start'
   const url = ascii(o.url || m.job.url || `gopher://local/1/news/${m.job.id}`)
   const head2 = lr(left2, `${url} `, w)
   const out: BLine[] = [rule('='), { t: head1, tone: 'head' }, { t: head2, tone: 'dim' }, rule('=')]
@@ -452,7 +452,7 @@ export const bulletin = (m: Model, o: BulletinOpts): BLine[] => {
     ...group({ type: '0', list: hp.decisions, state: () => 'decided', top: T(10), counted: hp.counts.decisions }, w),
     ...group({ type: '0', list: hp.answers, state: () => 'answered', top: T(10), counted: hp.counts.answers }, w),
   ]
-  out.push(...(happenedLines.length > 0 ? happenedLines : [{ t: draft ? 'nothing yet since the last release' : 'nothing happened in this release', tone: 'dim' as const }]))
+  out.push(...(happenedLines.length > 0 ? happenedLines : [{ t: draft ? 'nothing yet since the last issue' : 'nothing happened in this issue', tone: 'dim' as const }]))
 
   out.push({ t: '', tone: 'fg' }, ...section(3, 'ONGOING', w))
   const c = m.now.counts
@@ -478,7 +478,7 @@ export const bulletin = (m: Model, o: BulletinOpts): BLine[] => {
   const nums = [...o.releases].sort((a, b) => b - a)
   const tail = 'end of bulletin '
   let list = nums.join(' ')
-  const maxList = w - ' releases: '.length - tail.length - 2
+  const maxList = w - ' issues: '.length - tail.length - 2
   if (list.length > maxList) {
     let cut = ''
     for (const n of nums) {
@@ -487,7 +487,7 @@ export const bulletin = (m: Model, o: BulletinOpts): BLine[] => {
     }
     list = `${cut} ...`
   }
-  out.push({ t: '', tone: 'fg' }, rule('-'), { t: lr(` releases: ${list}`, tail, w), tone: 'dim' }, rule('='))
+  out.push({ t: '', tone: 'fg' }, rule('-'), { t: lr(` issues: ${list}`, tail, w), tone: 'dim' }, rule('='))
   return out
 }
 
@@ -610,7 +610,7 @@ const mdList = (l: MList, kind: ItemKind, top: number, labels: Record<string, st
     return `- **${mdText(r.key)}** ${mdText(r.title)}${ticketMd(i)} \u2014 ${r.state}`
   })
   const rest = Math.max(total(l, counted) - shown.length, 0)
-  if (rest > 0) rows.push(`- *+${rest} more (see full board)*`)
+  if (rest > 0) rows.push(`- *+${rest} more*`)
   return rows
 }
 
@@ -620,8 +620,9 @@ export type NewsSeg = { md: string } | { miles: MileRow[]; tail: string }
 const milesOf = (l: MList, closed: boolean, top: number, labels: Record<string, string>) =>
   topOf(l, top).map(i => mileOf({ tenant: i.tenant, id: i.id, title: i.title, done: i.done, total: i.total, ticket: i.ticket, ticketUrl: i.ticket_url }, labels, closed))
 
-export const newsSegments = (m: Model, o: { metrics?: MViewSection[]; labels?: Record<string, string> }): NewsSeg[] => {
+export const newsSegments = (m: Model, o: { metrics?: MViewSection[]; labels?: Record<string, string>; top?: number }): NewsSeg[] => {
   const labels = o.labels ?? {}
+  const TOP = o.top ?? 10
   const segs: NewsSeg[] = []
   const md = (...lines: string[]) => {
     const last = segs[segs.length - 1]
@@ -633,21 +634,21 @@ export const newsSegments = (m: Model, o: { metrics?: MViewSection[]; labels?: R
   const hp = m.happened
   md('## In short', '', ...(m.summary !== '' ? [mdText(m.summary)] : shortLines(m).map(mdText)), '', '## What happened', '')
   const happened: Array<[string, string[]]> = [
-    ['Done', mdList(hp.done, 'done', 10, labels, hp.counts.done)],
-    ['Accepted', mdList(hp.accepted, 'accepted', 10, labels, hp.counts.accepted)],
-    ['Sent back', mdList(hp.sent_back, 'sent_back', 10, labels, hp.counts.sent_back)],
-    ['Decisions', mdList(hp.decisions, 'decision', 10, labels, hp.counts.decisions)],
-    ['Answers', mdList(hp.answers, 'answer', 10, labels, hp.counts.answers)],
+    ['Done', mdList(hp.done, 'done', TOP, labels, hp.counts.done)],
+    ['Accepted', mdList(hp.accepted, 'accepted', TOP, labels, hp.counts.accepted)],
+    ['Sent back', mdList(hp.sent_back, 'sent_back', TOP, labels, hp.counts.sent_back)],
+    ['Decisions', mdList(hp.decisions, 'decision', TOP, labels, hp.counts.decisions)],
+    ['Answers', mdList(hp.answers, 'answer', TOP, labels, hp.counts.answers)],
   ]
-  const closed = milesOf(hp.closed_milestones, true, 10, labels)
+  const closed = milesOf(hp.closed_milestones, true, TOP, labels)
   const closedRest = Math.max(total(hp.closed_milestones, hp.counts.closed_milestones) - closed.length, 0)
   if (closed.length > 0) {
     md('### Milestones closed', '')
-    segs.push({ miles: closed, tail: closedRest > 0 ? `+${closedRest} more (see full board)` : '' })
+    segs.push({ miles: closed, tail: closedRest > 0 ? `+${closedRest} more` : '' })
     md('')
   }
   for (const [title, rows] of happened) if (rows.length > 0) md(`### ${title}`, '', ...rows, '')
-  if (closed.length === 0 && happened.every(([, r]) => r.length === 0)) md(m.release.number === null ? 'Nothing yet since the last release.' : 'Nothing happened in this release.', '')
+  if (closed.length === 0 && happened.every(([, r]) => r.length === 0)) md(m.release.number === null ? 'Nothing yet since the last issue.' : 'Nothing happened in this issue.', '')
   md('## Ongoing', '', `needs ${total(m.now.needs, c.needs)} \u00b7 review ${total(m.now.review, c.review)} \u00b7 blocked ${total(m.now.blocked, c.blocked)} \u00b7 doing ${total(m.now.doing, c.doing)}${c.total !== undefined ? ` \u00b7 done ${c.done ?? 0}/${c.total}` : ''}`, '')
   const ongoing: Array<[string, string[]]> = [
     ['Needs you', mdList(m.now.needs, 'needs', 5, labels, c.needs)],
@@ -657,7 +658,7 @@ export const newsSegments = (m: Model, o: { metrics?: MViewSection[]; labels?: R
   ]
   for (const [title, rows] of ongoing) if (rows.length > 0) md(`### ${title}`, '', ...rows, '')
   md("## What's next", '')
-  const ready = mdList(m.next.ready, 'ready', 10, labels, c.ready)
+  const ready = mdList(m.next.ready, 'ready', TOP, labels, c.ready)
   const nextMiles = milesOf(m.next.next_milestones, false, 5, labels)
   if (ready.length > 0) md(...ready, '')
   if (nextMiles.length > 0) segs.push({ miles: nextMiles, tail: '' })
@@ -676,7 +677,7 @@ export const newsSegments = (m: Model, o: { metrics?: MViewSection[]; labels?: R
 }
 
 /** The same newsletter as one markdown text (the terminal's Markdown element, and tests); milestone rows become list lines. */
-export const newsMd = (m: Model, o: { metrics?: MViewSection[]; labels?: Record<string, string> }): string =>
+export const newsMd = (m: Model, o: { metrics?: MViewSection[]; labels?: Record<string, string>; top?: number }): string =>
   newsSegments(m, o)
     .map(sg => ('md' in sg ? sg.md : [...sg.miles.map(r => `- **${mdText(r.key)}** ${mdText(r.title)}${r.ticket ? ` [${mdText(r.ticket)}]` : ''} \u2014 ${mileCount(r)} \u00b7 ${r.state}`), ...(sg.tail ? [`- *${sg.tail}*`] : [])].join('\n')))
     .join('\n')

@@ -4,6 +4,7 @@ import type { Register } from 'claude-code'
 import type { Counts, Entry, Tab, SwState, Favorites } from './switcher'
 import { pollPlan, rrSlice, attentionSort, badgeOf, cleanFavorites, countsShort, cutLabel, fitCols, hhmm as hhmmMs, inRange, keyCol, listFor, moveIn, newsLine, pagerLabel, paged, parseFavorites, pickLine, planBar, RANGES, summaryLine, toggleIn, totalsOf, PAGE } from './switcher'
 import type { ItemRow, MileRow } from './rows'
+import { buildIdIndex, splitIds, type IdIndex, type IdRef } from './ids'
 import { capN, cellWidth, cutCells, safeSlice, INVISIBLE, memberParts, tenantLabels, waveName, mileOf, waveToMile, mileName, mileCount, textBar, itemRow, itemName } from './rows'
 export { tenantLabels, waveName }
 import { parseItemDetail, parseWaveDetail } from './detail'
@@ -50,7 +51,7 @@ const previous = atom({ plugin: 'mw-jobs', key: 'previous' } as const, {})
 const staleSince = atom({ plugin: 'mw-jobs', key: 'staleSince' } as const, {})
 const selected = atom({ plugin: 'mw-jobs', key: 'selected' } as const, '')
 const muted = atom({ plugin: 'mw-jobs', key: 'muted' } as const, false)
-const refreshEvery = atom({ plugin: 'mw-jobs', key: 'refreshEvery' } as const, '1m')
+const refreshEvery = atom({ plugin: 'mw-jobs', key: 'refreshEvery' } as const, '30s')
 const newsSeen = atom({ plugin: 'mw-jobs', key: 'newsSeen' } as const, {})
 const jobDesc = atom({ plugin: 'mw-jobs', key: 'jobDesc' } as const, {})
 const inChat = atom({ plugin: 'mw-jobs', key: 'inChat' } as const, {})
@@ -91,10 +92,95 @@ const isoHhmm = (iso: string) => {
   return Number.isNaN(ms) ? '--:--' : hhmm(ms)
 }
 
+/** An absolute path on any OS: `/x`, `C:\x` or `C:/x`, or a UNC `\\host`. */
+export const isAbs = (p: string) => p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\')
 const expand = (path: string, home: string, base?: string) => {
-  if (path.startsWith('~')) return `${home}${path.slice(1)}`
-  if (path.startsWith('/')) return path
+  if (path === '~' || path.startsWith('~/') || path.startsWith('~\\')) return `${home}${path.slice(1)}`
+  if (isAbs(path)) return path
   return base ? `${base}/${path}` : path
+}
+
+/** The user's home folder: HOME, else USERPROFILE (Windows). */
+const homeOf = async ($: any): Promise<string> => {
+  let h: unknown
+  try {
+    h = await $.env.get('HOME')
+  } catch {
+    h = undefined
+  }
+  if (typeof h === 'string' && h !== '') return h
+  try {
+    h = await $.env.get('USERPROFILE')
+  } catch {
+    h = undefined
+  }
+  return typeof h === 'string' ? h : ''
+}
+
+let osCache: 'windows' | 'mac' | 'linux' | undefined
+/** The OS: Windows from the OS variable, else `uname -s` (a failed run counts as macOS). */
+const osKind = async ($: any): Promise<'windows' | 'mac' | 'linux'> => {
+  if (osCache !== undefined) return osCache
+  let env: unknown
+  try {
+    env = await $.env.get('OS')
+  } catch {
+    env = undefined
+  }
+  if (env === 'Windows_NT') return (osCache = 'windows')
+  try {
+    const r = await $.process.run(['uname', '-s'], { timeoutMs: 5000 })
+    const u = String(r.stdout ?? '').trim()
+    if (r.exitCode === 0 && u !== '') return (osCache = u === 'Darwin' ? 'mac' : 'linux')
+  } catch {
+    // default
+  }
+  return (osCache = 'mac')
+}
+
+/** The command that opens a plain file in a text editor, per OS: `open -t`, `xdg-open`, `cmd /c start "" FILE` (argv only, no shell string). */
+export const openerArgv = (os: 'windows' | 'mac' | 'linux', path: string): string[] =>
+  os === 'windows' ? ['cmd', '/c', 'start', '', path] : os === 'linux' ? ['xdg-open', path] : ['open', '-t', path]
+
+let mwBin: string | undefined
+let mwProbed = false
+/** The mw binary as an absolute path: PATH first, then the usual install folders (a desktop app's PATH lacks ~/.local/bin). Undefined when not found: the bare name is used. */
+const resolveMw = async ($: any): Promise<string | undefined> => {
+  if (mwBin !== undefined || mwProbed) return mwBin
+  mwProbed = true
+  const os = await osKind($)
+  try {
+    const r = await $.process.run(os === 'windows' ? ['where.exe', 'mw'] : ['/bin/sh', '-c', 'command -v mw'], { timeoutMs: 5000 })
+    const first = String(r.stdout ?? '').split(/\r?\n/)[0]?.trim() ?? ''
+    if (r.exitCode === 0 && isAbs(first)) return (mwBin = first)
+  } catch {
+    // fall through to the known folders
+  }
+  const home = await homeOf($)
+  let local = ''
+  try {
+    local = (await $.env.get('LOCALAPPDATA')) ?? ''
+  } catch {
+    local = ''
+  }
+  const known =
+    os === 'windows'
+      ? [...(home !== '' ? [`${home}\\.local\\bin\\mw.exe`] : []), ...(local !== '' ? [`${local}\\Programs\\mw\\mw.exe`, `${local}\\mw\\mw.exe`] : [])]
+      : [...(home !== '' ? [`${home}/.local/bin/mw`, `${home}/go/bin/mw`] : []), '/opt/homebrew/bin/mw', '/usr/local/bin/mw', '/usr/bin/mw']
+  for (const p of known) {
+    try {
+      if (await $.fs.exists(p)) return (mwBin = p)
+    } catch {
+      // next
+    }
+  }
+  return undefined
+}
+
+/** Every process the panes run: `mw` becomes its absolute path when found; anything else runs as given. */
+const proc = async ($: any, argv: string[], init?: Record<string, unknown>): Promise<any> => {
+  const bin = argv[0] === 'mw' ? await resolveMw($) : undefined
+  return $.process.run(bin !== undefined ? [bin, ...argv.slice(1)] : argv, init)
 }
 
 const isPlaceholder = (w: MwJobsWave) => w.state === 'done' && memberParts(w).total === 0
@@ -1818,7 +1904,7 @@ const resolvedDir = new Map<string, string[]>()
 const unq = (t: string) => t.replace(/^['"]|['"]$/g, '')
 const absDir = (p: string, cwd: string, home: string): string => {
   const x = unq(p)
-  const a = x === '~' ? home : x.startsWith('~/') ? `${home}${x.slice(1)}` : x.startsWith('/') ? x : `${cwd.replace(/\/$/, '')}/${x}`
+  const a = x === '~' ? home : x.startsWith('~/') ? `${home}${x.slice(1)}` : isAbs(x) ? x : `${cwd.replace(/[\\/]$/, '')}/${x}`
   return a.replace(/\/\.(?=\/|$)/g, '').replace(/\/+$/, '') || '/'
 }
 
@@ -1834,7 +1920,7 @@ export const boardHints = (tool: string, input: Record<string, unknown>, cwd: st
     for (const part of cmd.split(/&&|\|\||;|\n/)) {
       const words = part.trim().split(/\s+/).filter(w => w !== '')
       if (words[0] === 'cd' && words[1] !== undefined) { here = absDir(words[1], here, home); continue }
-      const at = words.findIndex(w => w === 'mw' || w.endsWith('/mw'))
+      const at = words.findIndex(w => w === 'mw' || /[\\/]mw(?:\.exe)?$/.test(w))
       if (at < 0) continue
       add(here)
       const rest = words.slice(at + 1)
@@ -1862,7 +1948,7 @@ const noteUsed = async ($: any, dirs: string[]): Promise<boolean> => {
     let found: ScanBoard[] = []
     if (roots === undefined) {
       try {
-        const r = await $.process.run(['mw', 'boards', d, '--up', '--depth', '0', '-j'], { cwd: '/', timeoutMs: 20_000 })
+        const r = await proc($, ['mw', 'boards', d, '--up', '--depth', '0', '-j'], { cwd: '/', timeoutMs: 20_000 })
         found = (r.exitCode === 0 ? parseBoards(String(r.stdout)) : undefined) ?? []
       } catch {
         found = []
@@ -1883,7 +1969,7 @@ const noteUsed = async ($: any, dirs: string[]): Promise<boolean> => {
 /** After a tool call: note the boards it used; a new one rescans the pane's list (only when the list comes from discovery). */
 const watchUse = async ($: any, e: any) => {
   try {
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     const cwd: string = (await $.session.cwd().catch(() => '')) || sessionCwd || home
     const dirs = boardHints(String(e?.tool ?? ''), (e ?? {}) as Record<string, unknown>, cwd, home)
     if (dirs.length === 0) return
@@ -1902,7 +1988,7 @@ const watchUse = async ($: any, e: any) => {
 /** At start and on reload: the transcript so far (and its agents') for mw runs and .miniwaves files, read only. */
 const replayTranscript = async ($: any) => {
   try {
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     const cwd: string = (await $.session.cwd().catch(() => '')) || sessionCwd || home
     const msgs = await $.session.messages()
     if (!Array.isArray(msgs)) return
@@ -1931,11 +2017,11 @@ const replayTranscript = async ($: any) => {
 }
 
 /** One discovery, first hit first, the rest appended, deduped by root: the boards this session used ("this session"), then up from the session's folders (3 deep); only when both are empty the home folder (4 deep). Then `mw jobs show -j` on each board. An mw without `boards` gives the hint. */
-const scanBoards = async ($: any): Promise<ScanResult> => {
-  const home: string = (await $.env.get('HOME')) ?? ''
+const scanBoards = async ($: any, dir?: string): Promise<ScanResult> => {
+  const home: string = (await homeOf($))
   const run = async (argv: string[], cwd: string): Promise<string | undefined> => {
     try {
-      const r = await $.process.run(argv, { cwd, timeoutMs: 30_000 })
+      const r = await proc($, argv, { cwd, timeoutMs: 30_000 })
       return r.exitCode === 0 ? String(r.stdout) : undefined
     } catch {
       return undefined
@@ -1949,21 +2035,21 @@ const scanBoards = async ($: any): Promise<ScanResult> => {
   } catch {
     root = ''
   }
-  const folders = [cwd, ...(root && root !== cwd ? [root] : [])]
+  const folders = dir !== undefined ? [expand(dir, home)] : [cwd, ...(root && root !== cwd ? [root] : [])]
   const boards: ScanBoard[] = [...used]
   const addAll = (l: ScanBoard[]) => { for (const b of l) if (!boards.some(x => x.dir === b.dir)) boards.push(b) }
   let old = false
+  // discover.home / discover.depth (mw keys): whether and how deep ~ (or an asked-for folder) is scanned
+  const scanHome = (await cfgGet($, 'discover.home')) !== 'false'
+  const depth0 = Number(await cfgGet($, 'discover.depth'))
+  const depth = Number.isInteger(depth0) && depth0 >= 1 && depth0 <= 6 ? depth0 : 4
   for (const f of folders) {
-    const got = parseBoards(await run(['mw', 'boards', f, '--up', '--depth', '3', '-j'], f))
+    const got = parseBoards(await run(dir !== undefined ? ['mw', 'boards', f, '--depth', String(depth), '-j'] : ['mw', 'boards', f, '--up', '--depth', '3', '-j'], f))
     if (got === undefined) old = true
     else addAll(got)
   }
   if (old && boards.length === 0) return { jobs: [], hint: SCAN_OLD_HINT, error: null }
-  // discover.home / discover.depth (mw keys): whether and how deep ~ is scanned when nothing nearer is found
-  const scanHome = (await cfgGet($, 'discover.home')) !== 'false'
-  const depth0 = Number(await cfgGet($, 'discover.depth'))
-  const depth = Number.isInteger(depth0) && depth0 >= 1 && depth0 <= 9 ? depth0 : 4
-  if (boards.length === 0 && home !== '' && scanHome) addAll(parseBoards(await run(['mw', 'boards', home, '--depth', String(depth), '-j'], home)) ?? [])
+  if (boards.length === 0 && dir === undefined && home !== '' && scanHome) addAll(parseBoards(await run(['mw', 'boards', home, '--depth', String(depth), '-j'], home)) ?? [])
   if (boards.length === 0) return { jobs: [], hint: null, error: `no mw boards found under ${cwd} or ~` }
   const outs = await Promise.all(boards.map(async b => [b.dir, await run(['mw', 'jobs', 'show', '-j'], b.dir)] as const))
   const usedDirs = new Set(used.map(b => b.dir))
@@ -1973,25 +2059,33 @@ const scanBoards = async ($: any): Promise<ScanResult> => {
 }
 
 /** The discovery result, run once per session (or again with force, the Scan button); concurrent callers share one run. */
-const scanned = async ($: any, force = false): Promise<ScanResult> => {
+const scanned = async ($: any, force = false, dir?: string): Promise<ScanResult> => {
   if (!force && scanCache !== undefined) return scanCache
   if (scanRun === undefined) {
-    scanRun = scanBoards($).finally(() => { scanRun = undefined })
+    scanRun = scanBoards($, dir).finally(() => { scanRun = undefined })
   }
   scanCache = await scanRun
   return scanCache
 }
 
 /** The Scan button: discover the boards again, then refresh. */
-const rescan = async ($: any) => {
-  await scanned($, true)
+const rescan = async ($: any, dir?: string) => {
+  await scanned($, true, dir)
   await loadRegistry($)
   await refreshAll($)
 }
 
+/** `/mw-watch scan [DIR]`: look for boards again (under DIR, else the usual places), then open the jobs pane. */
+const scanCommand = async ($: any, dir?: string) => {
+  await rescan($, dir)
+  await openMain($, true)
+  const reg: MwJobsRegistry = await read($, registry)
+  return { text: reg.jobs.length === 0 ? 'Jobs: no mw boards found.' : `Jobs: found ${reg.jobs.length} job${reg.jobs.length === 1 ? '' : 's'}.` }
+}
+
 /** The one place the panes' job list comes from: the registry file, else the boards discovery finds. */
 const loadRegistry = async ($: any) => {
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   let reg: MwJobsRegistry
   try {
     reg = { ...parseRegistry(await $.fs.read(expand(registryPath(), home))), source: 'registry' }
@@ -2057,7 +2151,10 @@ const markSeen = async ($: any, id: string) => {
 // ---- per-job log files: <dirname(registry)>/logs/<job-id>/{alerts,decisions}.log, written with $.fs only, nowhere else ----
 export const LOG_MAX = 1_000_000
 const logRoot = (home: string) => `${dirOf(expand(registryPath(), home))}/logs`
-const dirOf = (p: string) => (p.lastIndexOf('/') > 0 ? p.slice(0, p.lastIndexOf('/')) : '.')
+const dirOf = (p: string) => {
+  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
+  return i > 0 ? p.slice(0, i) : '.'
+}
 const safeId = (id: string) => /^[A-Za-z0-9_.-]+$/.test(id) && !id.includes('..')
 let logChain: Promise<void> = Promise.resolve()
 
@@ -2066,7 +2163,7 @@ export const appendLog = ($: any, jobId: string, file: 'alerts.log' | 'decisions
   if (lines.length === 0 || !safeId(jobId)) return Promise.resolve()
   logChain = logChain.then(async () => {
     try {
-      const home: string = (await $.env.get('HOME')) ?? ''
+      const home: string = (await homeOf($))
       const path = `${logRoot(home)}/${jobId}/${file}`
       let cur = ''
       try {
@@ -2091,7 +2188,7 @@ const logWriteFailed = async ($: any) => {
   const m = (await read($, alerted)) as Record<string, string[]>
   if ((m._sys ?? []).includes('fail:logwrite')) return
   await update($, alerted, (x: Record<string, string[]>) => ({ ...x, _sys: capAlerted(x._sys ?? [], ['fail:logwrite']) }))
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   $.ui.toast(`Jobs: could not write the log files in ${logRoot(home)}`, { timeoutMs: 8000 })
 }
 
@@ -2132,7 +2229,7 @@ const syncDecisions = async ($: any, job: MwJobsJob, cwd: string) => {
     }
     let out: { events?: unknown; next?: unknown } | undefined
     try {
-      const r = await $.process.run(['mw', 'log', '-t', tenant, '--since', cursor, '-j'], { cwd, timeoutMs: 20_000 })
+      const r = await proc($, ['mw', 'log', '-t', tenant, '--since', cursor, '-j'], { cwd, timeoutMs: 20_000 })
       out = r.exitCode === 0 ? (parseJson(r.stdout) as { events?: unknown; next?: unknown } | undefined) : undefined
     } catch {
       out = undefined
@@ -2224,30 +2321,49 @@ const readMetrics = async ($: any, path: string): Promise<MetricsResult | undefi
 }
 
 
-export type AlertEvent = { type: AlertType; text: string; who?: string; key?: string }
+/** What an alert is about; alerts.kinds (an mw key) picks among these. Decided from the item's structured field, never from the text. */
+export type AlertKind = 'ask' | 'review' | 'blocked' | 'done' | 'new' | 'release' | 'metrics'
+export type AlertEvent = { type: AlertType; kind: AlertKind; text: string; who?: string; key?: string; ref?: string; link?: { kind: 'item' | 'wave'; tenant: string; id: string } }
+
+export const ALERT_TITLE_MAX = 60
+/** `<job> ▸ <What>: <ref> <title>`: the one text of every alert (toast and pane row). The ref is dropped when the title already starts with it; the title is cut to 60 characters. */
+export const alertText = (job: string, what: string, ref: string, title: string): string => {
+  const t = title.replace(/\s+/g, ' ').trim()
+  const bare = ref.includes('\u00b7') ? ref.slice(ref.indexOf('\u00b7') + 1) : ref
+  const dup = ref !== '' && [ref, bare].some(r => t === r || t.startsWith(`${r} `))
+  const cut = t.length > ALERT_TITLE_MAX ? `${t.slice(0, ALERT_TITLE_MAX - 1).trimEnd()}\u2026` : t
+  const tail = [dup ? '' : ref, cut].filter(Boolean).join(' ')
+  return `${job} \u25b8 ${what}${tail !== '' ? `: ${tail}` : ''}`
+}
+const itemRef = (labels: Record<string, string>, tenant: string, id: string) => (labels[tenant] ? `${labels[tenant]}\u00b7${id}` : id)
 
 /**
  * "Now" events from two news models of one job: needs you, review, blocked, done, closed milestones and new items that are in
  * `next` and were not in `old`. Keyed by type + tenant:id + event time. Draft changes alone are not alerts; these are items.
  */
-export const modelEvents = (job: { id: string }, old: Model, next: Model): AlertEvent[] => {
+export const modelEvents = (job: { id: string; tenants?: string[] }, old: Model, next: Model): AlertEvent[] => {
   const out: AlertEvent[] = []
-  const add = (type: AlertType, label: string, oldList: MList, list: MList, kind: string) => {
+  const lists = [next.happened.closed_milestones, next.now.needs, next.now.review, next.now.blocked, next.happened.done, next.happened.new_items]
+  const tenants = job.tenants !== undefined && job.tenants.length > 0 ? job.tenants : [...new Set(lists.flatMap(l => l.items.map(i => i.tenant)))]
+  const labels = tenantLabels(tenants)
+  const add = (type: AlertType, what: string, ak: AlertKind, oldList: MList, list: MList, kind: string) => {
     const was = new Set(oldList.items.map(i => `${i.tenant}:${i.id}`))
     for (const i of list.items) {
       const k = `${i.tenant}:${i.id}`
       if (was.has(k)) continue
-      out.push({ type, text: `[${job.id}] ${label}: ${k} ${i.title}`, who: `${i.tenant} ${i.id}`, key: `${kind}|${k}|${i.since}` })
+      out.push({ type, kind: ak, text: alertText(job.id, what, itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `${kind}|${k}|${i.since}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: kind === 'milestone' ? 'wave' : 'item', tenant: i.tenant, id: i.id } })
     }
   }
-  add('milestone', 'Milestone closed', old.happened.closed_milestones, next.happened.closed_milestones, 'milestone')
-  add('needs', 'Needs Sir', old.now.needs, next.now.needs, 'needs')
-  add('needs', 'Review', old.now.review, next.now.review, 'review')
-  add('needs', 'Blocked', old.now.blocked, next.now.blocked, 'blocked')
-  add('done', 'Done', old.happened.done, next.happened.done, 'done')
-  add('new', 'New', old.happened.new_items, next.happened.new_items, 'new')
+  add('milestone', 'Milestone done', 'done', old.happened.closed_milestones, next.happened.closed_milestones, 'milestone')
+  add('needs', 'Needs you', 'ask', old.now.needs, next.now.needs, 'needs')
+  add('needs', 'Review', 'review', old.now.review, next.now.review, 'review')
+  add('needs', 'Blocked', 'blocked', old.now.blocked, next.now.blocked, 'blocked')
+  add('done', 'Done', 'done', old.happened.done, next.happened.done, 'done')
+  add('new', 'New', 'new', old.happened.new_items, next.happened.new_items, 'new')
   return out
 }
+
+const metricEvent = (jobId: string, d: { line: string; who: string }): AlertEvent => ({ type: 'metric', kind: 'metrics', text: `${jobId} \u25b8 Metrics drop: ${d.line}`, who: d.who, key: `metric|${d.line}` })
 
 /** The last draft model polled per job: the baseline the next poll's events are measured against (first sight is silent). */
 const lastDrafts = new Map<string, Model>()
@@ -2255,30 +2371,35 @@ const lastDrafts = new Map<string, Model>()
 /** A release being cut: the refresh that follows runs once the one in flight is done. */
 const forceAfter = new Set<string>()
 
-const legacyEvents = (job: MwJobsJob, old: MwJobsSnapshot, next: MwJobsSnapshot): Array<{ type: AlertType; text: string; who?: string }> => {
-      const labels = tenantLabels(job.tenants.length > 0 ? job.tenants : [...new Set(next.waves.map(w => w.id.split(':')[0] ?? ''))])
-      const { closed, changes } = diffChanges(old, next, labels)
-      const oldKeys = new Map(old.items.map(i => [`${i.tenant}:${i.id}`, i]))
-      const flag = (x: MwJobsItem, snapOf: MwJobsSnapshot) => x.state === 'blocked' || askMap(snapOf).has(`${x.tenant}:${x.id}`)
-      const needsSir = next.items.filter(i => {
-        const was = oldKeys.get(`${i.tenant}:${i.id}`)
-        return i.state !== 'done' && !isReview(i) && flag(i, next) && (was === undefined || !flag(was, old))
-      })
-      // every change line is routed by its type's setting: toast, notify, both or off
-      const whoOf = (l: string) => {
-        const m = /^(?:Done|New) (\S+):(\S+)/.exec(l)
-        return m ? `${m[1]} ${m[2]}` : '-'
-      }
-      return [
-        ...closed.map(l => {
-          const w = next.waves.find(x => l.includes(x.title))
-          return { type: 'milestone' as const, text: `[${job.id}] ${l}`, who: w ? w.id.replace(':', ' ') : '-' }
-        }),
-        ...needsSir.map(i => ({ type: 'needs' as const, text: `[${job.id}] ${i.state === 'blocked' ? 'Blocked' : 'Needs Sir'}: ${i.tenant}:${i.id} ${i.title}`, who: `${i.tenant} ${i.id}` })),
-        ...changes.filter(l => l.startsWith('Done ')).map(l => ({ type: 'done' as const, text: `[${job.id}] ${l}`, who: whoOf(l) })),
-        ...changes.filter(l => l.startsWith('New ')).map(l => ({ type: 'new' as const, text: `[${job.id}] ${l}`, who: whoOf(l) })),
-        ...metricDrops(old.metrics, next.metrics).map(d => ({ type: 'metric' as const, text: `[${job.id}] ${d.line}`, who: d.who })),
-      ]
+const legacyEvents = (job: MwJobsJob, old: MwJobsSnapshot, next: MwJobsSnapshot): AlertEvent[] => {
+  const labels = tenantLabels(job.tenants.length > 0 ? job.tenants : [...new Set(next.waves.map(w => w.id.split(':')[0] ?? ''))])
+  const oldKeys = new Map(old.items.map(i => [`${i.tenant}:${i.id}`, i]))
+  const oldWaves = new Map(old.waves.map(w => [w.id, w]))
+  const flag = (x: MwJobsItem, snapOf: MwJobsSnapshot) => x.state === 'blocked' || askMap(snapOf).has(`${x.tenant}:${x.id}`)
+  const out: AlertEvent[] = []
+  for (const w of next.waves) {
+    const was = oldWaves.get(w.id)
+    if (was !== undefined && was.state !== 'done' && w.state === 'done') {
+      out.push({ type: 'milestone', kind: 'done', text: alertText(job.id, 'Milestone done', waveName(w, labels), w.title), who: w.id.replace(':', ' '), key: `milestone|${w.id}`, ref: waveName(w, labels), link: { kind: 'wave', tenant: w.id.split(':')[0] ?? '', id: w.id } })
+    }
+  }
+  for (const i of next.items) {
+    const was = oldKeys.get(`${i.tenant}:${i.id}`)
+    const k = `${i.tenant}:${i.id}`
+    if (i.state !== 'done' && !isReview(i) && flag(i, next) && (was === undefined || !flag(was, old))) {
+      const blocked = i.state === 'blocked'
+      out.push({ type: 'needs', kind: blocked ? 'blocked' : 'ask', text: alertText(job.id, blocked ? 'Blocked' : 'Needs you', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `${blocked ? 'blocked' : 'needs'}|${k}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
+    }
+  }
+  for (const i of next.items) {
+    const was = oldKeys.get(`${i.tenant}:${i.id}`)
+    if (was !== undefined && was.state !== i.state && i.state === 'done') out.push({ type: 'done', kind: 'done', text: alertText(job.id, 'Done', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `done|${i.tenant}:${i.id}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
+  }
+  for (const i of next.items) {
+    if (!oldKeys.has(`${i.tenant}:${i.id}`)) out.push({ type: 'new', kind: 'new', text: alertText(job.id, 'New', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `new|${i.tenant}:${i.id}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
+  }
+  out.push(...metricDrops(old.metrics, next.metrics).map(d => metricEvent(job.id, d)))
+  return out
 }
 
 const inFlightP = new Map<string, Promise<void>>()
@@ -2306,12 +2427,12 @@ const refreshJobRun = async ($: any, job: MwJobsJob): Promise<void> => {
   inFlight.add(job.id)
   await setBusy($, job.id, true)
   try {
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     const cwd = expand(job.board, home)
     let lastWhy = ''
     const run = async (argv: string[]): Promise<unknown> => {
       try {
-        const r = await $.process.run(argv, { cwd, timeoutMs: 20_000 })
+        const r = await proc($, argv, { cwd, timeoutMs: 20_000 })
         if (r.exitCode !== 0) {
           lastWhy = await whyFailed($, cwd, { stderr: String(r.stderr ?? '') })
           return undefined
@@ -2409,7 +2530,7 @@ const refreshJobRun = async ($: any, job: MwJobsJob): Promise<void> => {
       const events: AlertEvent[] = []
       if (modelMode) {
         // from a news model: a new release, metric drops, and the "now" events (needs, review, blocked, done, milestones, new) against the last poll; first sight is silent
-        events.push(...relEv, ...(old?.model !== undefined ? metricDrops(old.metrics, next.metrics).map(d => ({ type: 'metric' as const, text: `[${job.id}] ${d.line}`, who: d.who })) : []), ...(baseline !== undefined ? modelEvents(job, baseline, mentry!.draft!) : []))
+        events.push(...relEv, ...(old?.model !== undefined ? metricDrops(old.metrics, next.metrics).map(d => metricEvent(job.id, d)) : []), ...(baseline !== undefined ? modelEvents(job, baseline, mentry!.draft!) : []))
       } else if (old !== undefined) {
         events.push(...legacyEvents(job, old, next), ...relEv)
       }
@@ -2436,47 +2557,24 @@ const refreshJobRun = async ($: any, job: MwJobsJob): Promise<void> => {
           // store unavailable
         }
       }
-      // the mw keys: alerts.kinds picks the kinds, alerts.sound and alerts.message act separately
+      // the mw keys: alerts.kinds picks the kinds, alerts.sound and alerts.message act separately; alerts.enabled=false (mute) silences all of it
       const sw0 = await alertSwitches($)
-      const kept = sw0.kinds === null ? fresh : fresh.filter(x => { const k = alertKind(x); return k === '' || sw0.kinds!.has(k) })
-      const plan0 = planAlerts(kept, sw0.sound ? opts : { ...opts, alertSound: 'off' }, isMuted, job.alerts)
-      const plan = sw0.message ? plan0 : { ...plan0, toast: [], toastAll: [], notify: [] }
-      // every alert that is raised (and so every one that plays a sound) is also a row at the top of both panes, until dismissed
-      if (sw0.message && !isMuted) await addAlertRows($, job, kept.filter(x => modeFor(opts, x.type) !== 'off'))
-      if (plan.sound !== undefined) {
+      const kept = fresh.filter(x => alertAllowed(sw0, x.kind))
+      const plan = planAlerts(kept, { enabled: !isMuted, message: sw0.message, sound: sw0.sound }, job.alerts)
+      // every raised alert is a row at the top of both panes (and one grouped toast), until dismissed; the sound is the one asset; no system notification
+      if (plan.lines.length > 0) await addAlertRows($, job, kept)
+      if (plan.sound) {
         try {
-          await $.audio.play({ asset: `assets/${plan.sound}.aiff` })
+          await $.audio.play({ asset: 'assets/alert.wav' })
         } catch {
           // no player: skip
         }
       }
-      // a notification that no channel sent (the desktop app has no terminal: reason no-surface) falls back to the same grouped toast
-      const unsent: string[] = []
-      for (const text of plan.notify) {
-        let sent = false
-        try {
-          sent = (await $.ui.notify(text, { title: job.title })).isSent === true
-        } catch {
-          sent = false
-        }
-        if (!sent) unsent.push(text)
-      }
-      const toastLines = [...plan.toastAll, ...unsent.filter(t => !plan.toastAll.includes(t))]
       // alerts.log: one line per raised alert, how it was delivered
       const nowIso = new Date(await $.clock.now()).toISOString()
-      const logLines = kept
-        .filter(x => modeFor(opts, x.type) !== 'off')
-        .map(x => {
-          const mode = modeFor(opts, x.type)
-          const toastOn = mode.includes('toast')
-          const notifyOn = mode.includes('notify')
-          const gated = isMuted || job.alerts.notify === false
-          const sentNote = plan.notify.includes(x.text)
-          const delivered = toastOn && notifyOn ? (gated ? 'toast' : unsent.includes(x.text) ? 'toast-fallback' : sentNote ? 'toast+notify' : 'toast+capped') : toastOn ? 'toast' : gated ? 'muted' : unsent.includes(x.text) ? 'toast-fallback' : sentNote ? 'notify' : 'capped'
-          return alertLine(nowIso, x.type, x.who ?? '-', x.text, delivered)
-        })
-      await appendLog($, job.id, 'alerts.log', logLines)
-      if (toastLines.length > 0) $.ui.toast(groupToast(toastLines).join('\n'), { timeoutMs: 8000 })
+      const delivered = isMuted ? 'muted' : sw0.message ? (plan.sound ? 'row+toast+sound' : 'row+toast') : plan.sound ? 'sound' : 'none'
+      await appendLog($, job.id, 'alerts.log', kept.map(x => alertLine(nowIso, x.type, x.who ?? '-', x.text, delivered)))
+      if (plan.lines.length > 0) $.ui.toast(groupToast(plan.lines).join('\n'), { timeoutMs: 8000 })
     }
   } catch {
     // never throw out of a timer
@@ -2498,10 +2596,10 @@ export const ALERT_ROWS_SHOWN = 5
 let alertSeq = 0
 
 /** Adds raised alerts as pane rows (newest first, at most ALERT_ROWS_MAX kept) and saves them, so a reload still shows them. */
-export const addAlertRows = async ($: any, job: MwJobsJob, events: Array<{ type: string; text: string }>, at?: number) => {
+export const addAlertRows = async ($: any, job: MwJobsJob, events: Array<{ type: string; text: string; ref?: string; link?: MwJobsAlertRow['link'] }>, at?: number) => {
   if (events.length === 0) return
   const now: number = at ?? (await $.clock.now())
-  const rows: MwJobsAlertRow[] = events.map(x => ({ id: `${now}-${(alertSeq += 1)}`, at: now, job: job.id, type: x.type, text: x.text })).reverse()
+  const rows: MwJobsAlertRow[] = events.map(x => ({ id: `${now}-${(alertSeq += 1)}`, at: now, job: job.id, type: x.type, text: x.text, ...(x.link !== undefined ? { ref: x.ref, link: x.link } : {}) })).reverse()
   await update($, alertRows, (l: MwJobsAlertRow[]) => [...rows, ...l].slice(0, ALERT_ROWS_MAX))
   await saveAlertRows($)
 }
@@ -2519,14 +2617,31 @@ const dismissAlert = async ($: any, id: string | null) => {
 export const parseAlertRows = (v: unknown): MwJobsAlertRow[] =>
   (Array.isArray(v) ? v : [])
     .filter((r): r is MwJobsAlertRow => r !== null && typeof r === 'object' && typeof r.id === 'string' && typeof r.text === 'string' && typeof r.at === 'number')
-    .map(r => ({ id: r.id, at: r.at, job: String(r.job ?? ''), type: String(r.type ?? ''), text: r.text }))
+    .map(r => ({ id: r.id, at: r.at, job: String(r.job ?? ''), type: String(r.type ?? ''), text: r.text, ...(r.link !== undefined && r.link !== null && typeof r.link.id === 'string' && (r.link.kind === 'item' || r.link.kind === 'wave') ? { ref: typeof r.ref === 'string' ? r.ref : undefined, link: { kind: r.link.kind, tenant: String(r.link.tenant ?? ''), id: r.link.id } } : {}) }))
     .slice(0, ALERT_ROWS_MAX)
 
 /** The alert rows above a pane's own drawing: one row each (time, text, x), newest first; past ALERT_ROWS_SHOWN a "+N more · Clear all" line. */
-const alertBox = ($: any, e: any, rows: MwJobsAlertRow[]) => {
+/** An alert row's text; its id (item or milestone) is a link to the detail panel. */
+const alertText2 = (ui: any, $: any, r: MwJobsAlertRow) => {
+  const { Box, Text, Button } = ui
+  const bare = (t: string) => (t.includes('\u00b7') ? t.slice(t.indexOf('\u00b7') + 1) : t)
+  const tok = r.link === undefined || r.ref === undefined ? undefined : [r.ref, bare(r.ref)].find(t => t !== '' && r.text.indexOf(t, Math.max(0, r.text.indexOf('\u25b8'))) >= 0)
+  if (tok === undefined) return <Text key={`alert-text-${r.id}`}>{r.text}</Text>
+  const at = r.text.indexOf(tok, Math.max(0, r.text.indexOf('\u25b8')))
+  const link = r.link!
+  return (
+    <Box key={`alert-text-${r.id}`}>
+      <Text>{r.text.slice(0, at)}</Text>
+      <Button key={`alert-id-${r.id}`} plain label={tok} onPress={() => void openDetail($, { kind: link.kind, jobId: r.job, tenant: link.tenant, id: link.id }, 'jobs')} />
+      <Text>{r.text.slice(at + tok.length)}</Text>
+    </Box>
+  )
+}
+
+const alertBox = ($: any, e: any, rows: MwJobsAlertRow[], pane: 'jobs' | 'news', fill = false) => {
   if (rows.length === 0) return null
   const { Box, Text, Button } = $.ui.resolve(e) as any
-  const shown = rows.slice(0, ALERT_ROWS_SHOWN)
+  const shown = fill ? rows : rows.slice(0, ALERT_ROWS_SHOWN)
   return (
     <Box key="alerts" flexDirection="column" borderStyle="round" borderColor="warning" paddingX={1}>
       {shown.map(r => (
@@ -2534,14 +2649,14 @@ const alertBox = ($: any, e: any, rows: MwJobsAlertRow[]) => {
           <Text color="warning">{'\u25cf'}</Text>
           <Text dimColor>{hhmm(r.at)}</Text>
           <Box flexGrow={1} flexShrink={1}>
-            <Text key={`alert-text-${r.id}`}>{r.text}</Text>
+            {alertText2({ Box, Text, Button }, $, r)}
           </Box>
           <Button key={`alert-x-${r.id}`} plain dimColor label="x" onPress={() => void dismissAlert($, r.id)} />
         </Box>
       ))}
       {rows.length > 1 ? (
         <Box key="alerts-tail" gap={1}>
-          {rows.length > shown.length ? <Text dimColor>{`+${rows.length - shown.length} more`}</Text> : null}
+          {rows.length > shown.length ? <Button key="alert-more" plain dimColor label={`+${rows.length - shown.length} more`} onPress={() => void setFill($, pane, true)} /> : null}
           <Button key="alert-clear" plain dimColor label="Clear all" onPress={() => void dismissAlert($, null)} />
         </Box>
       ) : null}
@@ -2551,11 +2666,15 @@ const alertBox = ($: any, e: any, rows: MwJobsAlertRow[]) => {
 
 /** A pane hook that throws leaves the host's "has not drawn in this pane" placeholder: the pane draws a short fallback instead
  * (its title, the way to the other pane, Loading… and the reason), and the reason is logged once per pane and message. */
+/** The fill state guardDraw read just before the pane draws (drawing reads it here, with no extra await). */
+const drawFill = { jobs: false, news: false }
 const guardDraw = async (pane: 'jobs' | 'news' | 'detail' | 'settings', $: any, e: any, draw: () => Promise<any>) => {
   // the jobs and news panes carry the alert rows on top, whatever they draw below (a fallback included)
   const rows: MwJobsAlertRow[] = pane === 'jobs' || pane === 'news' ? await read($, alertRows) : []
+  const fillOn: boolean = pane === 'jobs' || pane === 'news' ? ((await read($, blocksFill)) as { jobs: boolean; news: boolean })[pane] : false
+  if (pane === 'jobs' || pane === 'news') drawFill[pane] = fillOn
   const withAlerts = (tree: any) => {
-    const box = alertBox($, e, rows)
+    const box = alertBox($, e, rows, pane === 'news' ? 'news' : 'jobs', fillOn)
     if (box === null) return tree
     const { Box } = $.ui.resolve(e) as any
     return (
@@ -2623,18 +2742,19 @@ const setFill = async ($: any, pane: 'jobs' | 'news', on: boolean) => {
   }
   await cfgWrite($, { 'pane.fit': on ? 'fill' : '80' })
   await reloadNewsOut($)
-  // gopher: the lists come from mw again, with --full when fill is on
-  const styleNow: string = pane === 'jobs' ? await read($, barStyle) : await read($, newsStyle)
-  if (styleNow === 'gopher') await refreshAll($)
+  // every style: the lists come from mw again, with --full when fill is on
+  await refreshAll($)
 }
 
 // ---- gopher + fill: every row (`mw news --full`); an older mw keeps the caps and says so ----
 export const FULL_HINT = 'Full lists need mw 0.3.4+ (mw news --full); showing the capped lists.'
 const fullUnsupported = new Set<string>()
-/** Whether either pane wants the job's lists uncapped: gopher with its fill (↔) on. */
+/** mw's complaint about a flag it does not have (an older mw): the only failure that marks --full unsupported. */
+export const unknownOption = (stderr: string): boolean => /unknown (flag|option)|unrecognized (flag|option)|flag provided but not defined|bad flag/i.test(stderr)
+/** Whether either pane wants the job's lists uncapped: its fill (↔) is on, in any style. */
 const wantsFull = async ($: any): Promise<boolean> => {
   const f = (await read($, blocksFill)) as { jobs: boolean; news: boolean }
-  return ((await read($, barStyle)) === 'gopher' && f.jobs) || ((await read($, newsStyle)) === 'gopher' && f.news)
+  return f.jobs || f.news
 }
 
 type FillIn = { pane: 'jobs' | 'news'; on: boolean; blocks: boolean; gopher?: boolean }
@@ -2654,8 +2774,8 @@ const sizeButtons = (ui: any, $: any, minus: string, hash: string, plus: string,
       : tipped(
           ui,
           'fill',
-          <Button key="fill" plain label={'\u2194'} variant={fill.on && fill.blocks ? 'primary' : undefined} dimColor={!fill.blocks || !fill.on} onPress={() => { if (fill.blocks) void setFill($, fill.pane, !fill.on) }} />,
-          !fill.blocks ? 'Blocks and gopher only' : fill.gopher ? (fill.on ? 'Back to the capped lists' : 'Expand every list (no limits)') : fill.on ? 'Back to 80 characters' : 'Fill pane width (up to 160)',
+          <Button key="fill" plain label={'\u2194'} variant={fill.on ? 'primary' : undefined} dimColor={!fill.on} onPress={() => void setFill($, fill.pane, !fill.on)} />,
+          fill.on ? 'Back to the capped lists and 80 columns' : 'Fill: every list in full (no "+N more") and the pane width (up to 160)',
         ),
   ]
 }
@@ -2748,11 +2868,11 @@ export const fanfareNextArgs = (f: MwJobsFanfare): string[] => {
 const fanfareBusy = new Set<string>()
 
 const loadFanfare = async ($: any, job: MwJobsJob): Promise<MwJobsFanfare | null> => {
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   const cwd = expand(job.board, home)
   const out = async (argv: string[]) => {
     try {
-      const r = await $.process.run(argv, { cwd, timeoutMs: 20_000 })
+      const r = await proc($, argv, { cwd, timeoutMs: 20_000 })
       return r.exitCode === 0 ? String(r.stdout) : undefined
     } catch {
       return undefined
@@ -2771,11 +2891,11 @@ const fanfareCycle = async ($: any, job: MwJobsJob) => {
   try {
     const cur = ((await read($, fanfare)) as Record<string, MwJobsFanfare | null>)[job.id] ?? (await loadFanfare($, job))
     if (!cur) return
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     let ok = false
     try {
       // the newer mw: `mw configure` (the same keys); an older one: `mw user set`
-      const r = await $.process.run(['mw', ...(cfgOk === true ? ['configure'] : ['user', 'set']), ...fanfareNextArgs(cur)], { cwd: expand(job.board, home), timeoutMs: 20_000 })
+      const r = await proc($, ['mw', ...(cfgOk === true ? ['configure'] : ['user', 'set']), ...fanfareNextArgs(cur)], { cwd: expand(job.board, home), timeoutMs: 20_000 })
       ok = r.exitCode === 0
     } catch {
       ok = false
@@ -2820,35 +2940,29 @@ export const parseUserKeys = (text: string | undefined): CfgKey[] | undefined =>
 export const cycleNext = (choices: string[], cur: string): string => choices[(choices.indexOf(cur) + 1) % choices.length] ?? cur
 
 /** alerts.kinds: a comma list, or `all`; one kind toggled, written back as `all` when every kind is on. */
-export const kindsOf = (value: string, choices: string[]): string[] => (value.trim() === 'all' ? [...choices] : value.split(',').map(s => s.trim()).filter(s => choices.length === 0 || choices.includes(s)))
+export const kindsOf = (value: string, choices: string[]): string[] => (value.trim() === 'all' ? [...choices] : value.trim() === 'none' ? [] : value.split(',').map(s => s.trim()).filter(s => choices.length === 0 || choices.includes(s)))
 export const kindsToggle = (value: string, choices: string[], kind: string): string => {
   const on = new Set(kindsOf(value, choices))
   if (on.has(kind)) on.delete(kind)
   else on.add(kind)
   const list = choices.filter(c => on.has(c))
-  return list.length === choices.length ? 'all' : list.join(',')
+  return list.length === choices.length ? 'all' : list.length === 0 ? 'none' : list.join(',')
 }
 
-/** Which alerts.kinds an alert belongs to; '' for one no kind covers (new items), which always passes. */
-export const alertKind = (x: { type: string; text: string; key?: string }): string => {
-  const k = (x.key ?? '').split('|')[0]
-  if (k === 'needs' || / Needs Sir: /.test(x.text)) return 'ask'
-  if (k === 'review' || / Review: /.test(x.text)) return 'review'
-  if (k === 'blocked' || / Blocked: /.test(x.text)) return 'blocked'
-  if (/ Release \d+ is out$/.test(x.text)) return 'release'
-  if (x.type === 'done' || x.type === 'milestone') return 'done'
-  if (x.type === 'metric') return 'metrics'
-  return ''
-}
+/** Which alerts.kinds an alert belongs to: the structured kind it was raised with ('' for none). */
+export const alertKind = (x: { kind?: string }): string => x.kind ?? ''
+/** Whether a kind may alert: no list (older mw), no kind, a kind mw does not know yet (`new` until mw lists it), or one that is on. */
+export const alertAllowed = (sw: { kinds: Set<string> | null; choices: string[] }, kind: string): boolean =>
+  sw.kinds === null || kind === '' || (sw.choices.length > 0 && !sw.choices.includes(kind)) || sw.kinds.has(kind)
 
 /** The key values last applied to the panes: a key is applied again only when its value changes (so a pane's own choice stays). */
 const cfgApplied = new Map<string, string>()
 let cfgOk: boolean | null = null
 
 const mwHome = async ($: any, args: string[]) => {
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   try {
-    return (await $.process.run(['mw', ...args], { cwd: home || '/', timeoutMs: 20_000 })) as { exitCode: number; stdout: unknown; stderr: unknown }
+    return (await proc($, ['mw', ...args], { cwd: home || '/', timeoutMs: 20_000 })) as { exitCode: number; stdout: unknown; stderr: unknown }
   } catch (err) {
     return { exitCode: -1, stdout: '', stderr: String((err as Error)?.message ?? err) }
   }
@@ -2997,12 +3111,13 @@ const initSettings = async ($: any) => {
 }
 
 /** The alert switches: kinds (null: all), message rows/toasts/notifications, sound. */
-const alertSwitches = async ($: any): Promise<{ kinds: Set<string> | null; message: boolean; sound: boolean }> => {
+const alertSwitches = async ($: any): Promise<{ kinds: Set<string> | null; choices: string[]; message: boolean; sound: boolean }> => {
   const s: CfgState = await read($, settings)
-  if (s.ok !== true) return { kinds: null, message: true, sound: true }
+  if (s.ok !== true) return { kinds: null, choices: [], message: true, sound: true }
   const k = s.keys.find(x => x.key === 'alerts.kinds')
   return {
     kinds: k === undefined ? null : new Set(kindsOf(k.value, k.choices)),
+    choices: k?.choices ?? [],
     message: s.keys.find(x => x.key === 'alerts.message')?.value !== 'false',
     sound: s.keys.find(x => x.key === 'alerts.sound')?.value !== 'false',
   }
@@ -3167,7 +3282,7 @@ const controlsRowInner = (ui: any, $: any, c: ControlsIn) => {
         ...(c.scan !== undefined ? [tipped(ui, 'scan', <Button key="scan" plain label="Scan" dimColor onPress={c.scan.onPress} />, c.scan.tip)] : []),
       ])}
       {styleGroup(ui, $, c.pane, c.wanted, c.canSvg, c.unavailable)}
-      {sizeGroup(ui, $, c.sizeOff, { pane: c.pane, on: c.fill, blocks: (c.wanted === 'blocks') || (c.wanted === 'normal' && !c.canSvg) || c.wanted === 'gopher', gopher: c.wanted === 'gopher' })}
+      {sizeGroup(ui, $, c.sizeOff, { pane: c.pane, on: c.fill, blocks: true, gopher: c.wanted === 'gopher' })}
       {group(ui, 'grp-alerts', [tipped(ui, 'mute', <Button key="mute" plain label={c.muted ? '🔕' : '🔔'} dimColor onPress={() => void toggleMute($)} />, c.muted ? 'Unmute alerts' : 'Mute alerts', 'right')], true)}
       {c.fanfare !== undefined ? group(ui, 'grp-fanfare', [tipped(ui, 'fanfare', <Button key="fanfare" plain label={c.fanfare.label} dimColor={!c.fanfare.on} onPress={c.fanfare.onPress} />, c.fanfare.tip, 'right')], true) : null}
       {group(ui, 'grp-open', [
@@ -3186,7 +3301,7 @@ const mainTitle = async ($: any) => {
 
 /** Reads <board>/docs/news/status.md with $.fs only (never a script), capped at 9,500 characters (the Markdown element's own limit is 10,000). */
 const loadNews = async ($: any, job: MwJobsJob) => {
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   let text: string | null = null
   let truncated = false
   try {
@@ -3211,12 +3326,12 @@ const runNewsOut = async ($: any, job: MwJobsJob, kind: 'text' | 'md', cols: num
   if (outInFlight.has(key)) return
   outInFlight.add(key)
   try {
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     const argv = kind === 'text' ? ['mw', 'news', '--job', job.id, '--format', 'text', '--width', String(cols)] : ['mw', 'news', '--job', job.id, '--format', 'md', '-o', '-']
     let ok = false
     let text = ''
     try {
-      const r = await $.process.run(argv, { cwd: expand(job.board, home), timeoutMs: 30_000 })
+      const r = await proc($, argv, { cwd: expand(job.board, home), timeoutMs: 30_000 })
       ok = r.exitCode === 0 && String(r.stdout).trim() !== ''
       text = ok ? String(r.stdout) : ''
     } catch {
@@ -3325,6 +3440,10 @@ export const noModelNotice = (style: string, why: string | undefined): string | 
 
 const modelInFlight = new Set<string>()
 let lastJobShow: Record<string, Record<string, unknown> | undefined> = {}
+/** Forgets the jobs-show answers (a new session start does; tests call it between sessions). */
+export const lastJobShowReset = () => {
+  lastJobShow = {}
+}
 
 /**
  * Loads the news model: the releases folder (`latest`, `N.json`) first, then the draft from
@@ -3336,7 +3455,7 @@ const loadModels = async ($: any, job: MwJobsJob, js?: Record<string, unknown>):
   modelInFlight.add(key)
   modelProbed.add(key)
   try {
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     const cwd = expand(job.board, home)
     if (js !== undefined) lastJobShow[key] = js
     const dir = releasesDirOf(lastJobShow[key], cwd, home)
@@ -3359,11 +3478,11 @@ const loadModels = async ($: any, job: MwJobsJob, js?: Record<string, unknown>):
     entry.latest = Math.max(entry.latest, entry.nums[entry.nums.length - 1] ?? 0)
     try {
       const full = (await wantsFull($)) && !fullUnsupported.has(job.id)
-      let r = await $.process.run(['mw', 'news', '--job', job.id, '--format', 'json', ...(full ? ['--full'] : [])], { cwd, timeoutMs: 30_000 })
-      if (full && r.exitCode !== 0) {
-        // an mw before --full: the capped lists, and the pane says why
+      let r = await proc($, ['mw', 'news', '--job', job.id, '--format', 'json', ...(full ? ['--full'] : [])], { cwd, timeoutMs: 30_000 })
+      if (full && r.exitCode !== 0 && unknownOption(String(r.stderr ?? ''))) {
+        // an mw before --full says so (the option is unknown): the capped lists, and the pane says why. Any other failure is not that.
         fullUnsupported.add(job.id)
-        r = await $.process.run(['mw', 'news', '--job', job.id, '--format', 'json'], { cwd, timeoutMs: 30_000 })
+        r = await proc($, ['mw', 'news', '--job', job.id, '--format', 'json'], { cwd, timeoutMs: 30_000 })
       }
       entry.full = full && !fullUnsupported.has(job.id) && r.exitCode === 0
       if (r.exitCode === 0) {
@@ -3380,8 +3499,8 @@ const loadModels = async ($: any, job: MwJobsJob, js?: Record<string, unknown>):
     const chosenTenant = (((await read($, tenantSel)) as Record<string, string>)[job.id] ?? '') as string
     if (chosenTenant !== '' && entry.draft !== undefined) {
       try {
-        const r = await $.process.run(['mw', 'news', '--job', job.id, '--format', 'json', '--tenant', chosenTenant], { cwd, timeoutMs: 30_000 })
-        const res = r.exitCode === 0 ? parseModel(String(r.stdout), metricsOfModel) : {}
+        const r = await proc($, ['mw', 'news', '--job', job.id, '--format', 'json', ...(entry.full === true ? ['--full'] : []), '--tenant', chosenTenant], { cwd, timeoutMs: 30_000 })
+        const res = r.exitCode === 0 ? parseModel(String(r.stdout), metricsOfModel, { full: entry.full === true }) : {}
         if (res.model) entry.tdraft = { slug: chosenTenant, model: { ...res.model, only: chosenTenant } }
       } catch {
         // filtered here
@@ -3442,7 +3561,7 @@ const goPage = async ($: any, id: string, page: number) => {
   await setNewsView($, id, { page, list: false, confirm: false, ...(atNewest ? { seen: entry!.latest } : {}) })
 }
 
-/** Release button, second press: `mw news --job ID --release`. "nothing new since release N" is shown as a toast. */
+/** Publish button, second press: `mw news --job ID --release`. "nothing new since issue N" is shown as a toast. */
 const releasingNow = new Set<string>()
 const doRelease = async ($: any, job: MwJobsJob) => {
   // one release at a time per job: a second press while it runs does nothing
@@ -3459,11 +3578,11 @@ const doRelease = async ($: any, job: MwJobsJob) => {
 
 const doReleaseRun = async ($: any, job: MwJobsJob) => {
   await setNewsView($, job.id, { confirm: false })
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   let out = ''
   let code = 1
   try {
-    const r = await $.process.run(['mw', 'news', '--job', job.id, '--release'], { cwd: expand(job.board, home), timeoutMs: 60_000 })
+    const r = await proc($, ['mw', 'news', '--job', job.id, '--release'], { cwd: expand(job.board, home), timeoutMs: 60_000 })
     code = r.exitCode
     out = `${String(r.stdout)}\n${String(r.stderr)}`.trim()
   } catch (err) {
@@ -3471,11 +3590,11 @@ const doReleaseRun = async ($: any, job: MwJobsJob) => {
   }
   const nothing = /nothing new since release \d+/i.exec(out)
   if (nothing) {
-    $.ui.toast(`Jobs: ${nothing[0]}`, { timeoutMs: 6000 })
+    $.ui.toast(`Jobs: ${nothing[0].replace(/release/i, 'issue')}`, { timeoutMs: 6000 })
     return
   }
   if (code !== 0) {
-    $.ui.toast(`Jobs: release failed${out ? ` — ${out.split('\n')[0]!.slice(0, 120)}` : ''}`, { timeoutMs: 8000 })
+    $.ui.toast(`Jobs: publish failed${out ? ` — ${out.split('\n')[0]!.slice(0, 120)}` : ''}`, { timeoutMs: 8000 })
     return
   }
   // queue the refresh behind the one in flight (never clear its guard)
@@ -3484,7 +3603,7 @@ const doReleaseRun = async ($: any, job: MwJobsJob) => {
 }
 
 /** The alert for a new release: one alertNew per job and release, baseline on first sight. Draft changes raise none. */
-const releaseEvents = async ($: any, job: MwJobsJob, entry: NewsEntry): Promise<Array<{ type: AlertType; text: string; who?: string }>> => {
+const releaseEvents = async ($: any, job: MwJobsJob, entry: NewsEntry): Promise<AlertEvent[]> => {
   const known = ((await read($, relKnown)) as Record<string, number>)[job.id]
   if (known !== undefined && known >= entry.latest) return []
   await update($, relKnown, (m: Record<string, number>) => ({ ...m, [job.id]: entry.latest }))
@@ -3494,7 +3613,7 @@ const releaseEvents = async ($: any, job: MwJobsJob, entry: NewsEntry): Promise<
     // store unavailable
   }
   if (known === undefined || entry.latest === 0) return []
-  return [{ type: 'new', text: `[${job.id}] Release ${entry.latest} is out`, who: `release ${entry.latest}` }]
+  return [{ type: 'new', kind: 'release', text: alertText(job.id, `Issue ${entry.latest} published`, '', ''), who: `release ${entry.latest}`, key: `release|${entry.latest}` }]
 }
 
 // ---- the news pane from the news model: navigation, the release list, and the page in the chosen style ----
@@ -3518,18 +3637,19 @@ const modelMetricViews = (m: Model): MetricSectionView[] => {
 
 const pageDate = (m: Model | undefined) => (m ? releaseDate(m) : '')
 
-/** "Release N · date · vs release N-1" or "Draft · since release M". */
-export const pageTitle = (entry: NewsEntry, cur: number): { title: string; marker: string } => {
+/** "Issue N · date · vs issue N-1" or "Draft · since issue M". A news release is an issue of the bulletin in the panes; mw's own CLI keeps --release. */
+export const pageTitle = (entry: NewsEntry, cur: number): { title: string; marker: string; ref?: number } => {
   if (cur === 0) {
     const m = entry.draft
     const since = m?.release.since.number ?? (entry.latest > 0 ? entry.latest : null)
-    return { title: since === null ? 'Draft · since the start' : `Draft · since release ${since}`, marker: m ? `Draft, not released · ${changeCount(m)} changes since ${since === null ? 'the start' : `release ${since}`}` : 'Draft, not released' }
+    return { ref: since ?? undefined, title: since === null ? 'Draft · since the start' : `Draft · since issue ${since}`, marker: m ? `Draft, not published · ${changeCount(m)} changes since ${since === null ? 'the start' : `issue ${since}`}` : 'Draft, not published' }
   }
   const m = entry.releases[cur]
   // the release's own `since` names the one before it (releases may have gaps); without it, the one numbered before
   const since = m?.release.since.number
-  const prev = since === 0 || (since === undefined && cur <= 1) || (since === null && cur <= 1) ? 'vs the start' : `vs release ${since ?? cur - 1}`
-  return { title: `Release ${cur} · ${pageDate(m) || '…'} · ${prev}`, marker: '' }
+  const none = since === 0 || (since === undefined && cur <= 1) || (since === null && cur <= 1)
+  const prev = none ? 'vs the start' : `vs issue ${since ?? cur - 1}`
+  return { title: `Issue ${cur} · ${pageDate(m) || '…'} · ${prev}`, marker: '', ref: none ? undefined : (since ?? cur - 1) }
 }
 
 /** ⇤ | ◂ | ☰ | ▸ | ⇥ as one group (a dot after ☰ and ⇥ when a release came that the reader has not seen), and the Release button on the draft only. */
@@ -3544,28 +3664,28 @@ const releaseNav = (ui: any, $: any, job: MwJobsJob, entry: NewsEntry, view: New
     if (p !== undefined) void goPage($, job.id, p)
   }
   const nav = group(ui, 'nav-group', [
-    tipped(ui, 'nav-first', <Button key="nav-first" plain label="⇤" dimColor={idx <= 0} onPress={go(pages[0])} />, 'First release'),
-    tipped(ui, 'nav-prev', <Button key="nav-prev" plain label="◂" dimColor={prev === undefined} onPress={go(prev)} />, 'Previous release'),
-    tipped(ui, 'nav-list', <Button key="nav-list" plain label={dot ? '☰●' : '☰'} onPress={() => void (async () => { await setNewsView($, job.id, { list: !view.list, listPage: 0, confirm: false, ...(view.list ? {} : { seen: entry.latest }) }) })()} />, dot ? 'All releases (a new one)' : 'All releases'),
-    tipped(ui, 'nav-next', <Button key="nav-next" plain label="▸" dimColor={next === undefined} onPress={go(next)} />, 'Next release'),
-    tipped(ui, 'nav-last', <Button key="nav-last" plain label={dot ? '⇥●' : '⇥'} dimColor={idx === pages.length - 1 && !dot} onPress={go(pages[pages.length - 1])} />, dot ? 'Latest (a new release)' : 'Latest'),
+    tipped(ui, 'nav-first', <Button key="nav-first" plain label="⇤" dimColor={idx <= 0} onPress={go(pages[0])} />, 'First issue'),
+    tipped(ui, 'nav-prev', <Button key="nav-prev" plain label="◂" dimColor={prev === undefined} onPress={go(prev)} />, 'Previous issue'),
+    tipped(ui, 'nav-list', <Button key="nav-list" plain label={dot ? '☰●' : '☰'} onPress={() => void (async () => { await setNewsView($, job.id, { list: !view.list, listPage: 0, confirm: false, ...(view.list ? {} : { seen: entry.latest }) }) })()} />, dot ? 'All issues (a new one)' : 'All issues'),
+    tipped(ui, 'nav-next', <Button key="nav-next" plain label="▸" dimColor={next === undefined} onPress={go(next)} />, 'Next issue'),
+    tipped(ui, 'nav-last', <Button key="nav-last" plain label={dot ? '⇥●' : '⇥'} dimColor={idx === pages.length - 1 && !dot} onPress={go(pages[pages.length - 1])} />, dot ? 'Latest issue (a new one)' : 'Latest issue'),
   ])
   const release =
     cur !== 0
       ? null
       : isReleasing
-        ? tipped(ui, 'release', <Button key="release" plain dimColor label="releasing…" />, 'A release is being cut')
+        ? tipped(ui, 'release', <Button key="release" plain dimColor label="publishing…" />, 'An issue is being published')
         : view.confirm === true
         ? (
             <Box key="release-confirm" gap={1} alignItems="center">
-              <Text>Release now?</Text>
-              <Button key="release-yes" plain variant="primary" label="Yes, release" onPress={() => void doRelease($, job)} />
+              <Text>{`Publish issue ${entry.latest + 1}?`}</Text>
+              <Button key="release-yes" plain variant="primary" label="Yes, publish" onPress={() => void doRelease($, job)} />
               <Button key="release-no" plain dimColor label="Cancel" onPress={() => { releaseArmed.delete(job.id); void setNewsView($, job.id, { confirm: false }) }} />
             </Box>
           )
         : entry.draft !== undefined && changeCount(entry.draft) === 0
-          ? tipped(ui, 'release', <Button key="release" plain dimColor label="Release" onPress={() => $.ui.toast(`Jobs: nothing new since release ${entry.latest}`, { timeoutMs: 6000 })} />, `Nothing new since release ${entry.latest}`)
-          : tipped(ui, 'release', <Button key="release" plain variant="primary" label="Release" onPress={() => void setNewsView($, job.id, { confirm: true })} />, 'Cut a release from the draft (asks first)')
+          ? tipped(ui, 'release', <Button key="release" plain dimColor label="Publish" onPress={() => $.ui.toast(`Jobs: nothing new since issue ${entry.latest}`, { timeoutMs: 6000 })} />, `Nothing new since issue ${entry.latest}`)
+          : tipped(ui, 'release', <Button key="release" plain variant="primary" label="Publish" onPress={() => void setNewsView($, job.id, { confirm: true })} />, `Publish issue ${entry.latest + 1} from the draft; asks first`)
   return (
     <Box key="release-nav" alignItems="center" gap={2} flexWrap="wrap">
       {nav}
@@ -3595,7 +3715,7 @@ const releaseList = (ui: any, $: any, job: MwJobsJob, entry: NewsEntry, view: Ne
   return (
     <Box key="release-list" flexDirection="column" gap={0}>
       <Box gap={2} alignItems="center">
-        <Text bold>Releases, newest first</Text>
+        <Text bold>Issues, newest first</Text>
         <Text dimColor>{`page ${lp + 1}/${pages}`}</Text>
         {lp > 0 && <Button key="list-newer" plain dimColor label="◂ newer" onPress={() => void setNewsView($, job.id, { listPage: lp - 1 })} />}
         {lp < pages - 1 && <Button key="list-older" plain dimColor label="older ▸" onPress={() => void setNewsView($, job.id, { listPage: lp + 1 })} />}
@@ -3639,11 +3759,12 @@ const boardMileRow = (ui: any, k: string, r: MileRow, canSvg: boolean, open?: ()
 }
 
 /** The release notes of a page in the board style: Milestones closed / Done / Sent back / Ongoing / Next / Metrics. */
-const boardNotes = (ui: any, $: any, job: MwJobsJob, m: Model, labels: Record<string, string>, canSvg: boolean, views: MViewSection[], ask: (tenant: string, id: string) => void) => {
+const boardNotes = (ui: any, $: any, job: MwJobsJob, m: Model, labels: Record<string, string>, canSvg: boolean, views: MViewSection[], ask: (tenant: string, id: string) => void, fill = false) => {
   const { Box, Text, Button } = ui
+  const capOf = (n: number) => (fill ? Number.MAX_SAFE_INTEGER : n)
   const c = m.now.counts
   const rowsOf = (kind: Parameters<typeof itemRow>[0], l: MList, top: number, counted?: number) => {
-    const shown = topOf(l, top, counted)
+    const shown = topOf(l, capOf(top), counted)
     const rest = Math.max(total(l, counted) - shown.length, 0)
     return { rows: shown.map(i => itemRow(kind, { tenant: i.tenant, id: i.id, title: i.title, note: i.note, ticket: i.ticket, ticketUrl: i.ticket_url }, labels)), rest }
   }
@@ -3652,7 +3773,7 @@ const boardNotes = (ui: any, $: any, job: MwJobsJob, m: Model, labels: Record<st
       <Box key={key} flexDirection="column">
         <Text bold dimColor>{title.toUpperCase()}</Text>
         {nodes}
-        {rest > 0 && <Text dimColor>{`+${rest} more`}</Text>}
+        {rest > 0 && <Button key={`${key}-more`} plain dimColor label={`+${rest} more`} onPress={() => void setFill($, 'news', true)} />}
       </Box>
     )
   const itemSection = (key: string, title: string, kind: Parameters<typeof itemRow>[0], l: MList, top: number, counted?: number, withAsk = false) => {
@@ -3670,7 +3791,7 @@ const boardNotes = (ui: any, $: any, job: MwJobsJob, m: Model, labels: Record<st
     )
   }
   const mileSection = (key: string, title: string, l: MList, top: number, closed: boolean) => {
-    const shown = topOf(l, top)
+    const shown = topOf(l, capOf(top))
     const rest = Math.max(total(l) - shown.length, 0)
     return section(key, title, shown.map(i => boardMileRow(ui, `${key}-${i.tenant}-${i.id}`, mileOf({ tenant: i.tenant, id: i.id, title: i.title, done: i.done, total: i.total, ticket: i.ticket, ticketUrl: i.ticket_url }, labels, closed), canSvg, () => void openDetail($, { kind: 'wave', jobId: job.id, tenant: i.tenant, id: i.id }, 'news'))), rest)
   }
@@ -3678,7 +3799,7 @@ const boardNotes = (ui: any, $: any, job: MwJobsJob, m: Model, labels: Record<st
   const hp = m.happened
   return (
     <Box key="board-notes" flexDirection="column" gap={1}>
-      <Text bold wrap="truncate-end">{`${job.title} · ${draft ? 'draft' : `release ${m.release.number}`}`}</Text>
+      <Text bold wrap="truncate-end">{`${job.title} · ${draft ? 'draft' : `issue ${m.release.number}`}`}</Text>
       <Text dimColor>{shortLines(m).join(' · ')}</Text>
       {mileSection('b-closed', 'Milestones closed', hp.closed_milestones, 10, true)}
       {itemSection('b-done', 'Done', 'done', hp.done, 10, hp.counts.done)}
@@ -3710,12 +3831,12 @@ const modelNewsNodes = async (
   job: MwJobsJob,
   o: { entry: NewsEntry; view: NewsViewState; canSvg: boolean; paneW: number; given: number | undefined; step: number; style: string },
 ): Promise<any[]> => {
-  const { Box, Text, Link, Svg, Markdown } = ui
+  const { Box, Text, Link, Svg, Markdown, Button } = ui
   const { entry, view, canSvg } = o
   const cur = currentPage(entry, view)
   const nodes: any[] = [releaseNav(ui, $, job, entry, view, cur, ((await read($, releasing)) as string[]).includes(job.id))]
   // a release the reader was on that is no longer there; the draft that could not be read (E5), or is out of date (E6)
-  if (view.page !== undefined && view.page > 0 && !pagesOf(entry).includes(view.page)) nodes.push(<Text key="page-gone" color="warning">{`release ${view.page} gone`}</Text>)
+  if (view.page !== undefined && view.page > 0 && !pagesOf(entry).includes(view.page)) nodes.push(<Text key="page-gone" color="warning">{`issue ${view.page} gone`}</Text>)
   if (entry.draftError !== undefined && entry.draft !== undefined) nodes.push(<Text key="draft-note" color="warning">{`draft out of date: ${entry.draftError} (showing the last poll)`}</Text>)
   else if (entry.draftError !== undefined && entry.draft === undefined) nodes.push(<Text key="draft-note" color="warning">{`draft unavailable: ${entry.draftError}`}</Text>)
   const loadKey = `${job.id}|${cur}|${view.list ? view.listPage ?? 0 : 'p'}`
@@ -3733,13 +3854,21 @@ const modelNewsNodes = async (
   const t = pageTitle(entry, cur)
   nodes.push(
     <Box key="page-title" flexDirection="column">
-      <Text bold wrap="truncate-end">{t.title}</Text>
+      {t.ref !== undefined && entry.nums.includes(t.ref) && t.title.endsWith(`issue ${t.ref}`) ? (
+        // the issue it is compared with is a link to that issue
+        <Box key="page-title-line">
+          <Text bold>{t.title.slice(0, t.title.length - `issue ${t.ref}`.length)}</Text>
+          <Button key="page-title-ref" plain label={`issue ${t.ref}`} onPress={() => void goPage($, job.id, t.ref!)} />
+        </Box>
+      ) : (
+        <Text bold wrap="truncate-end">{t.title}</Text>
+      )}
       {t.marker !== '' && <Text dimColor wrap="truncate-end">{t.marker}</Text>}
     </Box>,
   )
   const m = cur === 0 ? entry.draft : entry.releases[cur]
   if (m === undefined) {
-    nodes.push(<Text key="page-wait" dimColor={!(cur > 0 && entry.bad[cur])} color={cur > 0 && entry.bad[cur] ? 'warning' : undefined}>{cur > 0 && entry.bad[cur] ? `release ${cur} ${entry.bad[cur]}` : cur === 0 && entry.draftError ? `draft unavailable: ${entry.draftError}` : 'Loading…'}</Text>)
+    nodes.push(<Text key="page-wait" dimColor={!(cur > 0 && entry.bad[cur])} color={cur > 0 && entry.bad[cur] ? 'warning' : undefined}>{cur > 0 && entry.bad[cur] ? `issue ${cur} ${entry.bad[cur]}` : cur === 0 && entry.draftError ? `draft unavailable: ${entry.draftError}` : 'Loading…'}</Text>)
     return nodes
   }
   const labels = m.only !== undefined ? tenantLabels([m.only]) : tenantLabels(job.tenants)
@@ -3756,21 +3885,27 @@ const modelNewsNodes = async (
     const fillOn = ((await read($, blocksFill)) as { jobs: boolean; news: boolean }).news
     if (fillOn && fullUnsupported.has(job.id)) nodes.push(<Text key="full-hint" dimColor>{FULL_HINT}</Text>)
     const lines = withTenantHidden(m.only !== undefined, () => bulletin(m, { width: cols, releases: entry.nums, prevAt, url: job.news || undefined, metrics: views, full: fillOn && entry.full === true && cur === 0 }))
-    nodes.push(<Box key="gopher" flexDirection="column">{gopherNodes(ui, lines, { canSvg, cols, size, key: 'bul', ask: askIt })}</Box>)
+    nodes.push(<Box key="gopher" flexDirection="column">{gopherNodes(ui, lines, { canSvg, cols, size, key: 'bul', ask: askIt })}{idsRow(ui, $, job.id, lines, modelIdIndex(m), 'bul', 'news')}</Box>)
     return nodes
   }
   if (o.style === 'kanban' || o.style === 'agile') {
-    const doc = o.style === 'agile' ? agileNews(m) : kanbanNews(m)
+    const noCap = ((await read($, blocksFill)) as { jobs: boolean; news: boolean }).news && !fullUnsupported.has(job.id)
+    const doc = o.style === 'agile' ? agileNews(m, noCap ? Number.MAX_SAFE_INTEGER : undefined) : kanbanNews(m, noCap ? Number.MAX_SAFE_INTEGER : undefined)
     const cols = o.style === 'agile' ? 1 : flowCols(o.given)
     nodes.push(withTenantHidden(m.only !== undefined, () => flowNodes(ui, $, job, doc, { cols, ageOf: () => '', keyPrefix: `n${o.style}`, ask: false, width: o.given })))
     return nodes
   }
   // normal and blocks: the newsletter as markdown through the same pipeline as mw's own news; milestone rows through the shared milestone row drawing
   const mono = o.style === 'blocks'
-  const segs = newsSegments(m, { metrics: views, labels })
+  const nFill = drawFill.news && !fullUnsupported.has(job.id)
+  const topN = nFill ? Number.MAX_SAFE_INTEGER : undefined
+  const segs = newsSegments(m, { metrics: views, labels, top: topN })
+  const hasMore = !nFill && segs.some(sg => ('md' in sg ? /\+\d+ more/.test(sg.md) : sg.tail !== ''))
+  const moreBtn = hasMore ? <Button key="news-more" plain dimColor label="+ more" onPress={() => void setFill($, 'news', true)} /> : null
   if (!canSvg) {
-    const md = newsMd(m, { metrics: views, labels })
+    const md = newsMd(m, { metrics: views, labels, top: topN })
     nodes.push(<Markdown key="md" text={md.length > NEWS_MAX ? `${md.slice(0, NEWS_MAX)}\n\n\u2026 truncated` : md} />)
+    if (moreBtn) nodes.push(moreBtn)
     return nodes
   }
   const urls = new Map<string, string>()
@@ -3796,6 +3931,7 @@ const modelNewsNodes = async (
       </Box>,
     )
   }
+  if (moreBtn) body.push(moreBtn)
   nodes.push(mono ? <Box key="grid" width={gridCols} flexDirection="column">{body}</Box> : <Box key="grid" flexDirection="column">{body}</Box>)
   return nodes
 }
@@ -3849,7 +3985,7 @@ const openNewsTab = async ($: any, id: string, focus: boolean) => {
   if (focus) await markNewsSeen($, id)
   const title = await newsTitleOf($, id)
   lastNewsTitle = title
-  if (focus) await openChecked($, { id: NEWS_PANE, title, focus: true }, 'news', '/jobs news')
+  if (focus) await openChecked($, { id: NEWS_PANE, title, focus: true }, 'news', '/mw-news')
   else await $.ui.open({ id: NEWS_PANE, title })
 }
 const openNews = (($: any, id: string) => openNewsTab($, id, true))
@@ -3881,34 +4017,91 @@ const openMain = async ($: any, focus = false, first?: string) => {
   const job = reg.jobs.find(j => j.id === sel) ?? reg.jobs[0]
   if (job) await openNewsTab($, job.id, false)
   const spec = { id: PANE, title: await mainTitle($) }
-  if (focus) await openChecked($, { ...spec, focus: true }, 'jobs', '/jobs')
+  if (focus) await openChecked($, { ...spec, focus: true }, 'jobs', '/mw-jobs')
   else await $.ui.open(spec)
   // pane.open=news (mw key): the news pane is the one in front
   if (first === 'news' && job) await $.ui.open({ id: NEWS_PANE, title: await newsTitleOf($, job.id), focus: true })
 }
 
-/** A file: Link is refused on every surface, so the panel button asks the OS to open status.md (no script of the repo runs). */
-const openPanel = async ($: any, job: MwJobsJob) => {
-  const home: string = (await $.env.get('HOME')) ?? ''
-  const path = `${expand(job.board, home)}/docs/news/status.md`
-  // a repo could commit status.md as a link to an .app or .command: only a plain .md file is ever opened, and only in the text editor
-  let why = ''
+/** The news page a job's panel button opens: the job's `news_out` from `mw jobs show -j` (a folder holds status.md; a file is itself), else docs/news/status.md. */
+export const newsStatusPath = (js: Record<string, unknown> | undefined, board: string, home: string): string => {
+  const out = js && (js['news.out'] ?? js.news_out)
+  const base = expand(board, home)
+  if (typeof out !== 'string' || out === '') return `${base}/docs/news/status.md`
+  const full = expand(out, home, base)
+  const last = full.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ''
+  return /[\\/]$/.test(out) || !/\.[A-Za-z0-9]+$/.test(last) ? `${full.replace(/[\\/]+$/, '')}/status.md` : full
+}
+
+/** What a stat output (macOS `%HT`, Linux `%F`) says about a file: 'file', 'link' or 'other'. */
+export const kindFromStat = (out: string): 'file' | 'link' | 'other' => {
+  const t = out.trim().toLowerCase()
+  return t === 'regular file' || t === 'regular empty file' ? 'file' : t === 'symbolic link' ? 'link' : 'other'
+}
+
+/**
+ * Whether a path is a plain file that may be opened: not a symbolic link, a regular file, and (mdOnly) a .md file.
+ * $.fs.stat can refuse a path outside the session's folder; then the OS says (argv only, no shell): `/usr/bin/stat -f %HT` on macOS,
+ * `stat -c %F` on Linux; on Windows the kind is not checked. `why` is '' when it may be opened, 'missing' when there is no such file,
+ * else one line with the real reason.
+ */
+export const checkPlainFile = async ($: any, path: string, mdOnly: boolean): Promise<string> => {
+  let kind: 'file' | 'link' | 'other' | undefined
+  let real = path
+  let err = ''
   try {
     const st = await $.fs.stat(path, { resolve: true })
-    const real: string = st.realPath ?? path
-    if (st.isLink) why = 'it is a symbolic link'
-    else if (st.kind !== 'file') why = 'it is not a file'
-    else if (!path.endsWith('.md') || !real.endsWith('.md')) why = 'it is not a .md file'
-  } catch {
-    why = 'it cannot be checked'
+    real = st.realPath ?? path
+    kind = st.isLink ? 'link' : st.kind === 'file' ? 'file' : 'other'
+  } catch (e) {
+    err = String((e as Error)?.message ?? e).split('\n')[0]!.slice(0, 160)
+    if (/ENOENT|no such file/i.test(err)) return 'missing'
+    const os = await osKind($)
+    if (os === 'windows') {
+      kind = 'file'
+    } else {
+      try {
+        const r = await proc($, os === 'mac' ? ['/usr/bin/stat', '-f', '%HT', path] : ['stat', '-c', '%F', path], { timeoutMs: 5000 })
+        if (r.exitCode === 0) kind = kindFromStat(String(r.stdout))
+        else if (/no such file/i.test(String(r.stderr))) return 'missing'
+        else err = `${err}; stat: ${String(r.stderr).trim().split('\n')[0]!.slice(0, 100)}`
+      } catch (e2) {
+        err = `${err}; stat: ${String((e2 as Error)?.message ?? e2).slice(0, 100)}`
+      }
+    }
   }
+  if (kind === undefined) return `it cannot be checked (${err || 'no answer'})`
+  if (kind === 'link') return 'it is a symbolic link'
+  if (kind !== 'file') return 'it is not a file'
+  if (mdOnly && (!path.toLowerCase().endsWith('.md') || !real.toLowerCase().endsWith('.md'))) return 'it is not a .md file'
+  return ''
+}
+
+/** A file: Link is refused on every surface, so the panel button asks the OS to open the job's news page (no script of the repo runs). */
+const openPanel = async ($: any, job: MwJobsJob) => {
+  const home: string = (await homeOf($))
+  let js = lastJobShow[job.id]
+  if (js === undefined) {
+    try {
+      const r = await proc($, ['mw', 'jobs', 'show', job.id, '-j'], { cwd: expand(job.board, home), timeoutMs: 20_000 })
+      const v = r.exitCode === 0 ? parseJson(String(r.stdout)) : undefined
+      if (v !== null && typeof v === 'object' && !Array.isArray(v)) js = v as Record<string, unknown>
+    } catch {
+      js = undefined
+    }
+  }
+  const path = newsStatusPath(js, job.board, home)
+  const name = path.split(/[\\/]/).pop() ?? 'status.md'
+  // a repo could commit the page as a link to an .app or .command: only a plain .md file is ever opened, and only in the text editor
+  const why = await checkPlainFile($, path, true)
   if (why !== '') {
-    await logFail($, job.id, 'status.md not opened', why)
-    $.ui.toast(`Jobs: not opening status.md, ${why}.`, { timeoutMs: 6000 })
+    const shown = why === 'missing' ? `${name} does not exist yet (${path})` : why
+    await logFail($, job.id, `${name} not opened`, shown)
+    $.ui.toast(`Jobs: not opening ${name}, ${shown}.`, { timeoutMs: 6000 })
     return
   }
   try {
-    await $.process.run(['open', '-t', path])
+    await proc($, openerArgv(await osKind($), path))
   } catch {
     // no opener
   }
@@ -3924,13 +4117,13 @@ const splitRef = (tenant: string, id: string) => (id.includes(':') ? { tenant: i
 const loadDetail = async ($: any, r: MwJobsDetailRef) => {
   const reg: MwJobsRegistry = await read($, registry)
   const job = reg.jobs.find(j => j.id === r.jobId)
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   const argv = r.kind === 'item' ? ['mw', 'show', r.id, '-t', r.tenant, '-j'] : ['mw', 'wave', 'show', r.id, '-t', r.tenant, '-j']
   let next: { text?: string; why?: string }
   if (job === undefined) next = { why: `unknown job ${r.jobId}` }
   else {
     try {
-      const out = await $.process.run(argv, { cwd: expand(job.board, home), timeoutMs: 20_000 })
+      const out = await proc($, argv, { cwd: expand(job.board, home), timeoutMs: 20_000 })
       next = out.exitCode === 0 ? { text: String(out.stdout) } : { why: String(out.stderr || out.stdout || `exit ${out.exitCode}`).trim().split('\n')[0]!.slice(0, 200) }
     } catch (err) {
       next = { why: String((err as Error)?.message ?? err).slice(0, 200) }
@@ -3942,6 +4135,91 @@ const loadDetail = async ($: any, r: MwJobsDetailRef) => {
 const detailTitle = (r: MwJobsDetailRef) => `mw ${r.kind === 'wave' ? 'milestone' : 'item'} · ${r.tenant}/${r.id}`
 
 /** A click on an item or a milestone: show it in the detail pane (from a pane: a fresh trail; from the detail pane itself: remember where to go back). */
+/**
+ * A bar of `total` cells: coloured parts (n cells each) then the track. On a monospace terminal it is block glyphs; anywhere else (a proportional
+ * font, where a full block is wider than a light shade) it is Boxes with exact widths and a background colour, so the parts always add up to the box.
+ */
+const meterBar = (ui: any, key: string, parts: Array<{ n: number; color?: string }>, total: number, glyphs: boolean) => {
+  const { Box, Text } = ui
+  const used = Math.min(total, parts.reduce((n, p) => n + p.n, 0))
+  if (glyphs) {
+    return (
+      <Box key={key} flexShrink={0}>
+        {parts.filter(p => p.n > 0).map((p, i) => <Text key={`${key}-p${i}`} color={p.color}>{'\u2588'.repeat(p.n)}</Text>)}
+        <Text dimColor>{'\u2591'.repeat(Math.max(0, total - used))}</Text>
+      </Box>
+    )
+  }
+  return (
+    <Box key={key} width={total} flexShrink={0} height={1}>
+      {parts.filter(p => p.n > 0).map((p, i) => <Box key={`${key}-p${i}`} width={p.n} height={1} flexShrink={0} backgroundColor={p.color ?? 'text'}><Text> </Text></Box>)}
+      <Box key={`${key}-track`} width={Math.max(0, total - used)} height={1} flexShrink={0} backgroundColor="subtle"><Text> </Text></Box>
+    </Box>
+  )
+}
+
+/** The ids that exist on a job's board (items and milestones of its snapshot), cached per snapshot. */
+const idIndexCache = new WeakMap<object, IdIndex>()
+/** The ids of a news model alone (its items and milestones). */
+const modelIdIndex = (model: Model): IdIndex => idIndexOf({ waves: [], items: [], events: [], harness: [], updatedAt: 0 } as unknown as MwJobsSnapshot, model)
+
+/** Gopher draws its text as a Code block for copying, so ids in it stay plain; this small row under it lists the ids in view as links. */
+const idsRow = (ui: any, $: any, jobId: string, lines: Array<{ t: string }>, index: IdIndex, key: string, from: 'jobs' | 'news') => {
+  const { Box, Text, Button } = ui
+  const seen = new Map<string, IdRef>()
+  for (const l of lines) for (const p of splitIds(l.t, index)) if (p.ref !== undefined && !seen.has(p.ref.id)) seen.set(p.ref.id, p.ref)
+  if (seen.size === 0) return null
+  return (
+    <Box key={`${key}-ids`} flexWrap="wrap" gap={1}>
+      <Text dimColor>ids</Text>
+      {[...seen.values()].map(ref => (
+        <Button key={`${key}-id-${ref.id}`} plain label={ref.id.includes(':') ? ref.id.slice(ref.id.indexOf(':') + 1) : ref.id} onPress={() => void openDetail($, { kind: ref.kind, jobId, tenant: ref.tenant, id: ref.id }, from)} />
+      ))}
+    </Box>
+  )
+}
+
+const modelIndexCache = new WeakMap<object, IdIndex>()
+const idIndexOf = (snap: MwJobsSnapshot, model?: Model): IdIndex => {
+  let base = idIndexCache.get(snap)
+  if (base === undefined) {
+    base = buildIdIndex(snap.items.map(i => ({ tenant: i.tenant, id: i.id })), snap.waves.map(w => ({ id: w.id, title: w.title })))
+    idIndexCache.set(snap, base)
+  }
+  if (model === undefined) return base
+  const hit = modelIndexCache.get(model)
+  if (hit !== undefined) return hit
+  // a news model carries its own lists: items and milestones the snapshot may not hold
+  const itemLists = [model.now.needs, model.now.review, model.now.blocked, model.now.doing, model.now.backlog, model.now.recentDone, model.happened.done, model.happened.accepted, model.happened.sent_back, model.happened.new_items, model.happened.moved_to_review, model.happened.moved_to_doing, model.next.ready]
+  const waveLists = [model.now.milestones, model.happened.closed_milestones, model.next.next_milestones]
+  const extra = buildIdIndex(
+    itemLists.flatMap(l => l.items.map(i => ({ tenant: i.tenant, id: i.id }))),
+    waveLists.flatMap(l => l.items.map(i => ({ id: i.id.includes(':') ? i.id : `${i.tenant}:${i.id}`, title: i.title }))),
+  )
+  const merged = new Map(base)
+  for (const [k, v] of extra) if (!merged.has(k)) merged.set(k, v)
+  modelIndexCache.set(model, merged)
+  return merged
+}
+
+/** Text whose ids that exist on the board are link-style Buttons: an item id opens its detail panel, a milestone id its milestone panel. Unknown ids stay text. */
+const linkedText = (ui: any, $: any, jobId: string, text: string, index: IdIndex, key: string, from: 'jobs' | 'news' | 'detail', o: { dimColor?: boolean; color?: string; wrap?: 'wrap' | 'truncate-end' } = {}) => {
+  const { Box, Text, Button } = ui
+  const parts = splitIds(text, index)
+  if (!parts.some(p => p.ref !== undefined)) return <Text key={key} dimColor={o.dimColor} color={o.color} wrap={o.wrap ?? 'truncate-end'}>{text}</Text>
+  return (
+    <Box key={key} flexShrink={1} overflow={o.wrap === 'wrap' ? undefined : 'hidden'} flexWrap={o.wrap === 'wrap' ? 'wrap' : undefined}>
+      {parts.map((p, i) =>
+        p.ref !== undefined ? (
+          <Button key={`${key}-id${i}`} plain dimColor={o.dimColor} label={p.text} onPress={() => void openDetail($, { kind: p.ref!.kind, jobId, tenant: p.ref!.tenant, id: p.ref!.id }, from)} />
+        ) : (
+          <Text key={`${key}-t${i}`} dimColor={o.dimColor} color={o.color}>{p.text}</Text>
+        ),
+      )}
+    </Box>
+  )
+}
+
 export const openDetail = async ($: any, r0: MwJobsDetailRef, from: 'jobs' | 'news' | 'detail') => {
   const r = { ...r0, ...splitRef(r0.tenant, r0.id) }
   await update($, detail, (d: MwJobsDetail) => (from === 'detail' ? { cur: r, trail: d.cur ? [...d.trail, d.cur].slice(-20) : d.trail, from: d.from } : { cur: r, trail: [], from }))
@@ -3967,8 +4245,10 @@ const detailBack = async ($: any) => {
 const STATE_TONE: Record<string, string | undefined> = { blocked: 'error', needs: 'error', review: 'warning', doing: 'warning', done: 'success', closed: 'success' }
 
 /** The detail pane's tree: title row ending in ¦ < Back, then the item's or the milestone's fields as selectable Text. */
-const detailTree = (ui: any, $: any, d: MwJobsDetail, data: Record<string, { text?: string; why?: string }>) => {
+const detailTree = (ui: any, $: any, d: MwJobsDetail, data: Record<string, { text?: string; why?: string }>, index: IdIndex = new Map()) => {
   const { Box, Text, Button, Link } = ui
+  // free text with the board's ids as links (a milestone's own children and log included)
+  const lk = (text: string, key: string, o: { dimColor?: boolean; color?: string; wrap?: 'wrap' | 'truncate-end' } = {}) => linkedText(ui, $, d.cur?.jobId ?? '', text, index, key, 'detail', o)
   const back = <Button key="detail-back" plain label={BACK_LABEL} onPress={() => void detailBack($)} />
   const titleRow = (title: string) => (
     <Box key="detail-title" gap={1}>
@@ -4000,13 +4280,13 @@ const detailTree = (ui: any, $: any, d: MwJobsDetail, data: Record<string, { tex
         {field('tenant', 'tenant', it.tenant)}
         {field('wave', 'milestone', it.wave === '' ? '\u2014' : <Button key="df-wave-open" plain label={it.wave} onPress={() => void openDetail($, { kind: 'wave', jobId: r.jobId, tenant: it.tenant, id: it.wave }, 'detail')} />)}
         {field('owner', 'owner', it.owner || '\u2014')}
-        {it.reason !== null && field('reason', it.reason.label.toLowerCase(), <Text wrap="wrap" color={it.reason.label === 'Blocked' ? 'error' : undefined}>{it.reason.text}</Text>)}
+        {it.reason !== null && field('reason', it.reason.label.toLowerCase(), lk(it.reason.text, 'df-reason', { wrap: 'wrap', color: it.reason.label === 'Blocked' ? 'error' : undefined }))}
         {it.evidence.length > 0 && field('evidence', 'evidence', <Box flexDirection="column">{it.evidence.slice(0, 8).map((e, i) => <Text key={`ev-${i}`} dimColor wrap="truncate-end">{e}</Text>)}</Box>)}
         {it.ticket !== null && field('ticket', 'ticket', it.ticket.url !== '' ? <Link key="df-ticket-link" href={it.ticket.url}>{it.ticket.label}</Link> : it.ticket.label)}
-        {it.acceptance !== '' && field('acc', 'acceptance', it.acceptance)}
-        {it.children.length > 0 && field('children', 'children', <Box flexDirection="column">{it.children.map(c => <Box key={`ch-${c.id}`} gap={1}>{itemBtn(`ch-open-${c.id}`, it.tenant, c.id, c.id)}<Text color={STATE_TONE[c.state]}>{c.state}</Text><Text wrap="truncate-end">{c.title}</Text></Box>)}</Box>)}
+        {it.acceptance !== '' && field('acc', 'acceptance', lk(it.acceptance, 'df-acc', { wrap: 'wrap' }))}
+        {it.children.length > 0 && field('children', 'children', <Box flexDirection="column">{it.children.map(c => <Box key={`ch-${c.id}`} gap={1}>{itemBtn(`ch-open-${c.id}`, it.tenant, c.id, c.id)}<Text color={STATE_TONE[c.state]}>{c.state}</Text>{lk(c.title, `ch-title-${c.id}`)}</Box>)}</Box>)}
         <Text key="log-head" bold dimColor>RECENT LOG</Text>
-        {it.log.length === 0 ? <Text dimColor>{'\u2014'}</Text> : it.log.map((l, i) => <Text key={`log-${i}`} wrap="truncate-end"><Text dimColor>{`${l.at.slice(0, 16).replace('T', ' ')} `}</Text><Text>{l.action}</Text><Text dimColor>{`${l.by ? ` ${l.by}` : ''}${l.note ? ` \u2014 ${l.note}` : ''}`}</Text></Text>)}
+        {it.log.length === 0 ? <Text dimColor>{'\u2014'}</Text> : it.log.map((l, i) => <Box key={`log-${i}`} overflow="hidden"><Text dimColor>{`${l.at.slice(0, 16).replace('T', ' ')} `}</Text><Text>{l.action}</Text><Text dimColor>{l.by ? ` ${l.by}` : ''}</Text>{l.note ? <Text dimColor>{' \u2014 '}</Text> : null}{l.note ? lk(l.note, `log-note-${i}`, { dimColor: true }) : null}</Box>)}
       </Box>
     )
   }
@@ -4022,7 +4302,7 @@ const detailTree = (ui: any, $: any, d: MwJobsDetail, data: Record<string, { tex
       {w.groups.map(g => (
         <Box key={`grp-${g.state}`} flexDirection="column">
           <Text bold color={STATE_TONE[g.state]} dimColor={STATE_TONE[g.state] === undefined}>{`${g.state.toUpperCase()} ${g.items.length}`}</Text>
-          {g.items.map(i => <Box key={`wi-${i.id}`} gap={1}>{itemBtn(`wi-open-${i.id}`, w.tenant, i.id, i.id)}<Text wrap="truncate-end">{i.title}</Text></Box>)}
+          {g.items.map(i => <Box key={`wi-${i.id}`} gap={1}>{itemBtn(`wi-open-${i.id}`, w.tenant, i.id, i.id)}{lk(i.title, `wi-title-${i.id}`)}</Box>)}
         </Box>
       ))}
     </Box>
@@ -4042,7 +4322,7 @@ const backToJobs = async ($: any, id: string) => {
   const sel: string = await read($, selected)
   const job = reg.jobs.find(j => j.id === sel) ?? reg.jobs[0]
   if (job) await refreshJob($, job)
-  await openChecked($, { id: PANE, title: await mainTitle($), focus: true }, 'jobs', '/jobs')
+  await openChecked($, { id: PANE, title: await mainTitle($), focus: true }, 'jobs', '/mw-jobs')
 }
 
 const tenantCursor = new Map<string, number>()
@@ -4076,7 +4356,7 @@ const readTheme = async ($: any) => {
 const refreshAll = async ($: any) => {
   await readTheme($)
   // a key changed in a terminal (mw configure) reaches the panes with the next refresh
-  if (cfgOk === true) await loadSettings($)
+  await loadSettings($)
   const reg = await loadRegistry($)
   await cleanFavs($, reg)
   await renderStatus($)
@@ -4555,7 +4835,7 @@ const flowNodes = (ui: any, $: any, job: MwJobsJob, d: FDoc, o: { cols: number; 
       {s.sub && <Text dimColor wrap={sideBySide ? 'truncate-end' : undefined}>{s.sub}</Text>}
       {s.rows.length === 0 && <Text dimColor>{'\u2014'}</Text>}
       {s.rows.map(r => row(s.key, r))}
-      {s.rest > 0 && <Text dimColor>{`+${s.rest} more`}</Text>}
+      {s.rest > 0 && <Button key={`more-${o.keyPrefix}-${s.key}`} plain dimColor label={`+${s.rest} more`} onPress={() => void setFill($, o.from ?? (o.keyPrefix.startsWith('n') ? 'news' : 'jobs'), true)} />}
     </Box>
   )
   const head = d.head ? (
@@ -4749,21 +5029,13 @@ type Caps = Record<'needs' | 'review' | 'blocked' | 'doing', { hidden: number; m
 const GROUP_NAME: Record<string, string> = { needs: 'needs you', review: 'review', blocked: 'blocked', doing: 'in progress' }
 
 /** Under a pane: "+N more X" (expands that group by 10, to 50 rows) and "less X"; past 50 the rest stays on the board. */
-const groupMoreRow = (ui: any, $: any, jobId: string, cap: Caps) => {
-  const { Box, Text, Button } = ui
+const groupMoreRow = (ui: any, $: any, _jobId: string, cap: Caps) => {
+  const { Box, Button } = ui
   const nodes: any[] = []
+  // every "+N more" is a link that turns fill on for this pane (fill shows every row)
   for (const k of ['needs', 'review', 'blocked', 'doing'] as const) {
     const c = cap[k]
-    if (c.hidden > 0) {
-      nodes.push(
-        c.more ? (
-          <Button key={`more-${k}`} plain label={`+${c.hidden} more ${GROUP_NAME[k]}`} dimColor onPress={() => void expandGroup($, jobId, k, GROUP_STEP)} />
-        ) : (
-          <Text key={`more-${k}`} dimColor>{`+${c.hidden} more ${GROUP_NAME[k]} on the board`}</Text>
-        ),
-      )
-    }
-    if (c.shown > GROUP_BASE) nodes.push(<Button key={`less-${k}`} plain label={`less ${GROUP_NAME[k]}`} dimColor onPress={() => void expandGroup($, jobId, k, -GROUP_STEP)} />)
+    if (c.hidden > 0) nodes.push(<Button key={`more-${k}`} plain label={`+${c.hidden} more ${GROUP_NAME[k]}`} dimColor onPress={() => void setFill($, 'jobs', true)} />)
   }
   return nodes.length === 0 ? null : (
     <Box key="more-row" gap={2} flexWrap="wrap">
@@ -4827,7 +5099,7 @@ const runCommand = async ($: any, args: string, alias: string | undefined) => {
     await stepBy($, word === 'bigger' ? 1 : word === 'smaller' ? -1 : 0)
     return { text: `Jobs: density ${word === 'reset' ? 'default' : word}.` }
   }
-  const m = /^every\s+(off|30s|1m|5m)$/.exec(word)
+  const m = /^every\s+(off|15s|30s|1m|5m)$/.exec(word)
   if (m) {
     await setEvery($, m[1]!)
     return { text: `Jobs: auto-refresh ${m[1]}.` }
@@ -4862,37 +5134,33 @@ const runCommand = async ($: any, args: string, alias: string | undefined) => {
 }
 
 const MW_USAGE = [
-  '/mw jobs [id]            open the jobs pane',
-  '/mw news [id]            open the news pane',
-  '/mw release [id]         cut a news release (asks, then run it again)',
-  '/mw ask [id]             ask in chat about what needs you',
-  '/mw review [id]          ask in chat about the items to review',
-  '/mw style n|b|g|a|k [jobs|news]   normal, blocks, gopher, agile, kanban',
-  '/mw size -|#|+           text size',
-  '/mw log [id] [work|alerts|decisions]   open the job log',
-  '/mw mute                 sound and notifications on/off',
-  '/mw configure            the settings pane (also /mw-configure)',
-  '/mw every off|30s|1m|5m  auto refresh',
-  '/mw fanfare stop|test [milestone|finale]',
+  '/mw-watch                open the jobs pane (zero setup); /mw-watch scan [DIR] finds boards',
+  '/mw-jobs [id]            open the jobs pane',
+  '/mw-news [id]            open the news pane',
+  '/mw-jobs release [id]    publish a news issue (asks, then run it again)',
+  '/mw-jobs ask [id]        ask in chat about what needs you',
+  '/mw-jobs review [id]     ask in chat about the items to review',
+  '/mw-jobs style n|b|g|a|k [jobs|news]   normal, blocks, gopher, agile, kanban',
+  '/mw-jobs size -|#|+      text size',
+  '/mw-jobs log [id] [work|alerts|decisions]   open the job log',
+  '/mw-jobs mute            alerts on/off',
+  '/mw-jobs every off|15s|30s|1m|5m  auto refresh',
+  '/mw-configure            the settings pane',
+  '/mw-fanfare [next|on|off|use NAME|test [milestone|finale]|stop]',
 ]
-const STYLE_KEYS: Record<string, string> = { n: 'normal', b: 'blocks', g: 'gopher', a: 'agile', k: 'kanban', j: 'kanban' }
+/** The first words /mw-jobs hands to runMw; anything else is a job id (or `stalled N`) for runCommand. */
+const MW_SUBS = new Set(['list', 'release', 'ask', 'review', 'style', 'size', 'log', 'mute', 'every', 'news', 'jobs', 'configure', 'fanfare'])
+const STYLE_KEYS: Record<string, string> = { n: 'normal', b: 'blocks', g: 'gopher', a: 'agile', k: 'kanban', j: 'kanban', normal: 'normal', blocks: 'blocks', gopher: 'gopher', agile: 'agile', kanban: 'kanban', thin: 'blocks', board: 'kanban' }
 const LOG_FILES: Record<string, string> = { work: 'work.md', alerts: 'alerts.log', decisions: 'decisions.log' }
 /** A release asked for by command arms for a minute; the second /mw release inside it runs. */
 const releaseArmed = new Map<string, number>()
 
 /** Opens a job log in the text editor the way the status.md button does: a plain file only, and a missing one is said in a toast. */
 const openLogFile = async ($: any, job: MwJobsJob, which: string) => {
-  const home: string = (await $.env.get('HOME')) ?? ''
+  const home: string = (await homeOf($))
   const file = LOG_FILES[which]!
   const path = `${logRoot(home)}/${job.id}/${file}`
-  let why = ''
-  try {
-    const st = await $.fs.stat(path, { resolve: true })
-    if (st.isLink) why = 'it is a symbolic link'
-    else if (st.kind !== 'file') why = 'it is not a file'
-  } catch {
-    why = 'missing'
-  }
+  const why = await checkPlainFile($, path, false)
   if (why === 'missing') {
     $.ui.toast(`Jobs: no ${file} for ${job.id} yet (${logRoot(home)}/${job.id}/${file})`, { timeoutMs: 6000 })
     return `No ${file} for ${job.id} yet.`
@@ -4902,19 +5170,77 @@ const openLogFile = async ($: any, job: MwJobsJob, which: string) => {
     return `Not opening ${file}: ${why}.`
   }
   try {
-    await $.process.run(['open', '-t', path])
+    await proc($, openerArgv(await osKind($), path))
   } catch {
     // no opener
   }
   return `Opened ${file} for ${job.id}.`
 }
 
-/** `/mw`: panes, release, ask/review, style, size, log, mute, every, fanfare. Arguments are checked against fixed sets; nothing a person types reaches a shell. */
+/** `/mw-fanfare [next|on|off|use NAME|test [milestone|finale]|stop]`: the same settings as the pane's button, one word. Arguments are checked against fixed sets. */
+const fanfareCommand = async ($: any, args: string) => {
+  const words = args.trim().split(/\s+/).filter(Boolean)
+  const reg = await loadRegistry($)
+  const sel: string = await read($, selected)
+  const job = reg.jobs.find(x => x.id === sel) ?? reg.jobs[0]
+  const home: string = await homeOf($)
+  const bad = (why: string) => {
+    $.ui.toast(`Jobs: ${why}`, { timeoutMs: 6000 })
+    return { text: `${why}\n/mw-fanfare [next|on|off|use NAME|test [milestone|finale]|stop]` }
+  }
+  const sub = words[0] ?? 'next'
+  const cwd = job ? expand(job.board, home) : home || '/'
+  if (sub === 'next') {
+    if (job === undefined) return bad('no job to read the fanfare from')
+    await fanfareCycle($, job)
+    return { text: 'Fanfare: next setting.' }
+  }
+  if (sub === 'on' || sub === 'off') {
+    if (words.length !== 1) return bad(`/mw-fanfare ${sub} takes nothing`)
+    const ok = await cfgWriteOrSet($, [`fanfare.enabled=${sub === 'on' ? 'true' : 'false'}`], cwd)
+    if (job) await loadFanfare($, job)
+    return { text: ok ? `Fanfare ${sub}.` : 'Could not change the fanfare setting.' }
+  }
+  if (sub === 'use') {
+    const name = words[1]
+    if (words.length !== 2 || name === undefined || !/^[A-Za-z0-9_.-]{1,60}$/.test(name)) return bad('/mw-fanfare use needs one set name or all')
+    const ok = await cfgWriteOrSet($, [`fanfare.use=${name}`], cwd)
+    if (job) await loadFanfare($, job)
+    return { text: ok ? `Fanfare: using ${name}.` : 'Could not change the fanfare setting.' }
+  }
+  const kind = words[1]
+  const okStop = sub === 'stop' && words.length === 1
+  const okTest = sub === 'test' && words.length <= 2 && (kind === undefined || kind === 'milestone' || kind === 'finale')
+  if (!okStop && !okTest) return bad('/mw-fanfare needs next, on, off, use NAME, stop, or test [milestone|finale]')
+  const argv = okStop ? ['mw', 'fanfare', 'stop'] : kind === undefined ? ['mw', 'fanfare', 'test'] : ['mw', 'fanfare', 'test', kind]
+  let out = ''
+  try {
+    const r = await proc($, argv, { cwd, timeoutMs: 20_000 })
+    out = `${String(r.stdout)}${String(r.stderr)}`.trim().split('\n')[0] ?? ''
+    if (r.exitCode !== 0) out = out || `exit ${r.exitCode}`
+  } catch {
+    out = 'mw not available'
+  }
+  $.ui.toast(`Jobs: ${argv.slice(1).join(' ')}${out ? ` \u2014 ${out.slice(0, 120)}` : ''}`, { timeoutMs: 6000 })
+  return { text: `Ran ${argv.join(' ')}.` }
+}
+
+/** `mw configure KEY=VALUE…` when this mw has it, else `mw user set`. */
+const cfgWriteOrSet = async ($: any, kv: string[], cwd: string): Promise<boolean> => {
+  try {
+    const r = await proc($, ['mw', ...(cfgOk === true ? ['configure'] : ['user', 'set']), ...kv], { cwd, timeoutMs: 20_000 })
+    return r.exitCode === 0
+  } catch {
+    return false
+  }
+}
+
+/** `/mw-jobs` and friends: panes, release, ask/review, style, size, log, mute, every, fanfare. Arguments are checked against fixed sets; nothing a person types reaches a shell. */
 const runMw = async ($: any, args: string) => {
   const words = args.trim().split(/\s+/).filter(Boolean)
   const reg = await loadRegistry($)
   const usage = (why: string) => {
-    $.ui.toast(`Jobs: ${why}. Try /mw for the list.`, { timeoutMs: 6000 })
+    $.ui.toast(`Jobs: ${why}. Try /mw-jobs list for the list.`, { timeoutMs: 6000 })
     return { text: `${why}\n${MW_USAGE.join('\n')}` }
   }
   const listJobs = async () => {
@@ -4923,7 +5249,7 @@ const runMw = async ($: any, args: string) => {
     const lines = reg.jobs.length === 0 ? ['no jobs registered'] : reg.jobs.map(j => `${statusSegment(j, snaps[j.id], stale[j.id])}  \u2014 ${j.title}`)
     return { text: [...lines, '', ...MW_USAGE].join('\n') }
   }
-  if (words.length === 0) return listJobs()
+  if (words.length === 0 || (words.length === 1 && words[0] === 'list')) return listJobs()
   const cmdWord = words[0]!
   const rest = words.slice(1)
   // [id]: the one given, else the job open in the pane, else the only job, else the list
@@ -4942,11 +5268,11 @@ const runMw = async ($: any, args: string) => {
   switch (cmdWord) {
     case 'jobs':
     case 'news': {
-      if (rest.length > 1) return usage(`/mw ${cmdWord} takes one job id`)
+      if (rest.length > 1) return usage(`/mw-${cmdWord === 'news' ? 'news' : 'jobs ' + cmdWord} takes one job id`)
       return runCommand($, cmdWord === 'news' ? `news${rest[0] ? ` ${rest[0]}` : ''}` : (rest[0] ?? ''), undefined)
     }
     case 'release': {
-      if (rest.length > 1) return usage('/mw release takes one job id')
+      if (rest.length > 1) return usage('/mw-jobs release takes one job id')
       const j = await pick(rest[0])
       if (!isJob(j)) return j
       const now: number = await $.clock.now()
@@ -4954,17 +5280,17 @@ const runMw = async ($: any, args: string) => {
       if (armed !== undefined && now - armed < 60_000) {
         releaseArmed.delete(j.id)
         await doRelease($, j)
-        return { text: `Release asked for ${j.id}.` }
+        return { text: `Publishing the next issue of ${j.id} asked for.` }
       }
       releaseArmed.set(j.id, now)
       await openNews($, j.id)
       await setNewsView($, j.id, { page: 0, list: false, confirm: true })
-      $.ui.toast(`Jobs: release ${j.id}? Run /mw release ${j.id} again within a minute, or press Release.`, { timeoutMs: 8000 })
-      return { text: `Release of ${j.id} is armed: run /mw release ${j.id} again to confirm.` }
+      $.ui.toast(`Jobs: publish the next issue of ${j.id}? Run /mw-jobs release ${j.id} again within a minute, or press Publish.`, { timeoutMs: 8000 })
+      return { text: `Publishing the next issue of ${j.id} is armed: run /mw-jobs release ${j.id} again to confirm.` }
     }
     case 'ask':
     case 'review': {
-      if (rest.length > 1) return usage(`/mw ${cmdWord} takes one job id`)
+      if (rest.length > 1) return usage(`/mw-jobs ${cmdWord} takes one job id`)
       const j = await pick(rest[0])
       if (!isJob(j)) return j
       await askGroup($, j, cmdWord === 'ask' ? 'needs' : 'review')
@@ -4973,20 +5299,20 @@ const runMw = async ($: any, args: string) => {
     case 'style': {
       const st = STYLE_KEYS[rest[0] ?? '']
       const pane = rest[1]
-      if (st === undefined || rest.length > 2 || (pane !== undefined && pane !== 'jobs' && pane !== 'news')) return usage('/mw style needs n, b, g, a or k, and optionally jobs or news')
+      if (st === undefined || rest.length > 2 || (pane !== undefined && pane !== 'jobs' && pane !== 'news')) return usage('/mw-jobs style needs n, b, g, a or k, and optionally jobs or news')
       await setBarStyle($, st, pane === undefined ? 'both' : pane)
       return { text: `Jobs: style ${st}${pane ? ` (${pane})` : ''}.` }
     }
     case 'size': {
       const d = rest[0] === '+' ? 1 : rest[0] === '-' ? -1 : rest[0] === '#' ? 0 : undefined
-      if (d === undefined || rest.length !== 1) return usage('/mw size needs -, # or +')
+      if (d === undefined || rest.length !== 1) return usage('/mw-jobs size needs -, # or +')
       await stepBy($, d)
       return { text: `Jobs: density ${d === 0 ? 'default' : d > 0 ? 'bigger' : 'smaller'}.` }
     }
     case 'log': {
       const which = rest.find(x => x in LOG_FILES) ?? 'work'
       const idTok = rest.find(x => !(x in LOG_FILES))
-      if (rest.length > 2 || (rest.length === 2 && idTok === undefined)) return usage('/mw log takes an optional job id and work, alerts or decisions')
+      if (rest.length > 2 || (rest.length === 2 && idTok === undefined)) return usage('/mw-jobs log takes an optional job id and work, alerts or decisions')
       const j = await pick(idTok)
       if (!isJob(j)) return j
       return { text: await openLogFile($, j, which) }
@@ -4996,33 +5322,15 @@ const runMw = async ($: any, args: string) => {
       return { text: 'Opened the mw settings pane.' }
     }
     case 'mute': {
-      if (rest.length > 0) return usage('/mw mute takes nothing')
+      if (rest.length > 0) return usage('/mw-jobs mute takes nothing')
       return toggleMute($)
     }
     case 'every': {
-      if (rest.length !== 1 || !['off', '30s', '1m', '5m'].includes(rest[0]!)) return usage('/mw every needs off, 30s, 1m or 5m')
+      if (rest.length !== 1 || !['off', '15s', '30s', '1m', '5m'].includes(rest[0]!)) return usage('/mw-jobs every needs off, 15s, 30s, 1m or 5m')
       return runCommand($, `every ${rest[0]}`, undefined)
     }
     case 'fanfare': {
-      const sub = rest[0]
-      const kind = rest[1]
-      const okStop = sub === 'stop' && rest.length === 1
-      const okTest = sub === 'test' && rest.length <= 2 && (kind === undefined || kind === 'milestone' || kind === 'finale')
-      if (!okStop && !okTest) return usage('/mw fanfare needs stop, or test [milestone|finale]')
-      const argv = okStop ? ['mw', 'fanfare', 'stop'] : kind === undefined ? ['mw', 'fanfare', 'test'] : ['mw', 'fanfare', 'test', kind]
-      const sel: string = await read($, selected)
-      const job = reg.jobs.find(x => x.id === sel) ?? reg.jobs[0]
-      const home: string = (await $.env.get('HOME')) ?? ''
-      let out = ''
-      try {
-        const r = await $.process.run(argv, { cwd: job ? expand(job.board, home) : home, timeoutMs: 20_000 })
-        out = `${String(r.stdout)}${String(r.stderr)}`.trim().split('\n')[0] ?? ''
-        if (r.exitCode !== 0) out = out || `exit ${r.exitCode}`
-      } catch {
-        out = 'mw not available'
-      }
-      $.ui.toast(`Jobs: ${argv.slice(1).join(' ')}${out ? ` \u2014 ${out.slice(0, 120)}` : ''}`, { timeoutMs: 6000 })
-      return { text: `Ran ${argv.join(' ')}.` }
+      return fanfareCommand($, rest.join(' '))
     }
     default: {
       // a bare job id still opens that job
@@ -5037,10 +5345,6 @@ export type AlertType = 'milestone' | 'needs' | 'done' | 'new' | 'metric'
 let opts: Record<string, unknown> = {}
 /** The registry file: the `registry` option, else ~/.mw/jobs.json. A missing file is normal. */
 const registryPath = (): string => (typeof opts.registry === 'string' && opts.registry.trim() !== '' ? opts.registry.trim() : REGISTRY_DEFAULT)
-export const modeFor = (o: Record<string, unknown>, t: AlertType): string => {
-  const v = String(o[`alert${t[0]!.toUpperCase()}${t.slice(1)}`] ?? 'notify')
-  return ['toast+notify', 'toast', 'notify', 'off'].includes(v) ? v : 'notify'
-}
 
 /** How many alerted lines are kept per job in $.store. */
 export const ALERT_KEEP = 200
@@ -5054,36 +5358,24 @@ export const groupToast = (lines: string[]): string[] => {
   return out
 }
 
-/** At most 3 notifications, then one summary: "+147 more". */
-export const notifyLines = (lines: string[]): string[] => (lines.length > 3 ? [...lines.slice(0, 3), `+${lines.length - 3} more`] : lines)
-
-/** What one refresh does with its change lines: the grouped toast, up to 3 notifications, and the sound. */
+/** What one refresh does with its alerts: the grouped toast lines (and rows), and whether the sound plays. */
 export const planAlerts = (
-  events: Array<{ type: AlertType; text: string; who?: string }>,
-  o: Record<string, unknown>,
-  muted: boolean,
-  jobAlerts: { sound?: boolean; notify?: boolean },
-): { toast: string[]; toastAll: string[]; notify: string[]; sound: 'Glass' | 'Ping' | undefined } => {
-  const toastLines = events.filter(x => modeFor(o, x.type).includes('toast')).map(x => x.text)
-  const toast = groupToast(toastLines)
-  const fired = events.filter(x => modeFor(o, x.type) !== 'off')
-  const live = !muted && fired.length > 0
-  return {
-    toast,
-    toastAll: toastLines,
-    notify: live && jobAlerts.notify !== false ? notifyLines(events.filter(x => modeFor(o, x.type).includes('notify')).map(x => x.text)) : [],
-    sound: live && jobAlerts.sound !== false && String(o.alertSound ?? 'on') !== 'off' ? (fired.some(x => x.type === 'milestone') ? 'Glass' : 'Ping') : undefined,
-  }
-}
+  events: AlertEvent[],
+  sw: { enabled: boolean; message: boolean; sound: boolean },
+  jobAlerts: { sound?: boolean },
+): { lines: string[]; sound: boolean } => ({
+  lines: sw.enabled && sw.message ? events.map(x => x.text) : [],
+  sound: sw.enabled && sw.sound && jobAlerts.sound !== false && events.length > 0,
+})
 
 // =====================================================================================
 // MANY JOBS, MANY TENANTS: the top bars, the summary pages (⌂), the pickers (☰), favorites
 // =====================================================================================
 
-/** The news tail of a job's summary line: `release 7 (2026-10-22) · draft: 3 changes`. */
+/** The news tail of a job's summary line: `issue 7 (2026-10-22) · draft: 3 changes`. */
 const newsTail = (n: NewsEntry | undefined): string => {
   if (n === undefined) return ''
-  const rel = n.latest > 0 ? `release ${n.latest}${n.releases[n.latest] ? ` (${releaseDate(n.releases[n.latest]!)})` : ''}` : 'no release'
+  const rel = n.latest > 0 ? `issue ${n.latest}${n.releases[n.latest] ? ` (${releaseDate(n.releases[n.latest]!)})` : ''}` : 'no issue'
   return n.draft ? `${rel} · draft: ${changeCount(n.draft)} changes` : rel
 }
 
@@ -5447,11 +5739,11 @@ const listPage = (ui: any, $: any, o: PageIn) => {
 export const register: Register = (on, options) => {
   opts = options as Record<string, unknown>
   on('session.start', async ($, e, next) => {
-    // a model-callable way to open the panes (the same as /mw jobs|news [id]); it only opens a pane
+    // a model-callable way to open the panes (the same as /mw-jobs or /mw-news [id]); it only opens a pane
     try {
       await $.tool.register({
         name: 'mw_panes_open',
-        description: 'Open the mw jobs pane or the mw news pane on a registered job (the same as /mw jobs [id] or /mw news [id]). Read-only apart from showing the pane.',
+        description: 'Open the mw jobs pane or the mw news pane on a registered job (the same as /mw-jobs [id] or /mw-news [id]). Read-only apart from showing the pane.',
         inputSchema: { type: 'object', properties: { pane: { type: 'string', enum: ['jobs', 'news'] }, job: { type: 'string', description: 'a job id from the registry; default the job open in the pane' } }, required: ['pane'], additionalProperties: false },
         isDeferred: false,
       })
@@ -5460,10 +5752,13 @@ export const register: Register = (on, options) => {
     }
     sessionCwd = typeof e?.cwd === 'string' ? e.cwd : ''
     scanCache = undefined
+    mwProbed = false
     await replayTranscript($)
-    await $.command.register({ name: 'mw', description: 'mw panes: /mw jobs [id] | /mw news [id] | mute | every …' })
+    await $.command.register({ name: 'mw-watch', description: 'Open the mw jobs pane; it finds your boards on its own. /mw-watch scan [DIR] looks for more.' })
+    await $.command.register({ name: 'mw-jobs', description: 'mw jobs pane: /mw-jobs [id | release | ask | review | style | size | log | mute | every …]' })
+    await $.command.register({ name: 'mw-news', description: 'mw news pane: /mw-news [id]' })
     await $.command.register({ name: 'mw-configure', description: 'mw settings: refresh, style, zoom, fit, alerts, fanfare, status, discovery (the mw configure keys)' })
-    await $.command.register({ name: 'jobs', description: 'Show coordinated mw jobs: /jobs [id | news [id] | mute | every off|30s|1m|5m]' })
+    await $.command.register({ name: 'mw-fanfare', description: 'mw fanfare: /mw-fanfare [next | on | off | use NAME | test [milestone|finale] | stop]' })
     // a new session starts from nothing: what survives a reload is in $.store
     await update($, chosen, () => false)
     await update($, favorites, () => ({ jobs: [], tenants: {} }))
@@ -5471,7 +5766,7 @@ export const register: Register = (on, options) => {
     await update($, sw, () => ({}))
     try {
       const saved = await $.store.get('refreshEvery')
-      if (typeof saved === 'string' && (EVERY as readonly string[]).includes(saved)) {
+      if (typeof saved === 'string' && EVERY_ALL.includes(saved)) {
         await update($, refreshEvery, () => saved)
       }
       const savedSeen = await $.store.get('seen')
@@ -5575,11 +5870,24 @@ export const register: Register = (on, options) => {
     return { result: r.text ?? `${input.pane} pane opened` }
   })
 
-  on('command.run', { command: 'mw' }, async ($, e) => runMw($, String((e as { args?: string }).args ?? '')))
-
-  on('command.run', { command: 'jobs' }, async ($, e) =>
-    runCommand($, String((e as { args?: string }).args ?? ''), undefined),
-  )
+  const argsOf = (e: unknown) => String((e as { args?: string }).args ?? '').trim()
+  // /mw-watch: the zero-setup entry (opens the jobs pane); `scan [DIR]` looks for more boards
+  on('command.run', { command: 'mw-watch' }, async ($, e) => {
+    const a = argsOf(e)
+    const m = /^scan(?:\s+(.+))?$/.exec(a)
+    if (m) return scanCommand($, m[1]?.trim())
+    return runCommand($, a, undefined)
+  })
+  // /mw-jobs [id] and its subcommands; /mw-news [id]
+  on('command.run', { command: 'mw-jobs' }, async ($, e) => {
+    const a = argsOf(e)
+    const first = a.split(/\s+/)[0] ?? ''
+    if (a === '' || MW_SUBS.has(first) || /^(stalled\s+\d+|bigger|smaller|reset)$/.test(a)) return MW_SUBS.has(first) ? runMw($, a) : runCommand($, a, undefined)
+    const reg = await loadRegistry($)
+    return reg.jobs.some(j => j.id === a) ? runCommand($, a, undefined) : runMw($, a)
+  })
+  on('command.run', { command: 'mw-news' }, async ($, e) => runMw($, `news ${argsOf(e)}`.trim()))
+  on('command.run', { command: 'mw-fanfare' }, async ($, e) => fanfareCommand($, argsOf(e)))
 
   // the news pane closed: it is not open any more, the refresh stops loading its news (T8)
   on('ui.close', async ($, e, next) => {
@@ -5589,7 +5897,10 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: DETAIL_PANE }, async ($, e) => guardDraw('detail', $, e, async () => {
     const ui = $.ui.resolve(e) as any
-    return detailTree(ui, $, (await read($, detail)) as MwJobsDetail, (await read($, detailData)) as Record<string, { text?: string; why?: string }>)
+    const dd = (await read($, detail)) as MwJobsDetail
+    const snap = dd.cur === null ? undefined : (((await read($, snapshots)) as Record<string, MwJobsSnapshot>)[dd.cur.jobId])
+    const dm = dd.cur === null ? undefined : (((await read($, newsModel)) as Record<string, NewsEntry>)[dd.cur.jobId])?.draft
+    return detailTree(ui, $, dd, (await read($, detailData)) as Record<string, { text?: string; why?: string }>, snap === undefined ? new Map() : idIndexOf(snap, dm))
   }))
   on('ui.render', { component: 'Pane', requestId: SETTINGS_PANE }, async ($, e) => guardDraw('settings', $, e, async () => {
     const ui = $.ui.resolve(e) as any
@@ -5655,7 +5966,7 @@ export const register: Register = (on, options) => {
     const baseWidth = Number.isFinite(given) && given > 0 ? Math.max(300, Math.min(520, given * 8)) : 420
     const paneW = Number.isFinite(given) && given > 0 ? given * 8 : 420
     const isMissing = entry !== undefined && entry.text === null
-    const home: string = (await $.env.get('HOME')) ?? ''
+    const home: string = (await homeOf($))
     // mw's own render (text for blocks and the terminal, md for normal); status.md only when mw fails
     lastTerminal = !canSvg
     lastPaneW = paneW
@@ -5986,14 +6297,14 @@ export const register: Register = (on, options) => {
     const openSorted = brief ? openAll : [...openAll].sort((x, y) => y.percent - x.percent)
     const openCount = brief ? brief.openMilestones : openSorted.length
     const closedCount = brief ? brief.closedMilestones : wavesAll.length - openAll.length
-    const shownWaves = style === 'gopher' && fillJobs && !fullUnsupported.has(job.id) ? openSorted : openSorted.slice(0, capN(openCount, MILES_MAX))
+    // fill on lifts every cap of the pane (and mw's, with --full); an mw without --full keeps its caps and says so
+    const fullJobs = fillJobs && !fullUnsupported.has(job.id)
+    const shownWaves = fullJobs ? openSorted : openSorted.slice(0, capN(openCount, MILES_MAX))
     const tailOf = (shown: number) => [openCount - shown > 0 ? `+${openCount - shown} open` : '', closedCount > 0 ? `\u2713${closedCount} closed` : ''].filter(Boolean).join(' \u00b7 ')
     const readyCount = snap.items.filter(i => i.state === 'ready').length
     const events: MwJobsEvent[] = []
     // each group: first 10, "+N more" expands by 10 up to 50
     const exp = (((await read($, expanded)) as Record<string, Record<string, number>>)[job.id] ?? {}) as Record<string, number>
-    // gopher with fill on (and an mw with --full): every row, no "+N more", no trimming
-    const fullJobs = style === 'gopher' && fillJobs && !fullUnsupported.has(job.id)
     const all = <T,>(l: T[], extra: number) => ({ rows: l, hidden: extra, more: false, shown: l.length })
     const cap = fullJobs
       ? { needs: all(a0.needs, brief?.more.needs ?? 0), review: all(a0.review, brief?.more.review ?? 0), blocked: all(a0.blocked, brief?.more.blocked ?? 0), doing: all(a0.doing, brief?.more.doing ?? 0) }
@@ -6015,12 +6326,21 @@ export const register: Register = (on, options) => {
       <Text {...sz("caption")} {...wt} color={color} dimColor={color === undefined}>{text.toUpperCase()}</Text>
     )
     const pid = (tenant: string, id: string) => (labels[tenant] ? `${labels[tenant]}·${id}` : id)
+    const idx = idIndexOf(snap, (((await read($, newsModel)) as Record<string, NewsEntry>)[job.id])?.draft)
+    const lt = (text: string, key: string, dim = false) => linkedText({ Box, Text, Button }, $, job.id, text, idx, key, 'jobs', { dimColor: dim })
+    // an item row's name: its id as a link, then the title with any other board ids linked
+    const itemName = (i: MwJobsItem, key: string) => (
+      <Box key={`iname-${key}`} gap={1} overflow="hidden">
+        <Button key={`iid-${key}`} plain label={pid(i.tenant, i.id)} onPress={() => void openDetail($, { kind: 'item', jobId: job.id, tenant: i.tenant, id: i.id }, 'jobs')} />
+        {lt(i.title, `ititle-${key}`)}
+      </Box>
+    )
     const dot = (key: string) => (a0.changed.has(key) ? <Text color="suggestion">●</Text> : <Text> </Text>)
     // one grid for the whole pane: name | status column (as wide as a bar) | right column
     const draw = (trim: number): { node: any; size: number } => {
     const gone = (k: (typeof TRIM_ORDER)[number]) => TRIM_ORDER.indexOf(k) < trim
     const a: Analysis = { ...a0, needs: cap.needs.rows, review: cap.review.rows, blocked: cap.blocked.rows, doing: gone('progress') ? [] : cap.doing.rows }
-    const mviews = mviewsAll.map(sec => ({ ...sec, rows: gone('metrics') ? [] : sec.rows.slice(0, capN(sec.rows.length, METRIC_ROWS_MAX)), more: gone('metrics') ? sec.rows.length : Math.max(0, sec.rows.length - capN(sec.rows.length, METRIC_ROWS_MAX)) }))
+    const mviews = mviewsAll.map(sec => (fullJobs ? { ...sec, rows: gone('metrics') ? [] : sec.rows, more: gone('metrics') ? sec.rows.length : 0 } : { ...sec, rows: gone('metrics') ? [] : sec.rows.slice(0, capN(sec.rows.length, METRIC_ROWS_MAX)), more: gone('metrics') ? sec.rows.length : Math.max(0, sec.rows.length - capN(sec.rows.length, METRIC_ROWS_MAX)) }))
     const closedShown = gone('milestones') ? [] : shownWaves
     const waves = closedShown
     const foldedText = tailOf(closedShown.length)
@@ -6076,8 +6396,8 @@ export const register: Register = (on, options) => {
     const isMono = e.surface === 'terminal' || style === 'blocks'
 
     type Cell = { text?: string; color?: string; dim?: boolean; node?: unknown }
-    const gridRow = (key: string, name: string, nameColor: string | undefined, status: Cell | undefined, right: unknown, marker: unknown, open?: () => void, minRight?: number) => {
-      const nameNode = open !== undefined ? <Button key={`open-${key}`} plain label={name} onPress={open} /> : <Text color={nameColor} wrap="truncate-end">{name}</Text>
+    const gridRow = (key: string, name: string, nameColor: string | undefined, status: Cell | undefined, right: unknown, marker: unknown, open?: () => void, minRight?: number, nameOverride?: unknown) => {
+      const nameNode = nameOverride !== undefined ? (nameOverride as any) : open !== undefined ? <Button key={`open-${key}`} plain label={name} onPress={open} /> : <Text color={nameColor} wrap="truncate-end">{name}</Text>
       const statusNode = status === undefined ? null : status.node !== undefined ? (status.node as any) : (
         <Text color={status.color} dimColor={status.dim ?? status.color === undefined} wrap="wrap">{status.text}</Text>
       )
@@ -6117,19 +6437,11 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
-    const noteLine = (text: string) => (density === 'compact' || text === '' ? null : <Text dimColor wrap="truncate-end">{`  ${text}`}</Text>)
+    const noteLine = (text: string, key = text) => (density === 'compact' || text === '' ? null : <Box key={`note-${key}`}><Text dimColor>{'  '}</Text>{lt(text, `nl-${key}`, true)}</Box>)
     const barCell = (w: MwJobsWave, isNew: boolean): Cell => {
-      const glyphs = ['█', '░']
       if (isMono) {
         const filled = Math.round((Math.max(0, Math.min(100, w.percent)) / 100) * barLen)
-        return {
-          node: (
-            <Box key={`bar-${w.id}`} flexShrink={0}>
-              <Text color={isNew ? 'success' : undefined}>{glyphs[0]!.repeat(filled)}</Text>
-              <Text dimColor>{glyphs[1]!.repeat(barLen - filled)}</Text>
-            </Box>
-          ),
-        }
+        return { node: meterBar({ Box, Text }, `bar-${w.id}`, [{ n: filled, color: isNew || w.percent >= 100 ? 'success' : 'suggestion' }], barLen, e.surface === 'terminal') }
       }
       if (canSvg) {
         const eb = epicBarSvg(w.percent, 96)
@@ -6177,6 +6489,7 @@ export const register: Register = (on, options) => {
             {header}
             <Box key="gopher" flexDirection="column">
               {gopherNodes({ Box, Text, Button, Svg, Code }, lines, { canSvg, cols: gcols, size: gsize, key: 'now', ask: (tn, id) => void askInChat($, job, tn, id) })}
+              {idsRow({ Box, Text, Button }, $, job.id, lines, idx, 'now', 'jobs')}
             </Box>
             {moreRow}
           </Box>
@@ -6191,7 +6504,8 @@ export const register: Register = (on, options) => {
       if (m === undefined) {
         return { node: <Box flexDirection="column">{header}<Text color="warning">{noModelNotice(style, modelWhy.get(job.id)) ?? 'no news model'}</Text></Box>, size: 100 }
       }
-      const doc = style === 'agile' ? agileJobs(m) : kanbanJobs(m)
+      const noCap = fillJobs && !fullUnsupported.has(job.id)
+      const doc = style === 'agile' ? agileJobs(m, noCap ? Number.MAX_SAFE_INTEGER : undefined) : kanbanJobs(m, noCap ? Number.MAX_SAFE_INTEGER : undefined)
       const ageOfS = (since: string) => {
         const t = Date.parse(since)
         return Number.isNaN(t) ? '' : ageText(now - t)
@@ -6242,8 +6556,8 @@ export const register: Register = (on, options) => {
               const k = `${i.tenant}:${i.id}`
               return (
                 <Box flexDirection="column">
-                  {gridRow(`need-${k}`, `! ${i.title}`, undefined, { text: 'needs you', color: 'error' }, <Text dimColor>{itemAge(i)}</Text>, dot(k))}
-                  {noteLine([i.tenant, i.id, i.note].filter(Boolean).join(' · '))}
+                  {gridRow(`need-${k}`, `! ${i.title}`, undefined, { text: 'needs you', color: 'error' }, <Text dimColor>{itemAge(i)}</Text>, dot(k), undefined, undefined, <Box key={`iname-need-${k}`} gap={1} overflow="hidden"><Text color="error">!</Text>{lt(i.title, `ititle-need-${k}`)}</Box>)}
+                  {noteLine([i.tenant, i.id, i.note].filter(Boolean).join(' · '), `need-${k}`)}
                 </Box>
               )
             })}
@@ -6257,8 +6571,8 @@ export const register: Register = (on, options) => {
               const k = `${i.tenant}:${i.id}`
               return (
                 <Box flexDirection="column">
-                  {gridRow(`rev-${k}`, `${pid(i.tenant, i.id)} ${i.title}`, undefined, { text: 'awaiting review', color: 'warning' }, <Text dimColor>{itemAge(i)}</Text>, dot(k))}
-                  {noteLine(i.note === 'awaiting review' ? '' : i.note)}
+                  {gridRow(`rev-${k}`, `${pid(i.tenant, i.id)} ${i.title}`, undefined, { text: 'awaiting review', color: 'warning' }, <Text dimColor>{itemAge(i)}</Text>, dot(k), undefined, undefined, itemName(i, `rev-${k}`))}
+                  {noteLine(i.note === 'awaiting review' ? '' : i.note, `rev-${k}`)}
                 </Box>
               )
             })}
@@ -6272,8 +6586,8 @@ export const register: Register = (on, options) => {
               const k = `${i.tenant}:${i.id}`
               return (
                 <Box flexDirection="column">
-                  {gridRow(`blk-${k}`, `${pid(i.tenant, i.id)} ${i.title}`, undefined, { text: 'blocked', color: 'error' }, <Text dimColor>{itemAge(i)}</Text>, dot(k))}
-                  {noteLine(i.note)}
+                  {gridRow(`blk-${k}`, `${pid(i.tenant, i.id)} ${i.title}`, undefined, { text: 'blocked', color: 'error' }, <Text dimColor>{itemAge(i)}</Text>, dot(k), undefined, undefined, itemName(i, `blk-${k}`))}
+                  {noteLine(i.note, `blk-${k}`)}
                 </Box>
               )
             })}
@@ -6285,7 +6599,7 @@ export const register: Register = (on, options) => {
             {label('In chat')}
             {a.chat.map(i => {
               const k = `${i.tenant}:${i.id}`
-              return gridRow(`chat-${k}`, `${pid(i.tenant, i.id)} ${i.title}`, undefined, { text: 'in chat' }, <Text dimColor>{itemAge(i)}</Text>, dot(k))
+              return gridRow(`chat-${k}`, `${pid(i.tenant, i.id)} ${i.title}`, undefined, { text: 'in chat' }, <Text dimColor>{itemAge(i)}</Text>, dot(k), undefined, undefined, itemName(i, `chat-${k}`))
             })}
           </Box>
         )}
@@ -6303,6 +6617,9 @@ export const register: Register = (on, options) => {
                 d.isStalled ? { text: 'stalled', color: 'warning' } : isCols ? { text: '' } : undefined,
                 <Text color={d.isStalled ? 'warning' : undefined} dimColor={!d.isStalled}>{age}</Text>,
                 dot(k),
+                undefined,
+                undefined,
+                itemName(d.item, `do-${k}`),
               )
             })}
           </Box>
@@ -6322,7 +6639,7 @@ export const register: Register = (on, options) => {
               const marker = isNew ? <Text color="success"> ●</Text> : <Text>{'  '}</Text>
               return gridRow(`wav-${w.id}`, name, undefined, status, countCell(w), marker, () => void openDetail($, { kind: 'wave', jobId: job.id, tenant: w.id.split(':')[0] ?? '', id: w.id }, 'jobs'))
             })}
-            {foldedText !== '' && <Text dimColor wrap="truncate-end" {...sz("footnote")}>{foldedText}</Text>}
+            {foldedText !== '' && (openCount - closedShown.length > 0 ? <Button key="miles-more" plain dimColor label={foldedText} onPress={() => void setFill($, 'jobs', true)} /> : <Text dimColor wrap="truncate-end" {...sz("footnote")}>{foldedText}</Text>)}
           </Box>
         )}
 
@@ -6348,12 +6665,7 @@ export const register: Register = (on, options) => {
                     segs.push({ n, tone: pt.tone })
                   }
                 }
-                const barNode = r.showBar ? (
-                  <Box key={`mbar-${sec.title}-${r.name}`} flexShrink={0}>
-                    {segs.map((sg, si) => <Text key={`ms${si}`} color={tcol(sg.tone)} dimColor={tcol(sg.tone) === undefined}>{'█'.repeat(sg.n)}</Text>)}
-                    <Text dimColor>{'░'.repeat(Math.max(0, blen - used))}</Text>
-                  </Box>
-                ) : undefined
+                const barNode = r.showBar ? meterBar({ Box, Text }, `mbar-${sec.title}-${r.name}`, segs.map(sg => ({ n: sg.n, color: tcol(sg.tone) ?? 'suggestion' })), blen, e.surface === 'terminal') : undefined
                 const dim = r.barNote
                 const countStr = metricCount(r)
                 const used0 = countStr.length + r.delta.reduce((n, d) => n + d.text.length + 1, 0)
@@ -6366,7 +6678,7 @@ export const register: Register = (on, options) => {
                 )
                 return gridRow(`met-${sec.title}-${r.name}`, r.name, undefined, barNode ? { node: barNode } : { text: dim, dim: true }, arrows, <Text>{'  '}</Text>, undefined, cmax)
               })}
-              {(sec.more ?? 0) > 0 && <Text dimColor>{`+${sec.more} rows`}</Text>}
+              {(sec.more ?? 0) > 0 && <Button key={`rows-more-${sec.title}`} plain dimColor label={`+${sec.more} more rows`} onPress={() => void setFill($, 'jobs', true)} />}
               {(sec.note || sec.legend.length > 0) && <Text dimColor wrap="wrap">{[sec.legend.map(l => l.name).join(' · '), sec.note].filter(Boolean).join(' — ')}</Text>}
             </Box>
           ))}

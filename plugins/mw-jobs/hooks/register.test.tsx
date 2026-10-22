@@ -6,7 +6,8 @@ import { REAL_BOARDS, REAL_BOARD_JOBS } from '../tests/fixtures/boards'
 import { SHOW_TSK001, SHOW_STR002, WAVE_002, WAVE_004 } from '../tests/fixtures/detail'
 import { parseItemDetail, parseWaveDetail } from './detail'
 import { REAL_DRAFT, SMALL_DRAFT, SMALL_RELEASE, STRESS_DRAFT, releases30, tenantsDraft, tenantSlug, manyJobs, jobDraft } from '../tests/fixtures/model'
-import { monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, groupToast, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
+import { buildIdIndex, splitIds } from './ids'
+import { unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, groupToast, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
 import { REAL_USER_KEYS } from '../tests/fixtures/userkeys'
 
 declare const console: { log: (...a: unknown[]) => void }
@@ -55,9 +56,10 @@ const item = (tenant: string, id: string, state: string, note = '', updated = is
 const ok = (out: unknown) => ({ value: { exitCode: 0, stdout: JSON.stringify(out), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
 
 const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, chosenJob = true) => {
-  const state = { round: 0, zetaCalls: 0, toasts: [] as string[], logs: [] as string[], statuses: [] as unknown[], sounds: [] as string[], osa: [] as string[], store: new Map<string, unknown>(chosenJob ? [['selectedJob', 'zeta']] : []), opens: [] as { id: string; title: string; focus?: boolean }[], closes: [] as string[], failWrite: false, files: new Map<string, string>(), logSince: [] as string[], decisions: [] as Array<Record<string, string>>, logNext: 'C1', fills: [] as { text: string; mode: string }[], submitted: [] as string[], fillOk: true, hide: [] as string[], asks: [] as unknown[], extra: [] as unknown[], runs: [] as string[], newsReads: 0, linked: false, kind: 'file', mwNews: {} as Record<string, string>, mwNewsFail: true, placeFail: '', jobShow: undefined as unknown, mwCalls: [] as string[], newsFiles: {} as Record<string, string>, draft: undefined as string | undefined, releaseOut: undefined as { code: number; text: string } | undefined, drafts: {} as Record<string, string>, tdrafts: {} as Record<string, string>, draftText: '', commands: [] as string[], fan: undefined as unknown, user: undefined as Record<string, unknown> | undefined, userSets: [] as string[], boards: undefined as Record<string, unknown> | undefined, boardJobs: {} as Record<string, unknown>, resolves: [] as string[], shows: {} as Record<string, unknown>, waveShows: {} as Record<string, unknown>, fullOk: true, fullDraft: undefined as string | undefined, cfg: undefined as { keys: Array<{ key: string; value: string; default: string; source: string; group: string; choices: string[] }> } | undefined, configures: [] as string[] }
+  const state = { absRuns: [] as string[], round: 0, zetaCalls: 0, toasts: [] as string[], logs: [] as string[], statuses: [] as unknown[], sounds: [] as string[], osa: [] as string[], store: new Map<string, unknown>(chosenJob ? [['selectedJob', 'zeta']] : []), opens: [] as { id: string; title: string; focus?: boolean }[], closes: [] as string[], failWrite: false, files: new Map<string, string>(), logSince: [] as string[], decisions: [] as Array<Record<string, string>>, logNext: 'C1', fills: [] as { text: string; mode: string }[], submitted: [] as string[], fillOk: true, hide: [] as string[], asks: [] as unknown[], extra: [] as unknown[], runs: [] as string[], newsReads: 0, linked: false, kind: 'file', mwNews: {} as Record<string, string>, mwNewsFail: true, placeFail: '', jobShow: undefined as unknown, mwCalls: [] as string[], newsFiles: {} as Record<string, string>, draft: undefined as string | undefined, releaseOut: undefined as { code: number; text: string } | undefined, drafts: {} as Record<string, string>, tdrafts: {} as Record<string, string>, draftText: '', commands: [] as string[], fan: undefined as unknown, user: undefined as Record<string, unknown> | undefined, userSets: [] as string[], boards: undefined as Record<string, unknown> | undefined, boardJobs: {} as Record<string, unknown>, resolves: [] as string[], shows: {} as Record<string, unknown>, waveShows: {} as Record<string, unknown>, fullOk: true, fullDraft: undefined as string | undefined, cfg: undefined as { keys: Array<{ key: string; value: string; default: string; source: string; group: string; choices: string[] }> } | undefined, configures: [] as string[] }
   const clock = mock.clock(on, { now: BASE })
-  on('store.get', (_: any, e: any) => ({ value: state.store.get(e.key) }))
+  // without mw settings the panes poll every 30 s; most tests are written for one poll a minute
+  on('store.get', (_: any, e: any) => ({ value: e.key === 'refreshEvery' && state.cfg === undefined && !state.store.has('refreshEvery') ? '1m' : state.store.get(e.key) }))
   on('store.set', (_: any, e: any) => { state.store.set(e.key, e.value); return { value: undefined } })
   on('command.register', (_: any, e: any) => { state.commands.push(String(e.name)); return { value: { command: 'x' } } })
   on('prompt.read', () => ({ value: { text: state.draftText } }))
@@ -87,6 +89,8 @@ const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, cho
   })
   on('fs.stat', (_: any, e: any) => {
     const path = String(e.path)
+    // a host that refuses paths outside the session folder (not a missing file)
+    if ((state as any).statRefuse === true) return { deny: 'path is outside the session folder' }
     if ((path.endsWith('metrics.json') || path.includes('/.mw/logs/')) && !state.files.has(path)) return { deny: 'ENOENT' }
     return { value: { kind: state.kind, size: state.files.has(path) ? state.files.get(path)!.length : 1, mtimeMs: 0, isLink: state.linked && !path.endsWith('metrics.json'), realPath: path } }
   })
@@ -96,7 +100,13 @@ const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, cho
   on('audio.play', (_: any, e: any) => { state.sounds.push(JSON.stringify(e)); return { value: undefined } })
   on('process.run', (_: any, e: any) => {
     const cmd = e.argv.join(' ')
-    state.runs.push(cmd)
+    // the OS probe and the mw lookup are plumbing: the test machine is macOS and mw is found by name
+    if (cmd.startsWith('/usr/bin/stat -f %HT ')) return { value: { exitCode: 0, stdout: `${(state as any).osKind ?? 'Regular File'}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
+    if (cmd === 'uname -s') return { value: { exitCode: 0, stdout: 'Darwin\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
+    if (cmd === '/bin/sh -c command -v mw' && (state as any).mwPath !== undefined) return { value: { exitCode: 0, stdout: `${(state as any).mwPath}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
+    if (cmd === '/bin/sh -c command -v mw') return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
+    state.runs.push((state as any).mwPath !== undefined ? cmd.replace(`${(state as any).mwPath} `, 'mw ') : cmd)
+    if ((state as any).mwPath !== undefined && e.argv[0] === (state as any).mwPath) state.absRuns.push(cmd)
     if (e.argv[0] === 'osascript') { state.osa.push(cmd); return ok('') }
     if (cmd.startsWith('mw log') && e.argv.includes('--since')) {
       const tenant = e.argv[e.argv.indexOf('-t') + 1]
@@ -229,10 +239,10 @@ const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, cho
   return { state, clock }
 }
 
-test('two jobs: status, switching, per-job alerts, refresh, timer', { options: { alertMilestone: 'toast+notify' } }, async ($, on) => {
+test('two jobs: status, switching, per-job alerts, refresh, timer', async ($, on) => {
   const { state, clock } = rig($, on, true)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.command.run({ command: 'jobs', args: 'style blocks', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'style blocks', origin: { kind: 'user' }, presentation: {} } as never)
 
   expect(state.toasts.length).toBe(0)
   const status = String(state.statuses.at(-1))
@@ -287,7 +297,7 @@ test('two jobs: status, switching, per-job alerts, refresh, timer', { options: {
     // the ` -t slug` tail is gone, stories are not stalled or in progress, ids carry the tenant label
     expect(await ui.find({ type: 'Text', text: / -t / })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /A story/ })).toBeUndefined()
-    expect(await nameNode(ui, /S·A-1/)).toBeDefined()
+    expect(await nameNode(ui, /S·A-1/), `A-1 ${surface}`).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^1 in progress/ })).toBeUndefined()
     // 0/0 waves are one dim line
     if (surface === 'terminal') {
@@ -320,11 +330,11 @@ test('two jobs: status, switching, per-job alerts, refresh, timer', { options: {
   state.round = 1
   await clock.advance(60_000)
   const toasts = state.toasts.join('\n')
-  expect(toasts).toContain('[zeta] Milestone closed: C2')
-  expect(toasts).toContain('[demo] Milestone closed: D1')
-  // sound + notify only for zeta (demo's flags are off)
+  expect(toasts).toContain('zeta ▸ Milestone done: C2 Harness')
+  expect(toasts).toContain('demo ▸ Milestone done: D1 Only')
+  // sound only for zeta (demo's flag is off)
   expect(state.sounds.length).toBe(1)
-  expect(state.sounds[0]).toContain('Glass')
+  expect(state.sounds[0]).toContain('alert.wav')
   // no osascript fallback, ever
   expect(state.osa.length).toBe(0)
   expect(state.runs.some(r => r.includes('osascript'))).toBe(false)
@@ -341,11 +351,11 @@ test('two jobs: status, switching, per-job alerts, refresh, timer', { options: {
   await ui.unmount()
 
   // /jobs <id> selects that job
-  await $.command.run({ command: 'jobs', args: 'demo', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'demo', origin: { kind: 'user' }, presentation: {} } as never)
   const ui2 = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect((await jt(ui2))).toContain('✓1 closed')
   await ui2.unmount()
-  await $.command.run({ command: 'jobs', args: 'zeta', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'zeta', origin: { kind: 'user' }, presentation: {} } as never)
   const ui3 = await $.ui.mount({ ...PANE, surface: 'desktop' })
   const s3 = (await jt(ui3))
   expect(s3).toContain('need you')
@@ -353,8 +363,8 @@ test('two jobs: status, switching, per-job alerts, refresh, timer', { options: {
   await ui3.unmount()
 
   // mute silences sound and notifications; Off stops the timer
-  await $.command.run({ command: 'jobs', args: 'every off', origin: { kind: 'user' }, presentation: {} } as never)
-  await $.command.run({ command: 'jobs', args: 'mute', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'every off', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'mute', origin: { kind: 'user' }, presentation: {} } as never)
   const stopped = state.zetaCalls
   await clock.advance(600_000)
   expect(state.zetaCalls).toBe(stopped)
@@ -379,7 +389,7 @@ const flat = (el: unknown): string => {
 test('styles: normal and blocks; blocks is cell-counted on the terminal and a shared mono Svg elsewhere', async ($, on) => {
   const { state } = rig($, on, true)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const run = (args: string) => $.command.run({ command: 'jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
+  const run = (args: string) => $.command.run({ command: 'mw-jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
   const mount = (surface: 'terminal' | 'desktop', props: Record<string, unknown> = {}) =>
     $.ui.mount({ ...PANE, props: { ...PANE.props, ...props }, surface } as never)
 
@@ -454,7 +464,9 @@ test('styles: normal and blocks; blocks is cell-counted on the terminal and a sh
   expect(uq('name-', 'width').size).toBe(1)
   expect(uq('status-', 'width').size).toBe(1)
   expect(uq('right-', 'width').size).toBe(1)
-  const barLens = bb.filter(b => b.key?.startsWith('bar-')).map(b => (flat(b).match(/[█░]/g) ?? []).length)
+  // a proportional font: no glyph runs (a full block is wider than a light shade); bars are Boxes of exact widths
+  expect(bb.filter(b => b.key?.startsWith('bar-')).some(b => /[█░]/.test(flat(b)))).toBe(false)
+  const barLens = bb.filter(b => b.key?.startsWith('bar-') && !b.key.includes('-p') && !b.key.includes('-track')).map(b => Number(b.props.width))
   expect(barLens.length).toBeGreaterThan(1)
   expect(new Set(barLens).size).toBe(1)
   expect(barLens[0]).toBe(40)
@@ -513,7 +525,7 @@ test('styles: normal and blocks; blocks is cell-counted on the terminal and a sh
   await run('style blocks')
   const meta = async () => {
     const u = await mount('desktop', { bodyColumns: 80 })
-    const m = (await jt(u)).includes('zetasheet · A-2') ? true : undefined
+    const m = (await jt(u)).includes('zetasheet · ') ? true : undefined
     await u.unmount()
     return m
   }
@@ -530,7 +542,7 @@ test('styles: normal and blocks; blocks is cell-counted on the terminal and a sh
 test('one job shows its title instead of tabs', async ($, on) => {
   const { state } = rig($, on, true, { jobs: [{ ...REG.jobs[0]! }] })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.command.run({ command: 'jobs', args: 'style thin', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'style thin', origin: { kind: 'user' }, presentation: {} } as never)
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await ui.find({ type: 'Text', text: /^Zeta consolidation$/ })).toBeDefined()
   expect(await ui.find({ key: 'job-zeta' })).toBeUndefined()
@@ -550,7 +562,7 @@ test('a missing registry shows "no jobs registered"', async ($, on) => {
 test('titles follow the job, and the news pane renders docs/news/status.md with $.fs only', async ($, on) => {
   const { state, clock } = rig($, on, true)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const run = (args: string) => $.command.run({ command: 'jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
+  const run = (args: string) => $.command.run({ command: 'mw-jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
   const lastOpen = (id: string) => state.opens.filter(o => o.id === id).at(-1)
   expect(lastOpen('mw-jobs')?.title).toBe('mw jobs · zeta')
 
@@ -584,8 +596,8 @@ test('titles follow the job, and the news pane renders docs/news/status.md with 
   expect(state.runs.some(r => r.includes('status.md') || r.includes('docs/news'))).toBe(false)
 
   // the same controls as the jobs pane drive this pane: style, size and the refresh timer
-  await $.command.run({ command: 'jobs', args: 'reset', origin: { kind: 'user' }, presentation: {} } as never)
-  await $.command.run({ command: 'jobs', args: 'style normal', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'reset', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'style normal', origin: { kind: 'user' }, presentation: {} } as never)
   // size: Text has no font size, the step is the density (stored)
   await nu.press({ key: 'bigger' })
   expect(state.store.get('fontStep')).toBe(1)
@@ -603,11 +615,11 @@ test('titles follow the job, and the news pane renders docs/news/status.md with 
   await nu.press({ key: 'every' })
   expect(state.store.get('refreshEvery')).toBe('off')
   await nu.unmount()
-  await $.command.run({ command: 'jobs', args: 'every 30s', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'every 30s', origin: { kind: 'user' }, presentation: {} } as never)
   const readsBefore = state.newsReads
   await clock.advance(30_000)
   expect(state.newsReads).toBeGreaterThan(readsBefore)
-  await $.command.run({ command: 'jobs', args: 'every off', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'every off', origin: { kind: 'user' }, presentation: {} } as never)
   const readsOff = state.newsReads
   await clock.advance(600_000)
   expect(state.newsReads).toBe(readsOff)
@@ -702,7 +714,7 @@ test('the markdown renderer decodes entities and backslash escapes, and the Svg 
 })
 
 const NEWS_PANE = { ...PANE, requestId: 'mw-news', props: { ...PANE.props, title: 'mw news' } } as const
-const cmd = ($: any, args: string) => $.command.run({ command: 'jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
+const cmd = ($: any, args: string) => $.command.run({ command: 'mw-jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
 
 test('news styling: heading colour per section, id and @name colours, table bar, code chip', () => {
   const md = '# Status\n\nUpdated 10:00\n\n## Needs you\n\n- BUG-12 @sir waits for `x`\n\n## Blocked\n\nA\n\n## Headline\n\n2 need you, 1 blocked, 0 stalled\n\n## Milestones\n\n| Wave | Done |\n|---|---|\n| C2 | 5/6 |\n| M4 | 0/16 |\n\n## Last events\n\n- 10:00 zetasheet A-1 start'
@@ -1049,8 +1061,8 @@ test('every icon button has a hover tooltip card, hidden until hover', async ($,
   state.newsFiles.zeta = '# S\n\nx'
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const cases: Array<[any, Array<[string, string]>]> = [
-    [PANE, [['refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Blocks and gopher only'], ['mute', 'Mute alerts'], ['panel', 'Open status.md in editor'], ['page', 'Open news page']]],
-    [NEWS_PANE, [['news-refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Blocks and gopher only'], ['mute', 'Mute alerts'], ['panel', 'Open status.md in editor'], ['page', 'Open news page']]],
+    [PANE, [['refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Fill: every list in full'], ['mute', 'Mute alerts'], ['panel', 'Open status.md in editor'], ['page', 'Open news page']]],
+    [NEWS_PANE, [['news-refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Fill: every list in full'], ['mute', 'Mute alerts'], ['panel', 'Open status.md in editor'], ['page', 'Open news page']]],
   ]
   for (const [pane, items] of cases) {
     const ui = await $.ui.mount({ ...pane, surface: 'desktop' } as never)
@@ -1147,9 +1159,9 @@ test('related controls are grouped: attention, refresh, view, alerts, open elsew
   }
 })
 
-const mwCmd = ($: any, args: string) => $.command.run({ command: 'mw', args, origin: { kind: 'user' }, presentation: {} } as never)
+const mwCmd = ($: any, args: string) => $.command.run({ command: 'mw-jobs', args, origin: { kind: 'user' }, presentation: {} } as never)
 
-test('/mw: no argument lists the jobs and every subcommand; jobs, news, mute, every, style, size, ask, review, release, log, fanfare', async ($, on) => {
+test('/mw-jobs list: one line per job and every subcommand; jobs, news, mute, every, style, size, ask, review, release, log, fanfare', async ($, on) => {
   const reg3 = { jobs: [...REG.jobs, { id: 'mw', title: 'mw itself', board: '~/apps/miniwaves', tenants: ['miniwaves'], news: '', summary: '', coordinator: 'c', desk: 'd', alerts: {} }] }
   const { state } = rig($, on, true, reg3)
   state.newsFiles.zeta = '# S\n\nx'
@@ -1158,9 +1170,9 @@ test('/mw: no argument lists the jobs and every subcommand; jobs, news, mute, ev
   const text = async (r: any) => String((await r)?.text ?? (await r)?.value?.text ?? JSON.stringify(await r))
 
   // alone: one line per job, then every usage
-  const all = await text(mwCmd($, ''))
+  const all = await text(mwCmd($, 'list'))
   for (const id of ['zeta', 'demo', 'mw itself']) expect(all).toContain(id)
-  for (const sub of ['/mw jobs', '/mw news', '/mw release', '/mw ask', '/mw review', '/mw style', '/mw size', '/mw log', '/mw mute', '/mw every', '/mw fanfare']) expect(all).toContain(sub)
+  for (const sub of ['/mw-jobs [id]', '/mw-news', '/mw-jobs release', '/mw-jobs ask', '/mw-jobs review', '/mw-jobs style', '/mw-jobs size', '/mw-jobs log', '/mw-jobs mute', '/mw-jobs every', '/mw-fanfare', '/mw-watch', '/mw-configure']) expect(all).toContain(sub)
 
   // jobs / news open the panes; the registry id "mw" is just another id
   await mwCmd($, 'jobs demo')
@@ -1211,7 +1223,7 @@ test('/mw: no argument lists the jobs and every subcommand; jobs, news, mute, ev
   const releases = () => state.runs.filter(r => r.startsWith('mw news --job zeta --release'))
   await mwCmd($, 'release zeta')
   expect(releases()).toHaveLength(0)
-  expect(state.toasts.at(-1)).toContain('release zeta?')
+  expect(state.toasts.at(-1)).toContain('publish the next issue of zeta?')
   await mwCmd($, 'release zeta')
   expect(releases()).toHaveLength(1)
 
@@ -1237,7 +1249,7 @@ test('/mw rejects unknown values with a usage toast and runs nothing', async ($,
   const { state } = rig($, on, true)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const runsBefore = state.runs.length
-  for (const bad of ['bogus', 'style x', 'style g sideways', 'size 3', 'every 2h', 'log zeta nope extra', 'fanfare test; rm -rf ~', 'fanfare test loud', 'fanfare', 'release nosuch', 'ask nosuch', 'jobs a b', 'mute now']) {
+  for (const bad of ['bogus', 'style x', 'style g sideways', 'size 3', 'every 2h', 'log zeta nope extra', 'fanfare test; rm -rf ~', 'fanfare test loud', 'release nosuch', 'ask nosuch', 'jobs a b', 'mute now']) {
     const t = state.toasts.length
     await mwCmd($, bad)
     expect(state.toasts.length).toBe(t + 1)
@@ -1354,45 +1366,44 @@ test('a pane that is not placed toasts why', async ($, on) => {
   state.placeFail = 'narrow terminal'
   const nu = await $.ui.mount({ ...NEWS_PANE, surface: 'desktop' } as never)
   await nu.press({ key: 'back-jobs' })
-  expect(state.toasts.some(t => t.includes('could not show the jobs pane') && t.includes('narrow terminal') && t.includes('/jobs'))).toBe(true)
+  expect(state.toasts.some(t => t.includes('could not show the jobs pane') && t.includes('narrow terminal') && t.includes('/mw-jobs'))).toBe(true)
   await nu.unmount()
 })
 
-test('planAlerts routes each type by its setting; mute and per-job switches still override', () => {
+test('planAlerts: a row and toast per alert, one sound; mute, alerts.message, alerts.sound and the per-job switch override', () => {
   const ev = [
-    { type: 'milestone' as const, text: 'm1' },
-    { type: 'needs' as const, text: 'n1' },
-    { type: 'done' as const, text: 'd1' },
-    { type: 'new' as const, text: 'w1' },
+    { type: 'milestone' as const, kind: 'done' as const, text: 'm1' },
+    { type: 'needs' as const, kind: 'ask' as const, text: 'n1' },
   ]
-  // defaults: notify only, no toast
-  expect(planAlerts(ev, {}, false, {})).toMatchObject({ toast: [], notify: ['m1', 'n1', 'd1', '+1 more'], sound: 'Glass' })
-  const o = { alertMilestone: 'toast', alertNeeds: 'toast+notify', alertDone: 'off', alertNew: 'notify' }
-  expect(planAlerts(ev, o, false, {})).toMatchObject({ toast: ['m1', 'n1'], notify: ['n1', 'w1'], sound: 'Glass' })
-  // off is silent: no toast, no notify, no sound
-  const off = { alertMilestone: 'off', alertNeeds: 'off', alertDone: 'off', alertNew: 'off' }
-  expect(planAlerts(ev, off, false, {})).toMatchObject({ toast: [], notify: [], sound: undefined })
-  // sound: Ping without a milestone, off by setting, muted or per-job
-  expect(planAlerts([ev[2]!], {}, false, {}).sound).toBe('Ping')
-  expect(planAlerts(ev, { alertSound: 'off' }, false, {}).sound).toBeUndefined()
-  expect(planAlerts(ev, {}, true, {})).toMatchObject({ toast: [], notify: [], sound: undefined })
-  expect(planAlerts(ev, { alertMilestone: 'toast' }, true, {}).toast).toEqual(['m1'])
-  expect(planAlerts(ev, {}, false, { notify: false, sound: false })).toMatchObject({ toast: [], notify: [], sound: undefined })
-  // at most 3 notifications, and a toast of 4 lines plus "+N more"
-  const many = Array.from({ length: 7 }, (_, i) => ({ type: 'new' as const, text: `x${i}` }))
-  expect(planAlerts(many, {}, false, {}).notify).toEqual(['x0', 'x1', 'x2', '+4 more'])
-  expect(planAlerts(many, { alertNew: 'toast' }, false, {}).toast).toEqual(['x0', 'x1', 'x2', 'x3', '+3 more'])
+  const on = { enabled: true, message: true, sound: true }
+  expect(planAlerts(ev, on, {})).toEqual({ lines: ['m1', 'n1'], sound: true })
+  expect(planAlerts(ev, { ...on, enabled: false }, {})).toEqual({ lines: [], sound: false })
+  expect(planAlerts(ev, { ...on, message: false }, {})).toEqual({ lines: [], sound: true })
+  expect(planAlerts(ev, { ...on, sound: false }, {})).toEqual({ lines: ['m1', 'n1'], sound: false })
+  expect(planAlerts(ev, on, { sound: false })).toEqual({ lines: ['m1', 'n1'], sound: false })
+  expect(planAlerts([], on, {})).toEqual({ lines: [], sound: false })
 })
 
-test('notify-only: an unsent notification (no channel in the test engine) falls back to one grouped toast; sound plays; no osascript', async ($, on) => {
+test('alertText: `<job> ▸ <What>: <ref> <title>`, no repeated ref, title cut to 60', () => {
+  expect(alertText('demo', 'New', 'S·A-9', 'Import types')).toBe('demo ▸ New: S·A-9 Import types')
+  expect(alertText('demo', 'Done', 'D·STR-002', 'Parse the header')).toBe('demo ▸ Done: D·STR-002 Parse the header')
+  expect(alertText('demo', 'Milestone done', 'C2', 'C2 Harness')).toBe('demo ▸ Milestone done: C2 Harness')
+  expect(alertText('demo', 'Milestone done', 'S·M4', 'M4 Consolidation')).toBe('demo ▸ Milestone done: M4 Consolidation')
+  expect(alertText('demo', 'Release 5', '', '')).toBe('demo ▸ Release 5')
+  const long = alertText('demo', 'Blocked', 'A-1', 'x'.repeat(80))
+  expect(long).toBe(`demo ▸ Blocked: A-1 ${'x'.repeat(59)}…`)
+  expect(alertText('demo', 'Needs you', 'A-1', '  two\n lines  ')).toBe('demo ▸ Needs you: A-1 two lines')
+})
+
+test('an alert is one grouped toast and a pane row; the sound plays; no OS notification or osascript', async ($, on) => {
   const { state, clock } = rig($, on, true)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   state.round = 1
   await clock.advance(60_000)
   // nothing is lost: the milestone alert lands as a toast, once per job, and nothing is logged to the transcript
-  expect(state.toasts).toHaveLength(1)
-  expect(state.toasts.join('\n')).toContain('[zeta] Milestone closed: C2')
-  expect(state.toasts.join('\n')).not.toContain('[demo]')
+  expect(state.toasts).toHaveLength(2)
+  expect(state.toasts.join('\n')).toContain('zeta ▸ Milestone done: C2 Harness')
+  expect(state.toasts.join('\n')).toContain('demo ▸ Milestone done: D1 Only')
   expect(state.logs).toEqual([])
   expect(state.sounds.length).toBe(1)
   expect(state.osa.length).toBe(0)
@@ -1401,7 +1412,7 @@ test('notify-only: an unsent notification (no channel in the test engine) falls 
 
 test('BUG-010: an alert that plays a sound also shows a row on top of the jobs and news panes, and stays after the toast; x dismisses it', async ($, on) => {
   const { state, clock } = rig($, on, true)
-  // the toast is gone after 8 s and an OS notification can be silent or hidden: the row is what stays (ui.notify cannot be faked on 2.1.285)
+  // the toast is gone after 8 s: the row is what stays. There is no OS notification.
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ju = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
   expect(await ju.find({ key: 'alerts' })).toBeUndefined()
@@ -1409,14 +1420,14 @@ test('BUG-010: an alert that plays a sound also shows a row on top of the jobs a
   await clock.advance(60_000)
   expect(state.sounds.length).toBe(1)
   const textJ = JSON.stringify(await ju.find({ key: 'alerts' }))
-  expect(textJ).toContain('[zeta] Milestone closed: C2')
+  expect(textJ).toContain('zeta ▸ Milestone done: C2 Harness')
   const nu = await $.ui.mount({ ...NEWS_PANE, surface: 'desktop' } as never)
-  expect(JSON.stringify(await nu.find({ key: 'alerts' }))).toContain('[zeta] Milestone closed: C2')
+  expect(JSON.stringify(await nu.find({ key: 'alerts' }))).toContain('zeta ▸ Milestone done: C2 Harness')
   console.log(`@@SHOT ${JSON.stringify({ name: 'jobs-alert-rows', cols: 80, tree: treeOf((await ju.findAll({ type: 'Box' }))[0]) })}`)
   console.log(`@@SHOT ${JSON.stringify({ name: 'news-alert-rows', cols: 80, tree: treeOf((await nu.findAll({ type: 'Box' }))[0]) })}`)
   // it stays: a later redraw still has it
   await clock.advance(60_000)
-  expect(JSON.stringify(await ju.find({ key: 'alerts' }))).toContain('Milestone closed: C2')
+  expect(JSON.stringify(await ju.find({ key: 'alerts' }))).toContain('Milestone done: C2')
   // x dismisses it, in both panes, and the store forgets it
   const xs = JSON.stringify(await ju.find({ key: 'alerts' })).match(/alert-x-[0-9-]+/g) ?? []
   expect(xs.length).toBeGreaterThan(0)
@@ -1439,7 +1450,7 @@ test('BUG-010: several alerts stack newest first (a new alert lands above the sa
   await clock.advance(60_000)
   expect(state.sounds.length).toBe(1)
   const t = JSON.stringify(await ju.find({ key: 'alerts' }))
-  const iNew = t.indexOf('Milestone closed: C2')
+  const iNew = t.indexOf('Milestone done: C2')
   expect(iNew).toBeGreaterThanOrEqual(0)
   expect(iNew).toBeLessThan(t.indexOf('older alert 0'))
   // 4 new + 5 saved: 5 shown, "+4 more"
@@ -1454,25 +1465,6 @@ test('BUG-010: saved alert rows are checked and capped at 20', async () => {
   const rows = parseAlertRows(Array.from({ length: 25 }, (_, i) => ({ id: `r${i}`, at: i, job: 'zeta', type: 'new', text: `t${i}` })))
   expect(rows.length).toBe(ALERT_ROWS_MAX)
   expect(parseAlertRows([{ id: 1 }, null, 'x'])).toEqual([])
-})
-
-test('every type off is silent', { options: { alertMilestone: 'off', alertNeeds: 'off', alertDone: 'off', alertNew: 'off' } }, async ($, on) => {
-  const { state, clock } = rig($, on, true)
-  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  state.round = 1
-  await clock.advance(60_000)
-  expect(state.toasts).toEqual([])
-  expect(state.sounds).toEqual([])
-  expect(state.osa.length).toBe(0)
-})
-
-test('toast mode gives a grouped toast and no notification path', { options: { alertMilestone: 'toast', alertSound: 'off' } }, async ($, on) => {
-  const { state, clock } = rig($, on, true)
-  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  state.round = 1
-  await clock.advance(60_000)
-  expect(state.toasts.join('\n')).toContain('Milestone closed: C2')
-  expect(state.sounds).toEqual([])
 })
 
 test('▦ jobs raises the jobs pane by the same path as ▤ news: data first, then open with focus; news is not closed', async ($, on) => {
@@ -1715,7 +1707,7 @@ test('one change alerts exactly once across both panes, refreshes, timers and a 
   await nws.press({ key: 'news-refresh' })
   await clock.advance(30_000)
   await clock.advance(30_000)
-  const milestone = state.toasts.filter(t => t.includes('[zeta] Milestone closed: C2'))
+  const milestone = state.toasts.filter(t => t.includes('zeta ▸ Milestone done: C2 Harness'))
   expect(milestone).toHaveLength(1)
   expect(state.sounds).toHaveLength(1)
   // a reload re-running session.start does not alert again, and the keys sit in the store
@@ -1723,7 +1715,7 @@ test('one change alerts exactly once across both panes, refreshes, timers and a 
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await clock.advance(30_000)
   expect(state.toasts.length).toBe(before)
-  expect(JSON.stringify(state.store.get('alerted'))).toContain('Milestone closed: C2')
+  expect(JSON.stringify(state.store.get('alerted'))).toContain('milestone|zeta-corpus:WAV-002')
   // the mute button is in both panes and shares one state
   expect((await jobs.find({ key: 'mute' }))?.props.label).toBe('🔔')
   expect((await nws.find({ key: 'mute' }))?.props.label).toBe('🔔')
@@ -1762,8 +1754,8 @@ test('alerts.log gets one line per alert (no duplicates); failures are logged on
   await clock.advance(60_000)
   const log = state.files.get(`${LOGDIR}/alerts.log`) ?? ''
   const lines = log.trim().split('\n')
-  expect(lines.filter(l => l.includes('Milestone closed: C2'))).toHaveLength(1)
-  expect(lines[0]).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z  milestone  zeta-corpus WAV-002  \[zeta\] Milestone closed: C2 .*  -> toast-fallback$/)
+  expect(lines.filter(l => l.includes('Milestone done: C2'))).toHaveLength(1)
+  expect(lines[0]).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z  milestone  zeta-corpus WAV-002  zeta ▸ Milestone done: C2 Harness  -> row\+toast\+sound$/)
   // everything written sits under the job's log folder
   expect([...state.files.keys()].every(k => k.startsWith('/home/.mw/logs/'))).toBe(true)
   // a failure is logged once, however often it repeats
@@ -1835,7 +1827,7 @@ test('log files rotate to .1 past 1 MB, keeping one old copy', async ($, on) => 
   expect(state.files.get(`${LOGDIR}/alerts.log.1`)).toBe('x'.repeat(LOG_MAX + 10))
   const fresh = state.files.get(`${LOGDIR}/alerts.log`) ?? ''
   expect(fresh.length).toBeLessThan(2000)
-  expect(fresh).toContain('Milestone closed: C2')
+  expect(fresh).toContain('Milestone done: C2')
   expect(state.files.has(`${LOGDIR}/alerts.log.2`)).toBe(false)
 })
 
@@ -1935,9 +1927,10 @@ test('metrics: all three kinds in both styles and the terminal; no section witho
       expect((await ui.findAll({ type: 'Text' })).some((t: any) => t.props.color === 'warning' && /99\.2 %/.test(flat(t)))).toBe(true) // short of the 99.5 target
       expect((await ui.findAll({ type: 'Text' })).some((t: any) => t.props.color === 'success' && /^180/.test(flat(t)))).toBe(true) // lower is better and within 200
     } else {
-      expect(src).toContain('█')
-      expect((await ui.findAll({ type: 'Text' })).some((t: any) => t.props.color === 'warning' && /█/.test(flat(t)))).toBe(true)
-      expect((await ui.findAll({ type: 'Text' })).some((t: any) => t.props.color === 'error' && /█/.test(flat(t)))).toBe(true)
+      expect(src).not.toContain('█') // Boxes with a background, not glyph runs
+      const boxes = await ui.findAll({ type: 'Box' })
+      expect(boxes.some((b: any) => String(b.key ?? '').startsWith('mbar-') && b.props.backgroundColor === 'warning')).toBe(true)
+      expect(boxes.some((b: any) => String(b.key ?? '').startsWith('mbar-') && b.props.backgroundColor === 'error')).toBe(true)
     }
     await ui.unmount()
   }
@@ -2043,6 +2036,237 @@ test('metric counts: one non-wrapping Text per row, the same width, with 4-digit
   await cmd($, 'every off')
 })
 
+test('commands: /mw-watch /mw-jobs /mw-news /mw-fanfare /mw-configure are registered; /mw and /jobs are not', async ($, on) => {
+  const { state } = rig($, on, true)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (const c of ['mw-watch', 'mw-jobs', 'mw-news', 'mw-fanfare', 'mw-configure']) expect(state.commands).toContain(c)
+  expect(state.commands).not.toContain('mw')
+  expect(state.commands).not.toContain('jobs')
+})
+
+test('/mw-watch opens the jobs pane and `scan DIR` looks in DIR; /mw-news opens the news pane', async ($, on) => {
+  const { state } = rig($, on, false)
+  state.boards = { '/home': REAL_BOARDS, '/srv/boards': REAL_BOARDS }
+  state.boardJobs = REAL_BOARD_JOBS
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'mw-watch', args: '', origin: { kind: 'user' }, presentation: {} } as never)
+  expect(state.opens.at(-1)?.id).toBe('mw-jobs')
+  await $.command.run({ command: 'mw-watch', args: 'scan /srv/boards', origin: { kind: 'user' }, presentation: {} } as never)
+  expect(state.runs.some(r => r === 'mw boards /srv/boards --depth 4 -j')).toBe(true)
+  await $.command.run({ command: 'mw-news', args: '', origin: { kind: 'user' }, presentation: {} } as never)
+  expect(state.opens.at(-1)?.id).toBe('mw-news')
+})
+
+test('/mw-fanfare: next, on, off, use NAME, test, stop run only fixed mw arguments; anything else is refused', async ($, on) => {
+  const { state } = rig($, on, true)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ff = (args: string) => $.command.run({ command: 'mw-fanfare', args, origin: { kind: 'user' }, presentation: {} } as never)
+  await ff('test')
+  expect(state.runs).toContain('mw fanfare test')
+  await ff('test finale')
+  expect(state.runs).toContain('mw fanfare test finale')
+  await ff('stop')
+  expect(state.runs).toContain('mw fanfare stop')
+  await ff('on')
+  expect(state.runs.some(r => /^mw user set fanfare\.enabled=true$/.test(r))).toBe(true)
+  await ff('use films')
+  expect(state.runs.some(r => /^mw user set fanfare\.use=films$/.test(r))).toBe(true)
+  const n = state.runs.length
+  for (const bad of ['use', 'use a b', 'use ; rm -rf ~', 'on now', 'test loud', 'bogus']) {
+    const t = state.toasts.length
+    await ff(bad)
+    expect(state.toasts.length, bad).toBe(t + 1)
+  }
+  expect(state.runs.length).toBe(n)
+})
+
+test('mw is run by its absolute path when found, and the opener is per OS', async ($, on) => {
+  const { state } = rig($, on, true)
+  ;(state as any).mwPath = '/opt/tools/bin/mw'
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(state.absRuns.length).toBeGreaterThan(0)
+  expect(state.absRuns.every(r => r.startsWith('/opt/tools/bin/mw '))).toBe(true)
+  expect(openerArgv('mac', '/a/b.md')).toEqual(['open', '-t', '/a/b.md'])
+  expect(openerArgv('linux', '/a/b.md')).toEqual(['xdg-open', '/a/b.md'])
+  expect(openerArgv('windows', 'C:\\a\\b.md')).toEqual(['cmd', '/c', 'start', '', 'C:\\a\\b.md'])
+  expect(isAbs('/x')).toBe(true)
+  expect(isAbs('C:\\x')).toBe(true)
+  expect(isAbs('C:/x')).toBe(true)
+  expect(isAbs('x/y')).toBe(false)
+})
+
+test('--full is unsupported only when mw says the option is unknown', () => {
+  expect(unknownOption('mw: unknown option --full')).toBe(true)
+  expect(unknownOption('flag provided but not defined: -full')).toBe(true)
+  expect(unknownOption('mw: board locked')).toBe(false)
+  expect(unknownOption('')).toBe(false)
+})
+
+test('the panel button: news_out as a folder or a file; when $.fs.stat refuses, the OS says; guards hold; the real reason is toasted and logged', async ($, on) => {
+  const reg = { jobs: [{ ...REG.jobs[0] }] }
+  const { state } = rig($, on, true, reg)
+  state.newsFiles.zeta = '# S'
+  state.jobShow = { 'news.out': 'out/pages' }
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const main = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const opened = () => state.runs.filter(r => r.startsWith('open '))
+  // a folder: status.md inside it
+  await main.press({ key: 'panel' })
+  expect(opened().at(-1)).toBe('open -t /home/apps/zeta-corpus/out/pages/status.md')
+  // a file: itself
+  state.jobShow = { 'news.out': 'out/news.md' }
+  lastJobShowReset()
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await main.press({ key: 'panel' })
+  expect(opened().at(-1)).toBe('open -t /home/apps/zeta-corpus/out/news.md')
+  // a file that is not .md is refused
+  state.jobShow = { 'news.out': 'out/news.txt' }
+  lastJobShowReset()
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const n = opened().length
+  await main.press({ key: 'panel' })
+  expect(opened().length).toBe(n)
+  expect(state.toasts.at(-1)).toContain('not a .md file')
+  // $.fs.stat refuses: the OS check opens a regular file, refuses a link, and a failing OS check says why
+  state.jobShow = { 'news.out': 'out/news.md' }
+  lastJobShowReset()
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  ;(state as any).statRefuse = true
+  await main.press({ key: 'panel' })
+  expect(opened().at(-1)).toBe('open -t /home/apps/zeta-corpus/out/news.md')
+  const m = opened().length
+  ;(state as any).osKind = 'Symbolic Link'
+  await main.press({ key: 'panel' })
+  expect(opened().length).toBe(m)
+  expect(state.toasts.at(-1)).toContain('symbolic link')
+  ;(state as any).osKind = 'Directory'
+  await main.press({ key: 'panel' })
+  expect(state.toasts.at(-1)).toContain('not a file')
+  expect(kindFromStat('Regular File')).toBe('file')
+  expect(kindFromStat('Symbolic Link')).toBe('link')
+  expect(newsStatusPath(undefined, '~/b', '/h')).toBe('/h/b/docs/news/status.md')
+  expect(newsStatusPath({ 'news.out': 'x/' }, '~/b', '/h')).toBe('/h/b/x/status.md')
+  await main.unmount()
+})
+
+test('ids in titles and notes: an existing id is a Button that opens its detail, an unknown id stays Text (jobs pane, both surfaces)', async ($, on) => {
+  const { state } = rig($, on, true)
+  state.extra = [item('zetasheet', 'A-5', 'blocked', 'waits for A-2 and TSK-9999', iso(BASE - 600_000), 'task', 'Follow up on A-3 and BUG-404')]
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface } as never)
+    const buttons = (await ui.findAll({ type: 'Button' })).map((b: any) => String(b.props?.label))
+    expect(buttons, surface).toContain('A-3') // in the title
+    expect(buttons, surface).toContain('A-2') // in the note
+    expect(buttons, surface).not.toContain('BUG-404')
+    expect(buttons, surface).not.toContain('TSK-9999')
+    const texts = (await ui.findAll({ type: 'Text' })).map((t: any) => flat(t))
+    expect(texts.some((t: string) => t.includes('BUG-404')), surface).toBe(true)
+    expect(texts.some((t: string) => t.includes('TSK-9999')), surface).toBe(true)
+    const b = (await ui.findAll({ type: 'Button' })).find((x: any) => x.props?.label === 'A-3')
+    await ui.press({ key: (b as any).props.key })
+    expect(state.opens.at(-1)).toMatchObject({ id: DETAIL_PANE, focus: true })
+    expect(state.runs).toContain('mw show A-3 -t zetasheet -j')
+    await ui.unmount()
+  }
+})
+
+test('blocks bars: 5/6 fills 5/6 of the box (± one column), the track is present, the fill is the accent, a full bar is green; the terminal keeps glyphs', async ($, on) => {
+  const { state } = rig($, on, true)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await cmd($, 'style blocks')
+  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 80 }, surface: 'desktop' } as never)
+  const boxes = await ui.findAll({ type: 'Box' })
+  const bar = boxes.find((b: any) => String(b.key) === 'bar-zeta-corpus:WAV-002') as any
+  expect(bar).toBeDefined()
+  const total = Number(bar.props.width)
+  const parts = boxes.filter((b: any) => String(b.key ?? '').startsWith('bar-zeta-corpus:WAV-002-'))
+  const fill = parts.find((b: any) => !String(b.key).endsWith('-track')) as any
+  const track = parts.find((b: any) => String(b.key).endsWith('-track')) as any
+  expect(track).toBeDefined()
+  expect(Math.abs(Number(fill.props.width) / total - 5 / 6)).toBeLessThanOrEqual(1 / total + 1e-9)
+  expect(fill.props.backgroundColor).toBe('suggestion')
+  expect(Number(fill.props.width) + Number(track.props.width)).toBe(total)
+  await ui.unmount()
+  const term = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 80 }, surface: 'terminal' } as never)
+  const tb = (await term.findAll({ type: 'Box' })).find((b: any) => String(b.key) === 'bar-zeta-corpus:WAV-002') as any
+  expect(flat(tb)).toMatch(/█+░+/)
+  expect((tb.children as any[])[0].props.color).toBe('suggestion')
+  await term.unmount()
+})
+
+test('alert rows: the item or milestone id in the text is a Button that opens its detail panel', async ($, on) => {
+  const { state, clock } = rig($, on, true)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ju = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
+  state.round = 1
+  await clock.advance(60_000)
+  const alerts = JSON.stringify(await ju.find({ key: 'alerts' }))
+  expect(alerts).toContain('zeta ▸ New: ')
+  const labels = [...alerts.matchAll(/"type":"Button","props":\{[^}]*"label":"([^"]+)"/g)].map(m => m[1])
+  expect(labels).toContain('S·A-9')
+  expect(labels).toContain('C2')
+  const btns = (await ju.findAll({ type: 'Button' })).filter((b: any) => String(b.props?.key ?? '').startsWith('alert-id-'))
+  const a9 = btns.find((b: any) => b.props.label === 'S·A-9') as any
+  await ju.press({ key: a9.props.key })
+  expect(state.opens.at(-1)).toMatchObject({ id: DETAIL_PANE, focus: true })
+  expect(state.runs).toContain('mw show A-9 -t zetasheet -j')
+  await ju.unmount()
+})
+
+test('detail panel: ids in the acceptance text and the log notes are Buttons when they exist on the board; unknown ones stay Text', async ($, on) => {
+  const state = await detailSetup($, on)
+  state.shows['zeta|TSK-203'] = { ...SHOW_TSK001, id: 'TSK-203', acceptance: 'Same as STR-002, not TSK-9999', events: [{ at: '2026-10-22T10:00:00', action: 'note', by: 'x', note: 'see TSK-203 and BUG-404' }] }
+  await cmd($, 'style kanban')
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
+  await ui.press({ key: 'job-zeta' })
+  await ui.press({ key: (await btn(ui, 'zeta/TSK-203')).props.key })
+  await ui.unmount()
+  const dp = await $.ui.mount({ ...PANE, requestId: DETAIL_PANE, surface: 'desktop' } as never)
+  const labels = (await dp.findAll({ type: 'Button' })).map((b: any) => String(b.props?.label))
+  expect(labels).toContain('STR-002')
+  expect(labels).toContain('TSK-203')
+  expect(labels).not.toContain('TSK-9999')
+  expect(labels).not.toContain('BUG-404')
+  const txt = (await dp.findAll({ type: 'Text' })).map((t: any) => flat(t)).join('|')
+  expect(txt).toContain('TSK-9999')
+  expect(txt).toContain('BUG-404')
+  await dp.unmount()
+})
+
+test('news issue numbers are links: the "vs issue N-1" and "since issue M" parts of the header open that issue', async ($, on) => {
+  const { state } = rig($, on, true)
+  state.draft = SMALL_DRAFT
+  seedReleases(state, 30)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await mountNews($, 'blocks')
+  await ui.press({ key: 'nav-prev' }) // from the draft to the newest issue
+  const first = await titleOf(ui)
+  expect(first).toMatch(/^Issue \d+ /)
+  const ref = await ui.find({ key: 'page-title-ref' })
+  expect(ref).toBeDefined()
+  const target = Number(String(ref!.props.label).replace('issue ', ''))
+  await ui.press({ key: 'page-title-ref' })
+  expect(await titleOf(ui)).toMatch(new RegExp(`^Issue ${target} `))
+  await ui.unmount()
+})
+
+test('gopher keeps its text as plain Code and adds a small ids row of links under it', async ($, on) => {
+  const { state } = rig($, on, true)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await cmd($, 'style gopher')
+  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 100 }, surface: 'desktop' } as never)
+  const row = await ui.find({ key: 'now-ids' })
+  expect(row).toBeDefined()
+  const labels = (await ui.findAll({ type: 'Button' })).filter((b: any) => String(b.props?.key ?? '').startsWith('now-id-')).map((b: any) => String(b.props.label))
+  expect(labels.length).toBeGreaterThan(0)
+  expect(await ui.find({ type: 'Code' })).toBeDefined()
+  const one = (await ui.findAll({ type: 'Button' })).find((b: any) => String(b.props?.key ?? '').startsWith('now-id-')) as any
+  await ui.press({ key: one.props.key })
+  expect(state.opens.at(-1)).toMatchObject({ id: DETAIL_PANE, focus: true })
+  await ui.unmount()
+})
+
 test('an invalid or newer metrics file shows a one-line dim notice instead of the section', async ($, on) => {
   const { state } = rig($, on, true, REG_M)
   state.newsFiles.zeta = '# S'
@@ -2053,7 +2277,7 @@ test('an invalid or newer metrics file shows a one-line dim notice instead of th
   expect((await jt(ui))).toContain('newer metrics format')
   await ui.unmount()
   state.files.set(MPATH, '{ nope')
-  await $.command.run({ command: 'jobs', args: '', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: '', origin: { kind: 'user' }, presentation: {} } as never)
   await $.ui.mount({ ...PANE, surface: 'desktop' } as never).then(async u => { ui = u })
   void ui
 })
@@ -2074,13 +2298,17 @@ const svgText = async (ui: any) => [...(await ui.findAll({ type: 'Svg' })).map((
 /** A row name: Text, or the plain Button it became when it opens the detail panel. */
 const nameNode = async (ui: any, re: RegExp) => (await ui.find({ type: 'Text', text: re })) ?? (await ui.findAll({ type: 'Button' })).find((b: any) => re.test(String(b.props?.label ?? '')))
 
-const NEWS_TITLE = /^(Release \d+|Draft) \u00b7/
+const NEWS_TITLE = /^(Issue \d+|Draft) \u00b7/
 
 const mountNews = async ($: any, style: string, surface: 'desktop' | 'terminal' = 'desktop', cols = 80) => {
   await cmd($, `style ${style}`)
   return $.ui.mount({ ...NEWS_PANE, props: { ...NEWS_PANE.props, bodyColumns: cols }, surface } as never)
 }
-const titleOf = async (ui: any) => (await ui.findAll({ type: 'Text' })).map((t: any) => String(t.text)).find((x: string) => NEWS_TITLE.test(x))
+const titleOf = async (ui: any) => {
+  const line = (await ui.findAll({ type: 'Text' })).map((t: any) => String(t.text)).find((x: string) => NEWS_TITLE.test(x))
+  const ref = (await ui.find({ key: 'page-title-ref' }))?.props?.label
+  return line === undefined ? undefined : `${line}${ref !== undefined && line.endsWith(' ') ? ref : ''}`
+}
 
 test('news model: the draft and its marker in every style, with the navigation group and the Release button', async ($, on) => {
   const { state } = rig($, on, true)
@@ -2089,15 +2317,15 @@ test('news model: the draft and its marker in every style, with the navigation g
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   for (const style of ['normal', 'blocks', 'gopher', 'agile', 'kanban']) {
     const ui = await mountNews($, style)
-    expect(await titleOf(ui)).toBe('Draft \u00b7 since release 6')
-    expect(await allText(ui)).toContain('Draft, not released \u00b7 8 changes since release 6')
+    expect(await titleOf(ui)).toBe('Draft \u00b7 since issue 6')
+    expect(await allText(ui)).toContain('Draft, not published \u00b7 8 changes since issue 6')
     expect(shape(await ui.find({ key: 'nav-group' }))).toEqual(['nav-first', '|', 'nav-prev', '|', 'nav-list', '|', 'nav-next', '|', 'nav-last'])
     expect(await ui.find({ key: 'release' })).toBeDefined()
     await ui.unmount()
   }
   // the terminal draws the same navigation and title
   const t = await mountNews($, 'gopher', 'terminal')
-  expect(await titleOf(t)).toBe('Draft \u00b7 since release 6')
+  expect(await titleOf(t)).toBe('Draft \u00b7 since issue 6')
   expect(await t.find({ key: 'nav-group' })).toBeDefined()
   await t.unmount()
 })
@@ -2110,18 +2338,18 @@ test('news model: step, jump, list click, and the position stays when a new rele
   for (const style of ['normal', 'blocks', 'gopher', 'agile', 'kanban']) {
     const ui = await mountNews($, style)
     const at = async () => titleOf(ui)
-    expect(await at()).toBe('Draft \u00b7 since release 6')
+    expect(await at()).toBe('Draft \u00b7 since issue 6')
     await ui.press({ key: 'nav-prev' })
-    expect(await at()).toContain('Release 30 \u00b7 2026-11-02 \u00b7 vs release 29')
+    expect(await at()).toContain('Issue 30 \u00b7 2026-11-02 \u00b7 vs issue 29')
     expect(await ui.find({ key: 'release' })).toBeUndefined() // past releases are read-only
     await ui.press({ key: 'nav-prev' })
-    expect(await at()).toContain('Release 29')
+    expect(await at()).toContain('Issue 29')
     await ui.press({ key: 'nav-next' })
-    expect(await at()).toContain('Release 30')
+    expect(await at()).toContain('Issue 30')
     await ui.press({ key: 'nav-first' })
-    expect(await at()).toContain('Release 1 \u00b7 2026-10-01 \u00b7 vs the start')
+    expect(await at()).toContain('Issue 1 \u00b7 2026-10-01 \u00b7 vs the start')
     await ui.press({ key: 'nav-last' })
-    expect(await at()).toBe('Draft \u00b7 since release 6')
+    expect(await at()).toBe('Draft \u00b7 since issue 6')
     expect(await ui.find({ key: 'release' })).toBeDefined()
     // the list: newest first, 20 to a page, a click opens that release
     await ui.press({ key: 'nav-list' })
@@ -2134,11 +2362,11 @@ test('news model: step, jump, list click, and the position stays when a new rele
     const rows2 = (await ui.findAll({ type: 'Button' })).filter((b: any) => /^list-\d+$/.test(String(b.props.key)))
     expect(rows2.map((b: any) => b.props.key)).toEqual(Array.from({ length: 10 }, (_, i) => `list-${10 - i}`))
     await ui.press({ key: 'list-7' })
-    expect(await at()).toContain('Release 7 \u00b7')
+    expect(await at()).toContain('Issue 7 \u00b7')
     // a refresh keeps the page; a new release (31) puts a dot on the list and on latest and does not move the reader
     seedReleases(state, 31)
     await ui.press({ key: 'news-refresh' })
-    expect(await at()).toContain('Release 7 \u00b7')
+    expect(await at()).toContain('Issue 7 \u00b7')
     expect(((await ui.find({ key: 'nav-list' }))?.props.label)).toBe('\u2630\u25cf')
     expect(((await ui.find({ key: 'nav-last' }))?.props.label)).toBe('\u21e5\u25cf')
     await ui.press({ key: 'nav-last' })
@@ -2158,16 +2386,20 @@ test('news model: the Release button asks first, runs mw news --release, and sho
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await mountNews($, 'normal')
   const runs = () => state.runs.filter(r => r === 'mw news --job zeta --release')
+  // the pane calls a news release an issue: the button is Publish, the question names the next issue number
+  expect((await ui.find({ key: 'release' }))?.props.label).toBe('Publish')
   await ui.press({ key: 'release' })
   expect(runs()).toHaveLength(0)
   expect(await ui.find({ key: 'release-yes' })).toBeDefined()
+  expect((await ui.find({ key: 'release-yes' }))?.props.label).toBe('Yes, publish')
+  expect(await allText(ui)).toContain('Publish issue 4?')
   await ui.press({ key: 'release-no' })
   expect(await ui.find({ key: 'release-yes' })).toBeUndefined()
-  state.releaseOut = { code: 1, text: 'nothing new since release 3' }
+  state.releaseOut = { code: 1, text: 'nothing new since release 3' } // mw's CLI wording; the pane says issue
   await ui.press({ key: 'release' })
   await ui.press({ key: 'release-yes' })
   expect(runs()).toHaveLength(1)
-  expect(state.toasts.at(-1)).toContain('nothing new since release 3')
+  expect(state.toasts.at(-1)).toContain('nothing new since issue 3')
   await ui.unmount()
 })
 
@@ -2179,7 +2411,7 @@ test('news model: a new release raises one alertNew; draft changes raise no aler
   await clock.advance(60_000)
   await clock.advance(60_000)
   const quiet = state.toasts.length
-  expect(state.toasts.filter(t => t.includes('Release'))).toHaveLength(0)
+  expect(state.toasts.filter(t => t.includes('Issue'))).toHaveLength(0)
   // the draft changes: a new item needs you and one is done. These are "now" events and alert once each (A2); the release/metric rules stay
   const d = JSON.parse(SMALL_DRAFT)
   d.now.needs.items.push({ tenant: 'zetadoc', id: 'TSK-099', title: 'Another question', note: 'x', since: '2026-10-22T10:00:00', by: 'z' })
@@ -2187,8 +2419,8 @@ test('news model: a new release raises one alertNew; draft changes raise no aler
   d.happened.done.items.push({ tenant: 'zetadoc', id: 'TSK-098', title: 'Something done' })
   state.draft = JSON.stringify(d)
   await clock.advance(60_000)
-  expect(state.toasts.filter(t => t.includes('Needs Sir: zetadoc:TSK-099'))).toHaveLength(1)
-  expect(state.toasts.filter(t => t.includes('Done: zetadoc:TSK-098') || t.includes('Done zetadoc:TSK-098'))).toHaveLength(1)
+  expect(state.toasts.filter(t => t.includes('Needs you: TSK-099 Another question'))).toHaveLength(1)
+  expect(state.toasts.filter(t => t.includes('Done: TSK-098 Something done'))).toHaveLength(1)
   const after = state.toasts.length
   await clock.advance(60_000)
   expect(state.toasts.length).toBe(after)
@@ -2196,9 +2428,9 @@ test('news model: a new release raises one alertNew; draft changes raise no aler
   // release 4 appears in the folder: one alert, and not a second one on the next tick
   seedReleases(state, 4)
   await clock.advance(60_000)
-  expect(state.toasts.filter(t => t.includes('[zeta] Release 4 is out'))).toHaveLength(1)
+  expect(state.toasts.filter(t => t.includes('zeta ▸ Issue 4 published'))).toHaveLength(1)
   await clock.advance(60_000)
-  expect(state.toasts.filter(t => t.includes('Release 4 is out'))).toHaveLength(1)
+  expect(state.toasts.filter(t => t.includes('Issue 4 published'))).toHaveLength(1)
   // a metric drop (good 40 -> 39) alerts once
   d.metrics.sections[0].rows[0].good = 39
   state.draft = JSON.stringify(d)
@@ -2236,7 +2468,7 @@ test('after a question is asked, both panes refresh: on the press, on the submit
   state.asks = [{ tenant: 'zetasheet', item: 'TSK-9', question: 'which?', by: 'coordinator', at: iso(BASE) }]
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await cmd($, 'every off')
-  await $.command.run({ command: 'jobs', args: 'zeta', origin: { kind: 'user' }, presentation: {} } as never)
+  await $.command.run({ command: 'mw-jobs', args: 'zeta', origin: { kind: 'user' }, presentation: {} } as never)
   const waveRuns = () => state.runs.filter(r => r.startsWith('mw wave list')).length
   const q = askText(state.extra[0] as never, { waves: [], items: [], events: [], updatedAt: 0, asks: state.asks } as never).text
   const settle = async () => { for (let i = 0; i < 6; i++) await clock.advance(1) }
@@ -2344,7 +2576,7 @@ test('T1: 150 needs is the same number in the status line, the headline and both
   await news.unmount()
 })
 
-test('A1 + A2: new needs alert in model mode; notify sends 3 and a "+N more" summary; the rest is logged as capped, not muted', async ($, on) => {
+test('A1 + A2: new needs alert in model mode; one toast of 4 lines and a "+N more" summary; every alert is logged, none muted', async ($, on) => {
   const { state, clock } = rig($, on, true)
   state.draft = withNeeds(0)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -2354,8 +2586,8 @@ test('A1 + A2: new needs alert in model mode; notify sends 3 and a "+N more" sum
   await clock.advance(60_000)
   const log = [...state.files.entries()].filter(([k]) => k.endsWith('/alerts.log')).map(([, v]) => v).join('\n')
   expect(state.toasts.length).toBeGreaterThan(before)
-  expect(state.toasts.join('\n')).toContain('+47 more')
-  expect((log.match(/capped/g) ?? []).length).toBe(47)
+  expect(state.toasts.join('\n')).toContain('+46 more')
+  expect((log.match(/row\+toast/g) ?? []).length).toBe(50)
   expect(log).not.toContain('muted')
 })
 
@@ -2419,16 +2651,16 @@ test('TSK-054 fill: blocks stays at 80 columns; fill takes the pane width up to 
   await cmd($, 'style normal')
   let ui = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
   expect((await ui.find({ key: 'fill' }))?.props.dimColor).toBe(true)
-  expect(await allText(ui)).toContain('Blocks and gopher only')
+  expect(await allText(ui)).toContain('Fill: every list in full')
   await ui.unmount()
   await cmd($, 'style blocks')
   ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 175 }, surface: 'desktop' } as never)
   expect(String((await ui.find({ key: 'fill' }))?.props.label)).toBe('\u2194')
-  expect(await allText(ui)).toContain('Fill pane width (up to 160)')
+  expect(await allText(ui)).toContain('Fill: every list in full')
   await ui.press({ key: 'fill' })
   expect(state.store.get('blocksFill')).toEqual({ jobs: true, news: false })
   expect((await ui.find({ key: 'fill' }))?.props.variant).toBe('primary')
-  expect(await allText(ui)).toContain('Back to 80 characters')
+  expect(await allText(ui)).toContain('Back to the capped lists and 80 columns')
   await ui.unmount()
   // the news pane has its own switch; the blocks grid comes from the json model and gets wider with it (never from mw's text)
   state.draft = SMALL_DRAFT
@@ -2839,7 +3071,7 @@ test('T3 + T10: mute, the open groups and the news page survive a reload (they a
   r.state.store.set('expanded', { zeta: { needs: 30 } })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const again = await $.ui.mount({ ...NEWS_PANE, surface: 'desktop' } as never)
-  expect(await allText(again)).toContain('Release 5')
+  expect(await allText(again)).toContain('Issue 5')
   await again.unmount()
 })
 
@@ -2877,9 +3109,9 @@ test('X3 + T6 + X4 + E4: an unreadable release says so and the arrows still work
   await ui.press({ key: 'nav-prev' })
   await r.clock.advance(1000)
   const t = await allText(ui)
-  expect(t.includes('release 3 unreadable') || t.includes('Release 3')).toBe(true)
+  expect(t.includes('issue 3 unreadable') || t.includes('Issue 3')).toBe(true)
   await ui.press({ key: 'nav-prev' })
-  expect((await titleOf(ui)) ?? '').toContain('Release 2')
+  expect((await titleOf(ui)) ?? '').toContain('Issue 2')
   await ui.press({ key: 'nav-next' })
   await ui.unmount()
   // a draft with no changes: Release is dim and gives the reason
@@ -2892,7 +3124,7 @@ test('X3 + T6 + X4 + E4: an unreadable release says so and the arrows still work
   await ui2.press({ key: 'nav-last' })
   const rel = await ui2.find({ key: 'release' })
   expect(rel?.props.dimColor).toBe(true)
-  expect(await allText(ui2)).toContain('Nothing new since release 5')
+  expect(await allText(ui2)).toContain('Nothing new since issue 5')
   await ui2.unmount()
 })
 
@@ -3787,6 +4019,37 @@ const fullDrafts = () => {
 }
 const gopherText = async (ui: any) => [await svgText(ui), await codeText(ui), await allText(ui)].join('\n')
 
+for (const style of ['blocks']) {
+  test(`fill in ${style}: the pane's "+N more" is a link that turns fill on and shows every row`, { timeoutMs: 20000 }, async ($, on) => {
+    const { state } = rig($, on, true)
+    const mk = (n: number) => ({ tenant: 'zetasheet', id: `TSK-${100 + n}`, title: `Done row ${n}`, since: '2026-10-22T09:00:00', by: 's' })
+    const capped = JSON.parse(SMALL_DRAFT)
+    capped.happened.counts.done = 30
+    capped.happened.done = { items: Array.from({ length: 10 }, (_, i) => mk(i)), more: 20 }
+    const full = JSON.parse(SMALL_DRAFT)
+    full.happened.counts.done = 30
+    full.happened.done = { items: Array.from({ length: 30 }, (_, i) => mk(i)), more: 0 }
+    state.draft = JSON.stringify(capped)
+    state.fullDraft = JSON.stringify(full)
+    state.fullOk = true
+    state.newsFiles.zeta = '# S'
+    await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+    await cmd($, 'news zeta')
+    await cmd($, `style ${style}`)
+    const ui = await $.ui.mount({ ...NEWS_PANE, props: { ...NEWS_PANE.props, bodyColumns: 100 }, surface: 'desktop' } as never)
+    const before = await gopherText(ui)
+    expect(before).not.toContain('TSK-129')
+    expect(before).toMatch(/\+\d+ more/)
+    expect(await ui.find({ key: 'news-more' })).toBeDefined()
+    await ui.press({ key: 'news-more' })
+    expect(state.store.get('blocksFill')).toEqual({ jobs: false, news: true })
+    const after = await gopherText(ui)
+    expect(after).toContain('TSK-129')
+    expect(after).not.toMatch(/\+\d+ more/)
+    await ui.unmount()
+  })
+}
+
 for (const fullOk of [true, false]) {
   test(`gopher fill: ${fullOk ? 'mw with --full shows every row, no more lines, in both panes; fill off keeps the caps' : 'an mw without --full keeps the caps and says so in one line'}`, { timeoutMs: 20000 }, async ($, on) => {
     const { state } = rig($, on, true)
@@ -3805,7 +4068,7 @@ for (const fullOk of [true, false]) {
       expect(before).not.toContain('TSK-129')
       // the fill button is live in gopher, and says what it does
       const tip = JSON.stringify(await ui.find({ key: 'tip-fill' }))
-      expect(tip).toContain('Expand every list (no limits)')
+      expect(tip).toContain('Fill: every list in full')
       await ui.press({ key: 'fill' })
       expect(state.runs.some(r => r.startsWith('mw news') && r.includes('--full'))).toBe(true)
       const t = await gopherText(ui)
@@ -3954,7 +4217,7 @@ test('settings: alerts.message and alerts.sound act separately; alerts.kinds dro
   await a.clock.advance(60_000)
   // no sound, but the message row is there
   expect(a.state.sounds).toEqual([])
-  expect(JSON.stringify(await ju.find({ key: 'alerts' }))).toContain('Milestone closed: C2')
+  expect(JSON.stringify(await ju.find({ key: 'alerts' }))).toContain('Milestone done: C2')
   await ju.unmount()
 })
 
@@ -3980,7 +4243,7 @@ test('settings: alerts.kinds without done drops the milestone and done alerts (n
   const ju = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
   state.round = 1
   await clock.advance(60_000)
-  expect(JSON.stringify(await ju.find({ key: 'alerts' }) ?? '')).not.toContain('Milestone closed')
+  expect(JSON.stringify(await ju.find({ key: 'alerts' }) ?? '')).not.toContain('Milestone done')
   await ju.unmount()
 })
 
@@ -4040,10 +4303,15 @@ test('settings: pure helpers', async () => {
   expect(cycleNext(['a', 'b'], 'zz')).toBe('a')
   expect(kindsToggle('all', ['a', 'b', 'c'], 'b')).toBe('a,c')
   expect(kindsToggle('a,c', ['a', 'b', 'c'], 'b')).toBe('all')
-  expect(alertKind({ type: 'needs', text: '[t] Review: x:Y-1 t', key: 'review|x:Y-1|s' })).toBe('review')
-  expect(alertKind({ type: 'new', text: '[t] Release 3 is out' })).toBe('release')
-  expect(alertKind({ type: 'milestone', text: '[t] Milestone closed: C2' })).toBe('done')
-  expect(alertKind({ type: 'new', text: '[t] New x:Y' })).toBe('')
+  expect(alertKind({ kind: 'review' })).toBe('review')
+  expect(alertKind({})).toBe('')
+  const sw = { kinds: new Set(['ask', 'blocked']), choices: ['ask', 'review', 'blocked', 'done'] }
+  expect(alertAllowed(sw, 'ask')).toBe(true)
+  expect(alertAllowed(sw, 'review')).toBe(false)
+  expect(alertAllowed(sw, 'new')).toBe(true) // mw does not list `new` yet: allowed
+  expect(alertAllowed({ kinds: null, choices: [] }, 'review')).toBe(true)
+  expect(kindsToggle('ask', ['ask', 'review'], 'ask')).toBe('none')
+  expect(kindsOf('none', ['ask', 'review'])).toEqual([])
 })
 
 test('settings: discover.home=false never scans ~', async ($, on) => {
@@ -4054,4 +4322,12 @@ test('settings: discover.home=false never scans ~', async ($, on) => {
   state.boardJobs = REAL_BOARD_JOBS
   await $.session.start({ cwd: '/work/x', surface: 'desktop', isInteractive: true })
   expect(state.runs.filter(r => r.startsWith('mw boards /home'))).toEqual([])
+})
+
+test('ids in text: existing item and wave ids are linked, wave labels map to a unique wave, unknown ids stay plain', () => {
+  const idx = buildIdIndex([{ tenant: 'a', id: 'TSK-057' }, { tenant: 'b', id: 'STR-6' }], [{ id: 'a:WAV-002', title: 'M4 Consolidation' }, { id: 'b:WAV-003', title: 'M5 Release' }, { id: 'b:WAV-004', title: 'M5 Again' }])
+  const parts = splitIds('See TSK-057 and S·STR-6, then WAV-002 (M4) or M5; TSK-999 is unknown', idx)
+  expect(parts.filter(p => p.ref).map(p => [p.text, p.ref!.kind, p.ref!.id])).toEqual([['TSK-057', 'item', 'TSK-057'], ['S·STR-6', 'item', 'STR-6'], ['WAV-002', 'wave', 'a:WAV-002'], ['M4', 'wave', 'a:WAV-002']])
+  expect(parts.map(p => p.text).join('')).toBe('See TSK-057 and S·STR-6, then WAV-002 (M4) or M5; TSK-999 is unknown')
+  expect(splitIds('nothing here', idx)).toEqual([{ text: 'nothing here' }])
 })

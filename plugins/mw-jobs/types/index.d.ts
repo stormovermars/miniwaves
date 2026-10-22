@@ -129,7 +129,7 @@ export type ModelBrief = {
 }
 export type MwJobsCfgKey = { key: string; value: string; default: string; source: string; group: string; choices: string[] }
 export type MwJobsSettings = { ok: boolean | null; keys: MwJobsCfgKey[]; hint: string; err: Record<string, string> }
-export type MwJobsAlertRow = { id: string; at: number; job: string; type: string; text: string }
+export type MwJobsAlertRow = { id: string; at: number; job: string; type: string; text: string; ref?: string; link?: { kind: 'item' | 'wave'; tenant: string; id: string } }
 export type MwJobsSnapshot = {
   waves: MwJobsWave[]
   items: MwJobsItem[]
