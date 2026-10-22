@@ -200,3 +200,67 @@ func TestJobsDescription(t *testing.T) {
 		t.Fatalf("omitempty: %s", b)
 	}
 }
+
+func TestJobsCeremoniesKeys(t *testing.T) {
+	path := jobsBoard(t)
+	runAll(t, []string{"jobs", "enable", "c1", "-t", "sheet"})
+	// a job without ceremonies prints as before; ready_min defaults to 3 once ceremonies are on
+	out := captureOutput(t, func() { runAll(t, []string{"jobs", "show", "c1", "-j"}) })
+	var v JobView
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Ceremonies) != 0 || v.ReadyMin != 0 || strings.Contains(out, "ceremonies") || strings.Contains(out, "ready_min") {
+		t.Fatalf("defaults: %s", out)
+	}
+	runAll(t, []string{"jobs", "set", "c1", "ceremonies=planning"})
+	out = captureOutput(t, func() { runAll(t, []string{"jobs", "show", "c1", "-j"}) })
+	v = JobView{}
+	_ = json.Unmarshal([]byte(out), &v)
+	if len(v.Ceremonies) != 1 || v.ReadyMin != 3 {
+		t.Fatalf("ceremonies on: %s", out)
+	}
+	// list is validated, de-duplicated and stored in canonical order
+	runAll(t, []string{"jobs", "set", "c1", "ceremonies=spike, review,review,triage", "ready_min=7"})
+	out = captureOutput(t, func() { runAll(t, []string{"jobs", "show", "c1", "-j"}) })
+	v = JobView{}
+	_ = json.Unmarshal([]byte(out), &v)
+	if strings.Join(v.Ceremonies, ",") != "review,triage,spike" || v.ReadyMin != 7 {
+		t.Fatalf("set: %s", out)
+	}
+	w, err := load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Jobs["c1"].Ceremonies != "review,triage,spike" || w.Jobs["c1"].ReadyMin != 7 {
+		t.Fatalf("stored: %+v", w.Jobs["c1"])
+	}
+	// unknown names and bad numbers are refused and store nothing
+	for _, kv := range []string{"ceremonies=review,standup", "ceremonies=Review", "ceremonies=release", "ready_min=0", "ready_min=21", "ready_min=x"} {
+		if err := run([]string{"jobs", "set", "c1", kv}); err == nil {
+			t.Errorf("%s: expected an error", kv)
+		}
+	}
+	if err := run([]string{"jobs", "set", "c1", "ceremonies=planning", "ready_min=99"}); err == nil {
+		t.Fatal("expected error")
+	}
+	w, _ = load(path)
+	if w.Jobs["c1"].Ceremonies != "review,triage,spike" {
+		t.Fatalf("partial write: %+v", w.Jobs["c1"])
+	}
+	// the boundaries and the reset
+	runAll(t, []string{"jobs", "set", "c1", "ready_min=1"})
+	runAll(t, []string{"jobs", "set", "c1", "ready_min=20"})
+	runAll(t, []string{"jobs", "set", "c1", "ceremonies=", "ready_min="})
+	w, _ = load(path)
+	if c := w.Jobs["c1"]; c.Ceremonies != "" || c.ReadyMin != 0 {
+		t.Fatalf("reset: %+v", c)
+	}
+	// text show works and the keys survive a round trip
+	runAll(t, []string{"jobs", "set", "c1", "ceremonies=planning"})
+	_ = captureOutput(t, func() { runAll(t, []string{"jobs", "show"}) })
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), `"ceremonies": "planning"`) && !strings.Contains(string(b), `"ceremonies":"planning"`) {
+		t.Fatalf("index: %s", b)
+	}
+}

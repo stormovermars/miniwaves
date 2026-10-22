@@ -37,6 +37,8 @@ type JobConfig struct {
 	Summary      string `json:"summary,omitempty"`
 	Pane         string `json:"pane,omitempty"`
 	PaneStyle    string `json:"pane_style,omitempty"`
+	Ceremonies   string `json:"ceremonies,omitempty"` // canonical comma list of ceremonyNames
+	ReadyMin     int    `json:"ready_min,omitempty"`
 
 	extra map[string]json.RawMessage // keys this mw does not know: kept, written back
 }
@@ -57,7 +59,7 @@ func (c *JobConfig) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	known := map[string]bool{}
-	for _, k := range []string{"title", "description", "max_workers", "worktrees", "lock", "news_out", "news_url", "news_releases", "tracker", "tracker_url", "metrics", "summary", "pane", "pane_style"} {
+	for _, k := range []string{"title", "description", "max_workers", "worktrees", "lock", "news_out", "news_url", "news_releases", "tracker", "tracker_url", "metrics", "summary", "pane", "pane_style", "ceremonies", "ready_min"} {
 		known[k] = true
 	}
 	for old, nw := range jobDotted {
@@ -125,9 +127,11 @@ type JobView struct {
 	Summary      string   `json:"summary" toon:"summary"`
 	Pane         string   `json:"pane" toon:"pane"`
 	PaneStyle    string   `json:"pane_style" toon:"pane_style"`
+	Ceremonies   []string `json:"ceremonies,omitempty" toon:"ceremonies,omitempty"`
+	ReadyMin     int      `json:"ready_min,omitempty" toon:"ready_min,omitempty"`
 }
 
-var jobKeys = []string{"title", "description", "max_workers", "worktrees", "lock", "news.out", "news.url", "news_releases", "metrics", "tracker", "tracker_url", "summary", "pane", "pane.style"}
+var jobKeys = []string{"title", "description", "max_workers", "worktrees", "lock", "news.out", "news.url", "news_releases", "metrics", "tracker", "tracker_url", "summary", "pane", "pane.style", "ceremonies", "ready_min"}
 
 // jobView applies the defaults.
 func jobView(w *Workspace, id string) JobView {
@@ -152,12 +156,60 @@ func jobView(w *Workspace, id string) JobView {
 	if v.Pane == "" {
 		v.Pane = "on"
 	}
+	// Shown only when a job uses them, so a job without ceremonies prints exactly as before.
+	if cl := ceremonyList(c.Ceremonies); len(cl) > 0 {
+		v.Ceremonies = cl
+	}
+	if v.ReadyMin = c.ReadyMin; v.ReadyMin == 0 && len(v.Ceremonies) > 0 {
+		v.ReadyMin = defaultReadyMin
+	}
 	for _, t := range w.Tenants {
 		if t.Job == id {
 			v.Tenants = append(v.Tenants, t.Slug)
 		}
 	}
 	return v
+}
+
+// ceremonyNames are the ceremonies a job can activate (docs/specs/ceremonies.md), in canonical order.
+var ceremonyNames = []string{"review", "planning", "triage", "spike"}
+
+const defaultReadyMin = 3
+
+// ceremonyList splits a stored canonical list; never nil, so JSON shows [].
+func ceremonyList(s string) []string {
+	out := []string{}
+	for _, n := range strings.Split(s, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// normalizeCeremonies validates a comma list, drops duplicates and returns the canonical order.
+func normalizeCeremonies(val string) (string, error) {
+	want := map[string]bool{}
+	for _, n := range strings.Split(val, ",") {
+		if n = strings.TrimSpace(n); n == "" {
+			continue
+		}
+		ok := false
+		for _, k := range ceremonyNames {
+			ok = ok || k == n
+		}
+		if !ok {
+			return "", fmt.Errorf("ceremonies: unknown ceremony %q (known: %s)", n, strings.Join(ceremonyNames, ", "))
+		}
+		want[n] = true
+	}
+	var out []string
+	for _, k := range ceremonyNames {
+		if want[k] {
+			out = append(out, k)
+		}
+	}
+	return strings.Join(out, ","), nil
 }
 
 func noControl(s string) bool {
@@ -282,6 +334,22 @@ func setJobKey(c *JobConfig, key, val string) error {
 			val = u
 		}
 		c.TrackerURL = val
+	case "ceremonies":
+		n, err := normalizeCeremonies(val)
+		if err != nil {
+			return err
+		}
+		c.Ceremonies = n
+	case "ready_min":
+		if val == "" {
+			c.ReadyMin = 0
+			return nil
+		}
+		n, err := strconv.Atoi(val)
+		if err != nil || n < 1 || n > 20 {
+			return fmt.Errorf("ready_min: %q is not a number from 1 to 20", val)
+		}
+		c.ReadyMin = n
 	case "pane.style":
 		if val != "" && !paneStylePattern.MatchString(val) {
 			return fmt.Errorf("pane.style: %q must match ^[a-z0-9-]{1,32}$", val)
