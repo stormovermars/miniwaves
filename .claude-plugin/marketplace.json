@@ -7,6 +7,13 @@
       "name": "mw",
       "source": "./plugins/mw",
       "description": "Work from the miniwaves board: claim the next ready item, finish it with evidence, block with a reason."
+    },
+    {
+      "name": "tidewatch",
+      "source": "./plugins/tidewatch",
+      "description": "Opt-in live pane for mw boards: status line, alerts, news and user-defined styles.",
+      "version": "0.1.0",
+      "author": { "name": "stormovermars" }
     }
   ]
 }

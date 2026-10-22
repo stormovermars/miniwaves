@@ -1,0 +1,9 @@
+{
+  "name": "tidewatch",
+  "version": "0.1.0",
+  "description": "Live pane for miniwaves (mw) boards: status line, toasts, sound and notifications, with user-defined styles.",
+  "author": { "name": "stormovermars" },
+  "homepage": "https://github.com/stormovermars/miniwaves",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
