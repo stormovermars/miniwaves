@@ -598,31 +598,116 @@ func TestStopControlCommand(t *testing.T) {
 	t.Setenv("MW_FANFARE_STOP_CONTROL", "")
 	none := func(string) (string, error) { return "", errors.New("no") }
 	has := func(string) (string, error) { return "/x", nil }
-	n, a, ok := stopControlCommand("darwin", 4242, 60, none)
-	s := strings.Join(a, " ")
-	if !ok || n != "sh" || !strings.Contains(s, "osascript") || !strings.Contains(s, "giving up after 62") || !strings.Contains(s, "kill -TERM -4242") || !strings.Contains(s, "button returned:Stop") {
+	onlyK := func(n string) (string, error) {
+		if n == "kdialog" {
+			return "/k", nil
+		}
+		return "", errors.New("no")
+	}
+	evil := `Tenant "x'"$(touch x)` + "`;" + ` finished`
+	script := func(a []string) string { return a[1] }
+	n, a, env, ok := stopControlCommand("darwin", 4242, 60, evil, none)
+	s := script(a)
+	if !ok || n != "sh" || len(env) != 0 || !strings.Contains(s, "osascript") || !strings.Contains(s, "item 2 of argv as integer") || !strings.Contains(s, `kill -TERM -"$2"`) || !strings.Contains(s, "button returned:Stop") {
 		t.Fatalf("darwin: %s %v", n, a)
 	}
-	n, a, ok = stopControlCommand("windows", 77, 60, none)
-	s = strings.Join(a, " ")
-	if !ok || n != "powershell" || !strings.Contains(s, "Popup('Celebration playing - click OK to stop',62,") || !strings.Contains(s, "taskkill /PID 77 /T /F") {
+	if a[0] != "-c" || a[2] != "sh" || a[3] != evil || a[4] != "4242" || a[5] != "62" || strings.Contains(s, "touch") || strings.Contains(s, "4242") {
+		t.Fatalf("darwin argv: %q", a)
+	}
+	n, a, env, ok = stopControlCommand("windows", 77, 60, evil, none)
+	s = a[2]
+	if !ok || n != "powershell" || !strings.Contains(s, "$env:MW_FANFARE_MSG") || !strings.Contains(s, ",62,") || !strings.Contains(s, "taskkill /PID 77 /T /F") || strings.Contains(s, "touch") || strings.Contains(strings.Join(a, " "), "touch") {
 		t.Fatalf("windows: %s %v", n, a)
 	}
-	n, a, ok = stopControlCommand("linux", 9, 10, has)
-	s = strings.Join(a, " ")
-	if !ok || n != "sh" || !strings.Contains(s, "zenity") || !strings.Contains(s, "--timeout=12") || !strings.Contains(s, "kill -TERM -9") {
-		t.Fatalf("linux: %s %v", n, a)
+	if len(env) != 1 || env[0] != "MW_FANFARE_MSG="+evil {
+		t.Fatalf("windows env: %q", env)
 	}
-	if _, _, ok = stopControlCommand("linux", 9, 10, none); ok {
-		t.Fatal("linux without zenity must have no control")
+	n, a, env, ok = stopControlCommand("linux", 9, 10, evil, has)
+	s = script(a)
+	if !ok || n != "sh" || len(env) != 0 || !strings.Contains(s, "zenity") || !strings.Contains(s, "--no-markup") || !strings.Contains(s, `--text="$1"`) || !strings.Contains(s, `kill -TERM -"$2"`) || strings.Contains(s, "touch") || a[3] != evil || a[4] != "9" || a[5] != "12" {
+		t.Fatalf("linux zenity: %s %q", n, a)
+	}
+	n, a, _, ok = stopControlCommand("linux", 9, 10, "", onlyK)
+	s = script(a)
+	if !ok || n != "sh" || strings.Contains(s, "zenity") || !strings.Contains(s, "kdialog") || !strings.Contains(s, `--msgbox "$1"`) || !strings.Contains(s, `sleep "$3"`) || !strings.Contains(s, `kill -TERM -"$2"`) || a[3] != "" {
+		t.Fatalf("linux kdialog: %s %q", n, a)
+	}
+	_, a, _, _ = stopControlCommand("linux", 9, 10, evil, onlyK)
+	if s = script(a); strings.Contains(s, "touch") || a[3] != evil || a[4] != "9" || a[5] != "12" {
+		t.Fatalf("kdialog argv: %q", a)
+	}
+	if _, _, _, ok = stopControlCommand("linux", 9, 10, "m", none); ok {
+		t.Fatal("linux with neither zenity nor kdialog must have no control")
 	}
 	t.Setenv("MW_FANFARE_PLAYER", "/stub")
-	if _, _, ok = stopControlCommand("darwin", 1, 5, none); ok {
+	if _, _, _, ok = stopControlCommand("darwin", 1, 5, "m", none); ok {
 		t.Fatal("player stub must disable the control")
 	}
 	t.Setenv("MW_FANFARE_STOP_CONTROL", "/ctl")
-	if n, a, ok = stopControlCommand("darwin", 1, 5, none); !ok || n != "/ctl" || len(a) != 2 || a[0] != "1" || a[1] != "5" {
+	if n, a, _, ok = stopControlCommand("darwin", 1, 5, "hello", none); !ok || n != "/ctl" || len(a) != 3 || a[0] != "1" || a[1] != "5" || a[2] != "hello" {
 		t.Fatalf("stub: %s %v", n, a)
+	}
+}
+
+func TestFinaleReasonAndSong(t *testing.T) {
+	tn := &Tenant{Slug: "infotool", Name: "infotool", Items: []Item{{Status: "done"}, {Status: "done"}, {Status: "cut"}}}
+	if got := finaleReason(tn); got != "Tenant \"infotool\" finished \u2014 2 items done" {
+		t.Fatal(got)
+	}
+	tn = &Tenant{Slug: "a", Name: "Alpha", Items: []Item{{Status: "done"}}}
+	if got := finaleReason(tn); got != "Tenant \"a\" (Alpha) finished \u2014 1 item done" {
+		t.Fatal(got)
+	}
+	d := t.TempDir()
+	os.MkdirAll(filepath.Join(d, "p1"), 0o755)
+	os.MkdirAll(filepath.Join(d, "p2"), 0o755)
+	f1, f2 := filepath.Join(d, "p1", "finale.mp3"), filepath.Join(d, "p2", "finale.ogg")
+	if got := finaleSong(d, f2); got != "finale (p2)" {
+		t.Fatal(got)
+	}
+	m := fanfareManifest{Pairs: []manifestPair{{Name: "p1", Tracks: []manifestTrack{{Kind: "finale", File: "finale.mp3", Title: "Pomp and Circumstance No. 1", Attribution: "US Marine Band"}}}}}
+	b, _ := json.Marshal(m)
+	os.WriteFile(filepath.Join(d, manifestName), b, 0o644)
+	if got := finaleSong(d, f1); got != "Pomp and Circumstance No. 1 \u2014 US Marine Band" {
+		t.Fatal(got)
+	}
+	m.Pairs[0].Tracks[0].Attribution = strings.Repeat("long ", 20)
+	b, _ = json.Marshal(m)
+	os.WriteFile(filepath.Join(d, manifestName), b, 0o644)
+	if got := finaleSong(d, f1); got != "Pomp and Circumstance No. 1" {
+		t.Fatal(got)
+	}
+	msg := finaleMessage(finaleTestReason, "Song X", 60)
+	if msg != "Test (mw fanfare test)\nSong: Song X\nPlaying 60 s" {
+		t.Fatal(msg)
+	}
+}
+
+func TestFinaleStubReceivesMessage(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh stub")
+	}
+	d := t.TempDir()
+	out := filepath.Join(d, "args.txt")
+	stub := filepath.Join(d, "ctl.sh")
+	os.WriteFile(stub, []byte("#!/bin/sh\nprintf '%s|%s|%s' \"$1\" \"$2\" \"$3\" > "+out+"\n"), 0o755)
+	slow := filepath.Join(d, "slow.sh")
+	os.WriteFile(slow, []byte("#!/bin/sh\nsleep 30\n"), 0o755)
+	t.Setenv("MW_FANFARE_PLAYER", slow)
+	t.Setenv("MW_FANFARE_STOP_CONTROL", stub)
+	dir := filepath.Join(d, "songs")
+	os.MkdirAll(filepath.Join(dir, "pp"), 0o755)
+	if err := playFinale(dir, filepath.Join(dir, "pp", "finale.mp3"), 5, 1, true, finaleTestReason); err != nil {
+		t.Fatal(err)
+	}
+	defer stopPlayers(dir)
+	var got []byte
+	for i := 0; i < 60 && len(got) == 0; i++ {
+		time.Sleep(50 * time.Millisecond)
+		got, _ = os.ReadFile(out)
+	}
+	if !strings.HasSuffix(string(got), "|5|Test (mw fanfare test)\nSong: finale (pp)\nPlaying 5 s") {
+		t.Fatalf("stub got %q", got)
 	}
 }
 
@@ -637,7 +722,7 @@ func TestFinaleStopControlLaunchedAndRecorded(t *testing.T) {
 	t.Setenv("MW_FANFARE_STOP_CONTROL", slow)
 	dir := filepath.Join(d, "songs")
 	os.MkdirAll(dir, 0o755)
-	if err := playFinale(dir, "/x/f.mp3", 5, 1, true); err != nil {
+	if err := playFinale(dir, "/x/f.mp3", 5, 1, true, "r"); err != nil {
 		t.Fatal(err)
 	}
 	if rs := readPlayers(dir); len(rs) != 2 {
@@ -662,7 +747,7 @@ func TestFinaleStopControlLaunchedAndRecorded(t *testing.T) {
 	if err := playFile(dir, "/x/f.mp3", 5, 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := playFinale(dir, "/x/f.mp3", 5, 1, false); err != nil {
+	if err := playFinale(dir, "/x/f.mp3", 5, 1, false, "r"); err != nil {
 		t.Fatal(err)
 	}
 	if rs := readPlayers(dir); len(rs) != 2 {
