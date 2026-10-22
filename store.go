@@ -39,20 +39,22 @@ type indexTenant struct {
 	Path     string   `json:"path,omitempty"`
 	Archived bool     `json:"archived,omitempty"`
 	Tags     []string `json:"tags,omitempty"`
+	Job      string   `json:"job,omitempty"`
 }
 
 // indexDoc is the schema 8 .miniwaves.json.
 type indexDoc struct {
-	Version  int               `json:"version"`
-	Name     string            `json:"name"`
-	Defaults map[string]string `json:"folder_defaults,omitempty"`
-	Tenants  []indexTenant     `json:"tenants"`
-	Protocol []string          `json:"protocol,omitempty"`
-	Folders  map[string]string `json:"folders,omitempty"`
-	Gates    map[string]string `json:"gates,omitempty"`
-	GateBy   string            `json:"gate_by,omitempty"`
-	Publish  *PublishConfig    `json:"publish,omitempty"`
-	Fanfare  *FanfareConfig    `json:"fanfare,omitempty"`
+	Version  int                  `json:"version"`
+	Name     string               `json:"name"`
+	Defaults map[string]string    `json:"folder_defaults,omitempty"`
+	Tenants  []indexTenant        `json:"tenants"`
+	Protocol []string             `json:"protocol,omitempty"`
+	Folders  map[string]string    `json:"folders,omitempty"`
+	Gates    map[string]string    `json:"gates,omitempty"`
+	GateBy   string               `json:"gate_by,omitempty"`
+	Publish  *PublishConfig       `json:"publish,omitempty"`
+	Fanfare  *FanfareConfig       `json:"fanfare,omitempty"`
+	Jobs     map[string]JobConfig `json:"jobs,omitempty"`
 }
 
 // tenantDoc is .miniwaves/<slug>.json.
@@ -104,7 +106,7 @@ func loadScoped(path string, all bool, slugs ...string) (*Workspace, error) {
 		return nil, fmt.Errorf("%s is schema %d and this mw only reads schema %d: run mw migrate (see MIGRATION.md)", path, ix.Version, currentSchema)
 	}
 	w := &Workspace{Version: ix.Version, Name: ix.Name, Defaults: ix.Defaults, Protocol: ix.Protocol, Folders: ix.Folders,
-		Gates: ix.Gates, GateBy: ix.GateBy, Publish: ix.Publish, Fanfare: ix.Fanfare, Sessions: []Session{}, base: map[string]string{}}
+		Gates: ix.Gates, GateBy: ix.GateBy, Publish: ix.Publish, Fanfare: ix.Fanfare, Jobs: ix.Jobs, Sessions: []Session{}, base: map[string]string{}}
 	if w.Defaults == nil {
 		w.Defaults = map[string]string{}
 	}
@@ -113,7 +115,7 @@ func loadScoped(path string, all bool, slugs ...string) (*Workspace, error) {
 		want[s] = true
 	}
 	for _, it := range ix.Tenants {
-		t := Tenant{Slug: it.Slug, Name: it.Name, Path: it.Path, Hidden: it.Archived, Tags: it.Tags, Next: map[string]int{}, Items: []Item{}}
+		t := Tenant{Slug: it.Slug, Name: it.Name, Path: it.Path, Hidden: it.Archived, Tags: it.Tags, Job: it.Job, Next: map[string]int{}, Items: []Item{}}
 		if all || want[it.Slug] {
 			tb, err := readFileShared(tenantPath(path, it.Slug))
 			if err != nil && !os.IsNotExist(err) {
@@ -151,11 +153,14 @@ func (t *Tenant) applyDoc(td tenantDoc) {
 
 func indexBytes(w *Workspace) []byte {
 	ix := indexDoc{Version: w.Version, Name: w.Name, Defaults: w.Defaults, Protocol: w.Protocol, Folders: w.Folders, Gates: w.Gates, GateBy: w.GateBy, Publish: w.Publish, Fanfare: w.Fanfare}
+	if len(w.Jobs) > 0 {
+		ix.Jobs = w.Jobs
+	}
 	if len(ix.Defaults) == 0 {
 		ix.Defaults = nil
 	}
 	for _, t := range w.Tenants {
-		ix.Tenants = append(ix.Tenants, indexTenant{t.Slug, t.Name, t.Path, t.Hidden, t.Tags})
+		ix.Tenants = append(ix.Tenants, indexTenant{t.Slug, t.Name, t.Path, t.Hidden, t.Tags, t.Job})
 	}
 	b, _ := json.Marshal(ix)
 	return append(b, '\n')
@@ -363,7 +368,7 @@ func scopeOf(w *Workspace, args []string) scope {
 	single := false
 	idx := false
 	switch args[0] {
-	case "add", "ready", "start", "block", "done", "reopen", "show", "edit", "next", "accept", "reject", "wave", "review", "judge", "log", "list", "ls", "board", "context":
+	case "add", "ready", "start", "block", "done", "reopen", "show", "edit", "ask", "answer", "decide", "next", "accept", "reject", "wave", "review", "judge", "log", "list", "ls", "board", "context":
 		single = true
 	case "archive":
 		single = o["tenant"] != ""
@@ -374,7 +379,7 @@ func scopeOf(w *Workspace, args []string) scope {
 		single = hasT
 	case "get-prompt":
 		single = sub == "session"
-	case "tenant", "dirs", "fanfare":
+	case "tenant", "dirs", "fanfare", "jobs":
 		idx = true
 	}
 	if !single {

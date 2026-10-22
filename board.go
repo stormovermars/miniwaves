@@ -79,6 +79,7 @@ type Tenant struct {
 	GateLatch       map[string]string `json:"gate_latch,omitempty"`        // name: reason; auto stays on once latched
 	AcceptStreak    int               `json:"accept_streak,omitempty"`
 	Archived        int               `json:"archived,omitempty"` // done items moved to .miniwaves/<slug>.archive.json (mw archive)
+	Job             string            `json:"job,omitempty"`      // coordinated job id (mw jobs enable); stored in the index
 	Hidden          bool              `json:"-"`                  // mw tenant archive (stored in the index as "archived")
 	Tags            []string          `json:"-"`                  // mw tenant tag (stored in the index)
 	loaded          bool
@@ -94,18 +95,19 @@ type Session struct {
 }
 
 type Workspace struct {
-	showArchived bool              // mw board --html --archived: archived tenants on the page, greyed
-	Version      int               `json:"version"`
-	Name         string            `json:"name"`
-	Defaults     map[string]string `json:"folder_defaults,omitempty"`
-	Tenants      []Tenant          `json:"tenants"`
-	Sessions     []Session         `json:"sessions"`
-	Protocol     []string          `json:"protocol,omitempty"`
-	Folders      map[string]string `json:"folders,omitempty"`
-	Gates        map[string]string `json:"gates,omitempty"`   // workspace default per gate; absent = auto
-	GateBy       string            `json:"gate_by,omitempty"` // "NAME RFC3339" of the last workspace default change
-	Publish      *PublishConfig    `json:"publish,omitempty"`
-	Fanfare      *FanfareConfig    `json:"fanfare,omitempty"`
+	showArchived bool                 // mw board --html --archived: archived tenants on the page, greyed
+	Version      int                  `json:"version"`
+	Name         string               `json:"name"`
+	Defaults     map[string]string    `json:"folder_defaults,omitempty"`
+	Tenants      []Tenant             `json:"tenants"`
+	Sessions     []Session            `json:"sessions"`
+	Protocol     []string             `json:"protocol,omitempty"`
+	Folders      map[string]string    `json:"folders,omitempty"`
+	Gates        map[string]string    `json:"gates,omitempty"`   // workspace default per gate; absent = auto
+	GateBy       string               `json:"gate_by,omitempty"` // "NAME RFC3339" of the last workspace default change
+	Publish      *PublishConfig       `json:"publish,omitempty"`
+	Fanfare      *FanfareConfig       `json:"fanfare,omitempty"`
+	Jobs         map[string]JobConfig `json:"jobs,omitempty"` // coordinated jobs: config by job id (mw jobs)
 
 	base      map[string]string // sha of each loaded tenant file as read (save writes only what changed)
 	indexBase string

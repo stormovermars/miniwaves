@@ -23,6 +23,7 @@ func inTempDir(t *testing.T) string {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("MW_USER_CONFIG", filepath.Join(home, "mw-user.json")) // never read the developer's real per-user file
 	if err := os.Chdir(d); err != nil {
 		t.Fatal(err)
 	}
@@ -1066,7 +1067,7 @@ func TestBoardWithoutActiveTenantField(t *testing.T) { // F11
 }
 
 func TestVersion051(t *testing.T) {
-	if version != "0.2.7" || currentSchema != 8 {
+	if version != "0.2.9" || currentSchema != 8 {
 		t.Fatal(version, currentSchema)
 	}
 }
