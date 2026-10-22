@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Per-user config (mw-user.json): personal choices that never ride along with the committed board.
@@ -169,6 +170,28 @@ func writeUserConfig(c UserConfig, p string) error {
 	return writeFileAtomic(p, append(b, '\n'))
 }
 
+// updateUserConfig is the locked read-modify-write of mw-user.json: it takes <file>.lock, re-reads the
+// file, runs fn and writes the result when fn reports a change. Concurrent mw processes never lose an update.
+func updateUserConfig(p string, fn func(c *UserConfig) (bool, error)) error {
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return err
+	}
+	unlock, err := lockFile(p+".lock", time.Now().Add(lockWait))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	c, _, _, err := readUserConfig()
+	if err != nil {
+		return err
+	}
+	changed, err := fn(&c)
+	if err != nil || !changed {
+		return err
+	}
+	return writeUserConfig(c, p)
+}
+
 // userView is the -j form of mw user show.
 type userView struct {
 	Path           string   `json:"path"`
@@ -242,23 +265,21 @@ func userCommand(args []string) error {
 			return nil
 		}
 		changed := false
-		if c.Fanfare.Enabled == nil {
-			t := true
-			c.Fanfare.Enabled, changed = &t, true
-		}
-		if c.Fanfare.Use == "" {
-			c.Fanfare.Use, changed = "all", true
+		if err := updateUserConfig(p, func(c *UserConfig) (bool, error) {
+			if c.Fanfare.Enabled == nil {
+				t := true
+				c.Fanfare.Enabled, changed = &t, true
+			}
+			if c.Fanfare.Use == "" {
+				c.Fanfare.Use, changed = "all", true
+			}
+			return changed, nil
+		}); err != nil {
+			return err
 		}
 		if !changed {
 			fmt.Println("fanfare defaults: already set")
 			return nil
-		}
-		b, _ := json.MarshalIndent(c, "", "  ")
-		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-			return err
-		}
-		if err := writeFileAtomic(p, append(b, '\n')); err != nil {
-			return err
 		}
 		fmt.Println("fanfare defaults: on, set all")
 		return nil
@@ -267,15 +288,19 @@ func userCommand(args []string) error {
 			return errors.New("usage: mw user set KEY=VALUE...")
 		}
 		for _, kv := range pos {
-			k, v, ok := strings.Cut(kv, "=")
-			if !ok {
+			if _, _, ok := strings.Cut(kv, "="); !ok {
 				return fmt.Errorf("%q is not KEY=VALUE", kv)
 			}
-			if err := setUserKey(&c, strings.TrimSpace(k), v); err != nil {
-				return err
-			}
 		}
-		if err := writeUserConfig(c, p); err != nil {
+		if err := updateUserConfig(p, func(c *UserConfig) (bool, error) {
+			for _, kv := range pos {
+				k, v, _ := strings.Cut(kv, "=")
+				if err := setUserKey(c, strings.TrimSpace(k), v); err != nil {
+					return false, err
+				}
+			}
+			return true, nil
+		}); err != nil {
 			return err
 		}
 		fmt.Println("saved", p)
@@ -291,15 +316,19 @@ func userCommand(args []string) error {
 				return fmt.Errorf("unknown user key %q (keys: %s)", key, strings.Join(userKeyNames(), ", "))
 			}
 		}
-		return printUserSettings(c, key, o["json"] == "true")
+		return printUserSettings(c, key, o["json"] == "true", boardWorkspace())
 	}
 	return errors.New(use)
 }
 
 var userConfigWarned bool
 
+// boardFanfareOff: a board that carries a fanfare block with enabled=false decides, and stays off whatever
+// the user layer says. A board with no fanfare setting, or enabled=true, may be switched by the user.
+func boardFanfareOff(w *Workspace) bool { return w != nil && w.Fanfare != nil && !w.Fanfare.Enabled }
+
 // fanfareEffective is the board's fanfare config with the per-user fanfare.enabled applied on top
-// (the user's choice wins over the committed board). A broken user file is ignored with one stderr note.
+// (the user's choice wins unless the board is explicitly off). A broken user file is ignored with one stderr note.
 func fanfareEffective(w *Workspace) FanfareConfig {
 	c, _ := fanfareEffectiveSrc(w)
 	return c
@@ -317,7 +346,7 @@ func fanfareEffectiveSrc(w *Workspace) (FanfareConfig, map[string]string) {
 		}
 		return c, src
 	}
-	if u.Fanfare.Enabled != nil {
+	if u.Fanfare.Enabled != nil && !boardFanfareOff(w) {
 		c.Enabled, src["enabled"] = *u.Fanfare.Enabled, "user"
 	}
 	if u.Fanfare.Use != "" {

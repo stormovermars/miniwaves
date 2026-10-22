@@ -41,23 +41,25 @@ func configureCommand(args []string) error {
 		return err
 	}
 	if show || asJSON {
-		return printUserSettings(c, "", asJSON)
+		return printUserSettings(c, "", asJSON, nil)
 	}
 	if len(sets) > 0 {
-		for _, kv := range sets {
-			k, v, _ := strings.Cut(kv, "=")
-			if err := setUserKey(&c, strings.TrimSpace(k), v); err != nil {
-				return err
+		if err := updateUserConfig(p, func(c *UserConfig) (bool, error) {
+			for _, kv := range sets {
+				k, v, _ := strings.Cut(kv, "=")
+				if err := setUserKey(c, strings.TrimSpace(k), v); err != nil {
+					return false, err
+				}
 			}
-		}
-		if err := writeUserConfig(c, p); err != nil {
+			return true, nil
+		}); err != nil {
 			return err
 		}
 		fmt.Println("saved", p)
 		return nil
 	}
 	if !stdinIsTerminal() {
-		if err := printUserSettings(c, "", false); err != nil {
+		if err := printUserSettings(c, "", false, nil); err != nil {
 			return err
 		}
 		fmt.Println(configureHint)
@@ -168,7 +170,7 @@ func configureInteractive(orig UserConfig, p string, in *bufio.Reader, out io.Wr
 		}
 		switch strings.ToLower(ans) {
 		case "s", "save", "y", "yes":
-			if err := writeUserConfig(nc, p); err != nil {
+			if err := saveConfigureDiff(orig, nc, p); err != nil {
 				return err
 			}
 			fmt.Fprintln(out, "saved", p)
@@ -201,4 +203,27 @@ func testPlayFanfare(c UserConfig, out io.Writer) {
 		return
 	}
 	fmt.Fprintf(out, "  playing %s (%ds): %s\n", pr.Name, cfg.MilestoneSeconds, pr.Fanfare)
+}
+
+// saveConfigureDiff applies only the keys the session changed (orig to nc) onto the file as it is now,
+// under the lock, so a set made elsewhere meanwhile survives.
+func saveConfigureDiff(orig, nc UserConfig, p string) error {
+	return updateUserConfig(p, func(c *UserConfig) (bool, error) {
+		for i := range userKeys {
+			k := &userKeys[i]
+			ov, oldSrc := userValue(orig, k)
+			nv, ns := userValue(nc, k)
+			if ov == nv && oldSrc == ns {
+				continue
+			}
+			val := nv
+			if ns != "user" {
+				val = ""
+			}
+			if err := setUserKey(c, k.Name, val); err != nil {
+				return false, err
+			}
+		}
+		return true, nil
+	})
 }

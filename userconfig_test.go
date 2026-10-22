@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func userCfgPath(t *testing.T) string {
@@ -170,23 +172,27 @@ func TestUserFanfareOverridesBoard(t *testing.T) {
 	// board off, no user choice: silence
 	runAll(t, []string{"fanfare", "set", "dir=" + dir}, []string{"start", "TSK-001"}, []string{"done", "TSK-001", "ok"})
 	plays(t, log, 0)
-	// board off, user on: the user wins
+	// board off (an explicit enabled=false), user on: the board's off wins
 	runAll(t, []string{"user", "set", "fanfare.enabled=true"}, []string{"done", "TSK-002", "ok"})
-	// TSK-003/4 are still open: no finale, no wave close, so finish the rest to trigger the finale
 	runAll(t, []string{"done", "TSK-003", "ok"}, []string{"done", "TSK-004", "ok"})
+	plays(t, log, 0)
+	runAll(t, []string{"fanfare", "set", "enabled=true"})
+	// board on, user on: plays (the finale was stamped off, so use a fresh item)
+	runAll(t, []string{"add", "task", "E0", "--status", "ready"}, []string{"done", "TSK-005", "ok"})
 	if l := plays(t, log, 1); !strings.Contains(l[0], "finale") {
-		t.Fatalf("user on over board off: %v", l)
+		t.Fatalf("board on, user on: %v", l)
 	}
+	runAll(t, []string{"fanfare", "set", "enabled=false"})
 	// board on, user off: silence again
 	runAll(t, []string{"fanfare", "set", "enabled=true"}, []string{"user", "set", "fanfare.enabled=false"},
-		[]string{"add", "task", "E", "--status", "ready"}, []string{"done", "TSK-005", "ok"})
+		[]string{"add", "task", "E", "--status", "ready"}, []string{"done", "TSK-006", "ok"})
 	plays(t, log, 1)
 	// board on, user unset: the board decides
-	runAll(t, []string{"user", "set", "fanfare.enabled="}, []string{"add", "task", "F", "--status", "ready"}, []string{"done", "TSK-006", "ok"})
+	runAll(t, []string{"user", "set", "fanfare.enabled="}, []string{"add", "task", "F", "--status", "ready"}, []string{"done", "TSK-007", "ok"})
 	plays(t, log, 2)
 	// a broken user file never fails a command and falls back to the board
 	_ = os.WriteFile(os.Getenv("MW_USER_CONFIG"), []byte("{broken"), 0o600)
-	runAll(t, []string{"add", "task", "G", "--status", "ready"}, []string{"done", "TSK-007", "ok"})
+	runAll(t, []string{"add", "task", "G", "--status", "ready"}, []string{"done", "TSK-008", "ok"})
 	plays(t, log, 3)
 }
 
@@ -352,5 +358,120 @@ func TestUserGetJSONSource(t *testing.T) {
 	wantErr(t, "unknown user key", "user", "get", "nope")
 	if txt := captureOutput(t, func() { runAll(t, []string{"user", "get", "pane.fit"}) }); strings.TrimSpace(txt) != "pane.fit  fill  (user)" {
 		t.Fatalf("%q", txt)
+	}
+}
+
+func getKey(t *testing.T, key string) userGetKey {
+	t.Helper()
+	var v struct {
+		Keys []userGetKey `json:"keys"`
+	}
+	o := captureOutput(t, func() { runAll(t, []string{"user", "get", key, "-j"}) })
+	if err := json.Unmarshal([]byte(o), &v); err != nil || len(v.Keys) != 1 {
+		t.Fatalf("%v: %s", err, o)
+	}
+	return v.Keys[0]
+}
+
+func TestUserGetFanfareSourceBoardOffWins(t *testing.T) {
+	inTempDir(t)
+	t.Setenv("MW_USER_CONFIG", filepath.Join(t.TempDir(), "mw-user.json"))
+	// no board: default, then user
+	if k := getKey(t, "fanfare.enabled"); k.Source != "default" || k.Value != "false" {
+		t.Fatalf("no board, no user: %+v", k)
+	}
+	runAll(t, []string{"user", "set", "fanfare.enabled=true"})
+	if k := getKey(t, "fanfare.enabled"); k.Source != "user" || k.Value != "true" {
+		t.Fatalf("no board, user on: %+v", k)
+	}
+	// board with no fanfare setting + user true: on, source user
+	runAll(t, []string{"init", "Ws"})
+	if k := getKey(t, "fanfare.enabled"); k.Source != "user" || k.Value != "true" {
+		t.Fatalf("board unset, user on: %+v", k)
+	}
+	w := boardWorkspace()
+	if c, src := fanfareEffectiveSrc(w); !c.Enabled || src["enabled"] != "user" {
+		t.Fatalf("board unset effective: %v %v", c.Enabled, src)
+	}
+	// board false + user true: off, source board
+	runAll(t, []string{"fanfare", "set", "enabled=false"})
+	if k := getKey(t, "fanfare.enabled"); k.Source != "board" || k.Value != "false" {
+		t.Fatalf("board off, user on: %+v", k)
+	}
+	if c, src := fanfareEffectiveSrc(boardWorkspace()); c.Enabled || src["enabled"] != "board" {
+		t.Fatalf("board off effective: %v %v", c.Enabled, src)
+	}
+	// board true + user true: on
+	runAll(t, []string{"fanfare", "set", "enabled=true"})
+	if c, _ := fanfareEffectiveSrc(boardWorkspace()); !c.Enabled {
+		t.Fatal("board on, user on must be on")
+	}
+}
+
+func TestUserAlertKindsNoneAndNew(t *testing.T) {
+	userCfgPath(t)
+	runAll(t, []string{"user", "set", "alerts.kinds=none"})
+	if k := getKey(t, "alerts.kinds"); k.Value != "" || k.Source != "user" {
+		t.Fatalf("none: %+v", k)
+	}
+	runAll(t, []string{"user", "set", "alerts.kinds=new,done"})
+	if k := getKey(t, "alerts.kinds"); k.Value != "done,new" {
+		t.Fatalf("new,done: %+v", k)
+	}
+	runAll(t, []string{"user", "set", "alerts.kinds=all"})
+	if k := getKey(t, "alerts.kinds"); !strings.Contains(","+k.Value+",", ",new,") {
+		t.Fatalf("all lacks new: %+v", k)
+	}
+	if k := userKeyByName("alerts.kinds"); !strings.Contains(k.Default, "new") || !strings.Contains(k.allowed(), "none") {
+		t.Fatalf("default %q allowed %q", k.Default, k.allowed())
+	}
+}
+
+func TestUserConfigConcurrentSetsLoseNothing(t *testing.T) {
+	p := userCfgPath(t)
+	sets := [][2]string{{"pane.refresh", "5m"}, {"pane.style", "blocks"}, {"pane.zoom", "2"}, {"pane.fit", "fill"}, {"pane.open", "news"},
+		{"alerts.enabled", "false"}, {"alerts.sound", "false"}, {"status.detail", "full"}, {"discover.depth", "6"}, {"alerts.message", "false"}}
+	var wg sync.WaitGroup
+	errs := make(chan error, len(sets))
+	for _, kv := range sets {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- updateUserConfig(p, func(c *UserConfig) (bool, error) {
+				time.Sleep(5 * time.Millisecond) // widen the read-modify-write window
+				return true, setUserKey(c, kv[0], kv[1])
+			})
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, _, _, err := readUserConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kv := range sets {
+		if c.Settings[kv[0]] != kv[1] {
+			t.Errorf("%s = %q, want %q (lost update)", kv[0], c.Settings[kv[0]], kv[1])
+		}
+	}
+}
+
+func TestConfigureSaveKeepsConcurrentChange(t *testing.T) {
+	p := userCfgPath(t)
+	orig, _, _, _ := readUserConfig()
+	nc := cloneUserConfig(orig)
+	_ = setUserKey(&nc, "pane.zoom", "1")
+	runAll(t, []string{"user", "set", "pane.style=kanban"}) // lands while the session is open
+	if err := saveConfigureDiff(orig, nc, p); err != nil {
+		t.Fatal(err)
+	}
+	c, _, _, _ := readUserConfig()
+	if c.Settings["pane.zoom"] != "1" || c.Settings["pane.style"] != "kanban" {
+		t.Fatalf("settings %v", c.Settings)
 	}
 }

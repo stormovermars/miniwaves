@@ -25,7 +25,7 @@ var userGroups = []struct{ ID, Label string }{
 	{"pane", "Pane"}, {"alerts", "Alerts"}, {"fanfare", "Fanfare"}, {"status", "Chat bar"}, {"discover", "Discovery"},
 }
 
-var alertKinds = []string{"blocked", "ask", "review", "done", "release", "metrics"}
+var alertKinds = []string{"blocked", "ask", "review", "done", "release", "metrics", "new"}
 
 var userKeys = []userKey{
 	{Name: "pane.refresh", Group: "pane", Kind: "enum", Choices: []string{"15s", "30s", "1m", "5m", "off"}, Default: "30s", Help: "How often the live pane refreshes."},
@@ -34,7 +34,7 @@ var userKeys = []userKey{
 	{Name: "pane.fit", Group: "pane", Kind: "enum", Choices: []string{"80", "fill"}, Default: "80", Help: "Pane width: 80 columns or fill the window."},
 	{Name: "pane.open", Group: "pane", Kind: "enum", Choices: []string{"jobs", "news"}, Default: "jobs", Help: "Which view the pane opens on."},
 	{Name: "alerts.enabled", Group: "alerts", Kind: "bool", Default: "true", Help: "Raise alerts for board events."},
-	{Name: "alerts.kinds", Group: "alerts", Kind: "list", Choices: alertKinds, Default: strings.Join(alertKinds, ","), Help: "Which events alert: a comma list, or all."},
+	{Name: "alerts.kinds", Group: "alerts", Kind: "list", Choices: alertKinds, Default: strings.Join(alertKinds, ","), Help: "Which events alert: a comma list, all, or none."},
 	{Name: "alerts.message", Group: "alerts", Kind: "bool", Default: "true", Help: "Show a message with an alert."},
 	{Name: "alerts.sound", Group: "alerts", Kind: "bool", Default: "true", Help: "Play a sound with an alert."},
 	{Name: "fanfare.enabled", Group: "fanfare", Kind: "bool", Default: "false", Help: "Play fanfares on wave close; overrides the board's fanfare.enabled when set."},
@@ -82,7 +82,7 @@ func (k *userKey) allowed() string {
 	case "int":
 		return fmt.Sprintf("%d..%d", k.lo, k.hi)
 	case "list":
-		return "a comma list of " + strings.Join(k.Choices, ", ") + ", or all"
+		return "a comma list of " + strings.Join(k.Choices, ", ") + ", all, or none"
 	case "text":
 		return "a set name or all"
 	}
@@ -113,6 +113,9 @@ func (k *userKey) normalize(val string) (string, error) {
 	case "list":
 		if strings.ToLower(v) == "all" {
 			return k.Default, nil
+		}
+		if strings.ToLower(v) == "none" {
+			return "", nil // the empty set: no event alerts
 		}
 		seen := map[string]bool{}
 		for _, p := range strings.Split(v, ",") {
@@ -166,7 +169,19 @@ type userGetKey struct {
 	Choices []string `json:"choices"`
 }
 
-func userGetKeys(c UserConfig, only string) []userGetKey {
+// boardWorkspace is the nearest board's index (for the fanfare block), or nil when there is none.
+func boardWorkspace() *Workspace {
+	if path, err := findWorkspace(); err == nil {
+		if w, err := loadScoped(path, false); err == nil {
+			return w
+		}
+	}
+	return nil
+}
+
+// userGetKeys lists the keys; run inside a board whose fanfare is explicitly off, fanfare.enabled is
+// "false" with source "board", because the board's off wins over the user layer.
+func userGetKeys(c UserConfig, only string, w *Workspace) []userGetKey {
 	out := []userGetKey{}
 	for i := range userKeys {
 		k := &userKeys[i]
@@ -174,6 +189,9 @@ func userGetKeys(c UserConfig, only string) []userGetKey {
 			continue
 		}
 		v, src := userValue(c, k)
+		if k.Name == "fanfare.enabled" && boardFanfareOff(w) {
+			v, src = "false", "board"
+		}
 		ch := k.Choices
 		if ch == nil {
 			ch = []string{}
@@ -183,8 +201,8 @@ func userGetKeys(c UserConfig, only string) []userGetKey {
 	return out
 }
 
-func printUserSettings(c UserConfig, only string, asJSON bool) error {
-	keys := userGetKeys(c, only)
+func printUserSettings(c UserConfig, only string, asJSON bool, bw *Workspace) error {
+	keys := userGetKeys(c, only, bw)
 	if asJSON {
 		return printJSON(map[string]any{"keys": keys})
 	}
