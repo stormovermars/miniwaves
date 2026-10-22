@@ -274,7 +274,7 @@ func readOnly(args []string) bool {
 	case "dirs":
 		return sub != "set" && sub != "init"
 	case "fanfare":
-		return sub != "set"
+		return sub != "set" && sub != "use" && !(sub == "sets" && (has("add") || has("drop")))
 	}
 	return false
 }
@@ -348,6 +348,10 @@ mw fanfare set enabled=true milestone_seconds=15 finale_seconds=60 volume=1 stop
 mw fanfare test [milestone|finale]
 mw fanfare fetch
 mw fanfare list [-j]
+mw fanfare sets [-j]
+mw fanfare sets add NAME PAIR...
+mw fanfare sets drop NAME [PAIR...]
+mw fanfare use NAME|all
 mw fanfare stop
 Play a short clip when a wave closes and a longer finale when a tenant is finished (items exist, none inbox/ready/doing/blocked, no open wave; once per transition).
 Playback is a detached player (afplay, ffplay, mpv, paplay, Windows .wav) and never fails a board command. "fetch" downloads public-domain, CC0 and CC-BY pairs; the
