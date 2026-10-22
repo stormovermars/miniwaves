@@ -2,7 +2,7 @@
 
 Formerly `tidewatch` (renamed in 0.3.4; `/tidewatch` is a deprecated alias for one release, and your boards and settings are imported on first start).
 
-A live pane for your [miniwaves](../../README.md) (`mw`) boards: a status line, toasts, a ping when something needs a person, and a news page. Opt-in and generic: it knows nothing about your boards until you add them.
+A live pane for your [miniwaves](../../README.md) (`mw`) boards: a status line, toasts, a ping when something needs a person, and a news page. It needs no setup: bare `/mw-watch` finds your boards and their tenants by itself.
 
 ## Install and open
 
@@ -13,20 +13,30 @@ A live pane for your [miniwaves](../../README.md) (`mw`) boards: a status line, 
 /mw-watch
 ```
 
-Then add a board with `/mw-watch add PATH`.
+That is all. With an empty registry, `/mw-watch` looks in this order, using `mw boards` (mw 0.3.4+; an older mw gets a toast, `mw update`, and the manual `add` below):
+
+1. every board this session used: `mw` commands run in Bash (also by subagents) and Read/Edit/Write of `.miniwaves.json` or `.miniwaves/` files, including those from before the plugin loaded (read from the session transcript), one entry per board root; they are listed first and marked `[this session]`;
+2. the session folder and its project root, looking upward and three levels down;
+3. only if both found nothing, your home folder, four levels down.
+
+Every board found is added with its non-archived tenants. The session's added directories (`--add-dir`) are not readable by a plugin, so they are not used; `scan` covers them.
 
 It needs the `mw` command; it finds it once at start (PATH, then the usual install folders) and always runs it by absolute path. If it is not found, the pane says so.
 
-## Add a board
+## Scan, add, hide tenants (all optional)
 
 ```
-/mw-watch add PATH      # a folder holding an mw board; the id is the folder name
+/mw-watch scan [DIR]    # find boards under DIR (default ~); the pane lists those not added, an Add button each and Add all
+/mw-watch add PATH      # a folder holding an mw board; the id is the folder name. A folder with no board is scanned instead
+/mw-watch hide ID TENANT  # show or hide one tenant of a board (the pane's Tenants row does the same; the last one stays)
 /mw-watch remove ID
 /mw-watch ID            # pick a job; /mw-watch alone opens the pane
 /mw-watch news [ID]     # the news pane (the News button does the same)
 ```
 
 Boards are stored with absolute paths in the plugin's store, with their tenants from `mw list -A -j`. Other commands: `fanfare next`, `mute`, `every off|30s|1m|5m`, `bigger|smaller|reset`, `stalled MINUTES`.
+
+There is no Test button. `/mw-fanfare` (bare: state and a cycle button) and `/mw-fanfare test|on|off|next|use NAME` do the same as `/mw-watch fanfare ...`; `test` plays the milestone sound once and, when it cannot, says why in one line (mw's own message). With no fanfare pair on disk, mw plays a built-in short fanfare (WAV). Install and `mw update` turn the fanfare on with set `all` once (`mw user fanfare-defaults`; `MW_NO_FANFARE=1` skips); your own choice is never overwritten.
 
 The top button row has one `Fanfare: off|all|<set>` button; each press cycles off, all, then each fanfare set, then off again (like the `Auto:` timer button). `/mw-watch fanfare next` does the same. The footer keeps only Test.
 

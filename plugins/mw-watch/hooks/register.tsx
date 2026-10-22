@@ -13,6 +13,7 @@ import type {
   TidewatchSnapshot,
   TidewatchAsk,
   TidewatchFanfare,
+  TidewatchFound,
   TidewatchWave,
 } from '../types'
 
@@ -42,6 +43,7 @@ const styleNames = atom({ plugin: 'mw-watch', key: 'styleNames' } as const, ['no
 const stalledMin = atom({ plugin: 'mw-watch', key: 'stalledMin' } as const, 45)
 const newsAtom = atom({ plugin: 'mw-watch', key: 'news' } as const, {})
 const busy = atom({ plugin: 'mw-watch', key: 'busy' } as const, [])
+const foundAtom = atom({ plugin: 'mw-watch', key: 'found' } as const, [])
 const fanfareAtom = atom({ plugin: 'mw-watch', key: 'fanfare' } as const, {})
 
 const two = (n: number) => (n < 10 ? `0${n}` : `${n}`)
@@ -694,7 +696,7 @@ const resolveMw = async ($: any): Promise<string | undefined> => {
 
 const MW_HOWTO = 'The mw command was not found. Install miniwaves (/plugin install mw@miniwaves, or put the mw binary on your PATH), then restart.'
 
-type StoredJob = { title?: unknown; board?: unknown; tenants?: unknown; news?: unknown; newsFile?: unknown; summary?: unknown }
+type StoredJob = { hidden?: unknown; title?: unknown; board?: unknown; tenants?: unknown; news?: unknown; newsFile?: unknown; summary?: unknown }
 
 const readRegistry = async ($: any): Promise<TidewatchRegistry> => {
   let raw: unknown
@@ -715,13 +717,14 @@ const readRegistry = async ($: any): Promise<TidewatchRegistry> => {
       news: str(j.news),
       newsFile: str(j.newsFile),
       summary: str(j.summary),
+      hidden: Array.isArray(j.hidden) ? j.hidden.map(str) : [],
     }))
   return { jobs, error: null }
 }
 
 const writeRegistry = async ($: any, jobs: TidewatchJob[]) => {
   const map: Record<string, StoredJob> = {}
-  for (const j of jobs) map[j.id] = { title: j.title, board: j.board, tenants: j.tenants, news: j.news, newsFile: j.newsFile, summary: j.summary }
+  for (const j of jobs) map[j.id] = { title: j.title, board: j.board, tenants: j.tenants, news: j.news, newsFile: j.newsFile, summary: j.summary, ...((j.hidden ?? []).length > 0 ? { hidden: j.hidden } : {}) }
   await $.store.set('registry', { jobs: map })
 }
 
@@ -777,9 +780,19 @@ const findJob = (jobs: TidewatchJob[], word: string): TidewatchJob | undefined =
   return by.length === 1 ? by[0] : undefined
 }
 
+/** Hidden tenants leave each job's tenant list (never the last one); `all` keeps the board's full list for the toggle row. */
+const applyHidden = (boards: TidewatchJob[], jobs: TidewatchJob[]): TidewatchJob[] =>
+  jobs.map(j => {
+    const b = boards.find(x => x.id === (j.boardId ?? j.id))
+    const hidden = b?.hidden ?? []
+    if (b === undefined || b.tenants.length === 0) return j
+    const left = j.tenants.filter(t => !hidden.includes(t))
+    return { ...j, tenants: left.length > 0 ? left : j.tenants, hidden, all: b.tenants }
+  })
+
 const loadRegistry = async ($: any) => {
   const stored = await readRegistry($)
-  const reg: TidewatchRegistry = stored.error !== null ? stored : { jobs: await expandBoards($, stored.jobs), error: null }
+  const reg: TidewatchRegistry = stored.error !== null ? stored : { jobs: applyHidden(stored.jobs, await expandBoards($, stored.jobs)), error: null }
   await update($, registry, () => reg)
   const cur: string = await read($, selected)
   if (reg.jobs.length > 0 && !reg.jobs.some(j => j.id === cur)) {
@@ -1161,7 +1174,7 @@ const runMw = async ($: any, board: string, args: string[], timeoutMs = 20_000) 
   const bin = await resolveMw($)
   if (bin === undefined) return undefined
   try {
-    return (await $.process.run([bin, ...args], { cwd: board, timeoutMs })) as { exitCode: number; stdout: string }
+    return (await $.process.run([bin, ...args], { cwd: board, timeoutMs })) as { exitCode: number; stdout: string; stderr?: string }
   } catch {
     return undefined
   }
@@ -1220,11 +1233,15 @@ const fanfareCycle = async ($: any, board: string) => {
   return fanfareSet($, board, fanfareNextArgs(cur))
 }
 
-const fanfareTest = async ($: any, board: string) => {
+/** Plays the milestone fanfare once; on failure the reason is mw's own last stderr line, shown in one toast. */
+const fanfareTest = async ($: any, board: string): Promise<{ ok: boolean; reason: string }> => {
   // mw fanfare test detaches the player, so it returns at once; keep well inside the 30 s process timeout
   const r = await runMw($, board, ['fanfare', 'test', 'milestone'], 25_000)
-  if (r === undefined || r.exitCode !== 0) $.ui.toast('mw-watch: fanfare test failed.', { timeoutMs: 5000 })
-  return r !== undefined && r.exitCode === 0
+  if (r !== undefined && r.exitCode === 0) return { ok: true, reason: '' }
+  const err = String(r?.stderr ?? r?.stdout ?? '').trim().split(/\r?\n/).filter(l => l.trim() !== '').pop() ?? ''
+  const reason = r === undefined ? 'mw did not run' : err !== '' ? err : `mw exited ${r.exitCode}`
+  $.ui.toast(`mw-watch: fanfare test failed: ${reason}`, { timeoutMs: 8000 })
+  return { ok: false, reason }
 }
 
 const fanfareCommand = async ($: any, rest: string) => {
@@ -1245,7 +1262,8 @@ const fanfareCommand = async ($: any, rest: string) => {
     return { text: done && now ? `mw-watch: fanfare ${fanfareLabel(now)}.` : 'mw-watch: could not change fanfare.' }
   }
   if (w === 'test') {
-    return { text: (await fanfareTest($, job.board)) ? 'mw-watch: fanfare test started.' : 'mw-watch: fanfare test failed.' }
+    const t = await fanfareTest($, job.board)
+    return { text: t.ok ? 'mw-watch: fanfare test started.' : `mw-watch: fanfare test failed: ${t.reason}` }
   }
   const u = /^use\s+(\S+)$/.exec(w)
   if (u) {
@@ -1254,6 +1272,25 @@ const fanfareCommand = async ($: any, rest: string) => {
     return { text: done ? `mw-watch: fanfare set ${u[1]}.` : 'mw-watch: could not change the fanfare set.' }
   }
   return { text: `mw-watch: fanfare ${cur.enabled ? 'on' : 'off'}, set ${cur.use}. Usage: /mw-watch fanfare on|off|next|use NAME|test` }
+}
+
+const FAN_PANE = 'mw-fanfare'
+
+/** `/mw-fanfare`: bare shows the state and a cycle button; on, off, use NAME and test are the same as under /mw-watch fanfare. */
+const fanfareSlash = async ($: any, args: string) => {
+  const w = args.trim()
+  if (w !== '') {
+    const r = await fanfareCommand($, w === 'next' || w === 'cycle' ? 'next' : w)
+    return { text: r.text.replace('/mw-watch fanfare', '/mw-fanfare') }
+  }
+  const reg = await loadRegistry($)
+  const id: string = await read($, selected)
+  const job = reg.jobs.find(j => j.id === id) ?? reg.jobs[0]
+  if (job === undefined) return { text: 'mw-watch: no boards yet. Run /mw-watch first.' }
+  const cur = await loadFanfare($, job.board)
+  if (cur === undefined) return { text: 'mw-watch: this mw has no fanfare sets or per-user config (needs mw 0.3).' }
+  await $.ui.open({ id: FAN_PANE, title: 'mw fanfare' })
+  return { text: `mw-fanfare: ${cur.enabled ? 'on' : 'off'}, set ${cur.use}; sets: all, ${cur.sets.join(', ')}. Usage: /mw-fanfare on|off|next|use NAME|test` }
 }
 
 const toggleMute = async ($: any) => {
@@ -1268,6 +1305,13 @@ const addBoard = async ($: any, raw: string) => {
   if (bin === undefined) return { text: `mw-watch: ${MW_HOWTO}` }
   const board = absPath(raw)
   if (!isAbsolute(board)) return { text: 'mw-watch: the path must be absolute (the session folder is unknown).' }
+  let isBoard = true
+  try {
+    isBoard = await $.fs.exists(`${board.replace(/[\\/]+$/, '')}/.miniwaves.json`)
+  } catch {
+    isBoard = true
+  }
+  if (!isBoard) return scanCommand($, board)
   const id = baseName(board)
   if (id === '') return { text: `mw-watch: no folder name in "${raw.trim()}".` }
   let items: TidewatchItem[] | undefined
@@ -1291,6 +1335,206 @@ const addBoard = async ($: any, raw: string) => {
   await refreshAll($)
   return { text: `mw-watch: ${prev ? 'updated' : 'added'} ${id} (${tenants.length} tenant${tenants.length === 1 ? '' : 's'}).` }
 }
+
+// ---- discovery: `mw boards` finds the boards and tenants, so no setup is needed ----
+
+type BoardsReport = { boards: { dir: string; name: string; tenants: { slug: string; archived: boolean }[]; error?: string }[] }
+const NO_BOARDS_CMD = 'mw-watch: update mw for auto-discovery (mw update).'
+
+const homeDir = async ($: any): Promise<string> =>
+  (((await $.env.get('HOME').catch(() => undefined)) as string | undefined) ?? ((await $.env.get('USERPROFILE').catch(() => undefined)) as string | undefined) ?? '')
+
+/** Runs `mw boards DIR ... -j`; `unsupported` when mw is missing or too old to know the command. */
+const discover = async ($: any, dir: string, flags: string[]): Promise<{ unsupported: boolean; found: TidewatchFound[] }> => {
+  const r = await runMw($, dir, ['boards', dir, ...flags, '-j'], 10_000)
+  const rep = r === undefined || r.exitCode !== 0 ? undefined : (parseJson(r.stdout) as BoardsReport | undefined)
+  if (rep === undefined || rep === null || !Array.isArray(rep.boards)) return { unsupported: true, found: [] }
+  const found = rep.boards
+    .filter(b => typeof b?.dir === 'string' && isAbsolute(b.dir) && (b.error === undefined || b.error === ''))
+    .map(b => ({ dir: b.dir, name: str(b.name ?? ''), tenants: (b.tenants ?? []).filter(t => t.archived !== true).map(t => str(t.slug)) }))
+  return { unsupported: false, found }
+}
+
+/** Adds every found board that is not registered yet; returns the new ids. */
+const addFound = async ($: any, boards: TidewatchFound[]): Promise<string[]> => {
+  const reg = await readRegistry($)
+  const jobs = [...reg.jobs]
+  const added: string[] = []
+  for (const b of boards) {
+    if (jobs.some(j => j.board === b.dir)) continue
+    const base = baseName(b.dir) || 'board'
+    let id = base
+    for (let n = 2; jobs.some(j => j.id === id); n++) id = `${base}-${n}`
+    jobs.push({ id, title: id, board: b.dir, tenants: [...b.tenants].sort(), news: '', newsFile: '', summary: '' })
+    added.push(id)
+  }
+  if (added.length === 0) return added
+  await writeRegistry($, jobs)
+  const loaded = await loadRegistry($)
+  const cur: string = await read($, selected)
+  if (!loaded.jobs.some(j => j.id === cur)) await select($, loaded.jobs[0]!.id)
+  await refreshFound($)
+  return added
+}
+
+const refreshFound = async ($: any) => {
+  const reg = await readRegistry($)
+  await update($, foundAtom, (f: TidewatchFound[]) => f.filter(b => !reg.jobs.some(j => j.board === b.dir)))
+}
+
+const listIds = (n: number) => `${n} board${n === 1 ? '' : 's'}`
+
+// ---- the boards this session used: a read-only tool.call hook plus a backfill from the transcript ----
+
+/** Folders a session touched that may hold a board; resolved lazily through `mw boards`. */
+const usedDirs = new Set<string>()
+
+const MW_WORD = /(^|[\s;&|(`])(?:\S*\/)?mw(?=\s|$)/
+
+/** Folders a tool call points at: a Bash command that runs mw (its cd target, -C arg and absolute paths) or a file under .miniwaves(.json). Pure; used by the hook and the backfill. */
+export const dirsOfToolUse = (tool: string, input: Record<string, unknown>, cwd: string): string[] => {
+  const out: string[] = []
+  if (tool === 'Bash' && typeof input.command === 'string' && MW_WORD.test(input.command)) {
+    const cmd = input.command
+    const cd = /(?:^|[;&|]\s*|&&\s*)cd\s+("[^"]+"|'[^']+'|\S+)/.exec(cmd)
+    out.push(cd ? cd[1]!.replace(/^["']|["']$/g, '') : cwd)
+    for (const m of cmd.matchAll(/(?:^|\s)-C\s+("[^"]+"|'[^']+'|\S+)/g)) out.push(m[1]!.replace(/^["']|["']$/g, ''))
+    for (const m of cmd.matchAll(/(?:^|\s)(\/[^\s"';&|]+)/g)) out.push(m[1]!)
+  }
+  if (tool === 'Read' || tool === 'Edit' || tool === 'Write' || tool === 'MultiEdit') {
+    const f = input.file_path
+    const m = typeof f === 'string' ? /^(.*?)\/\.miniwaves(?:\.json|\/)/.exec(f) : null
+    if (m) out.push(m[1] === '' ? '/' : m[1]!)
+  }
+  return out.filter(d => d !== '' && isAbsolute(d)).map(d => d.replace(/\/+$/, '') || '/')
+}
+
+const noteUse = (tool: string, input: Record<string, unknown>) => {
+  try {
+    for (const d of dirsOfToolUse(tool, input, sessionCwd)) usedDirs.add(d)
+  } catch {
+    // an observer never fails a call
+  }
+}
+
+const realDir = async ($: any, dir: string) => {
+  try {
+    const st = await $.fs.stat(dir, { resolve: true })
+    return typeof st?.realPath === 'string' && st.realPath !== '' ? st.realPath : dir
+  } catch {
+    return dir
+  }
+}
+
+/**
+ * THE board finder (one function, same logic as the mw-jobs pane): tier 1 every board this
+ * session used (live hook calls, subagents included, plus the transcript before the plugin loaded),
+ * each resolved to its board root and deduped by real path, marked `session` and listed first;
+ * tier 2 the session folder (and project root) looked at with --up --depth 3; tier 3, only when both are empty, the home folder at depth 4.
+ */
+export const findSessionBoards = async ($: any): Promise<{ unsupported: boolean; found: TidewatchFound[] }> => {
+  const found: TidewatchFound[] = []
+  const seen = new Set<string>()
+  const take = async (list: TidewatchFound[], session: boolean) => {
+    for (const b of list) {
+      const real = await realDir($, b.dir)
+      if (seen.has(real)) continue
+      seen.add(real)
+      found.push({ ...b, session })
+    }
+  }
+  // tier 1
+  try {
+    const msgs = (await $.session.messages()) as { toolUses?: { tool: string; input: Record<string, unknown> }[] }[]
+    for (const m of msgs) for (const u of m.toolUses ?? []) noteUse(u.tool, u.input ?? {})
+  } catch {
+    // no transcript to read: only live calls count
+  }
+  for (const d of [...usedDirs]) {
+    const r = await discover($, d, ['--up', '--depth', '0'])
+    await take(r.found, true)
+  }
+  // tier 2
+  const roots = [sessionCwd]
+  try {
+    const root = (await $.session.root()) as string
+    if (typeof root === 'string' && root !== '' && !roots.includes(root)) roots.push(root)
+  } catch {
+    // the session folder alone
+  }
+  for (const d of roots.filter(x => x !== '')) {
+    const r = await discover($, d, ['--up', '--depth', '3'])
+    if (r.unsupported) return { unsupported: true, found: [] }
+    await take(r.found, false)
+  }
+  // tier 3
+  if (found.length === 0) {
+    const home = await homeDir($)
+    if (home !== '') {
+      const r = await discover($, home, ['--depth', '4'])
+      if (r.unsupported) return { unsupported: true, found: [] }
+      await take(r.found, false)
+    }
+  }
+  return { unsupported: false, found }
+}
+
+/** The whole setup: an empty registry takes every board the session used, then the session folder's, then the home folder's. */
+const autoDiscover = async ($: any): Promise<string> => {
+  const res = await findSessionBoards($)
+  if (res.unsupported) {
+    $.ui.toast('mw-watch: update mw for auto-discovery (mw update).', { timeoutMs: 8000 })
+    return NO_BOARDS_CMD
+  }
+  const used = new Set(res.found.filter(b => b.session).map(b => b.dir))
+  const added = await addFound($, res.found)
+  if (added.length === 0) return 'mw-watch: no boards found. Add one with /mw-watch add PATH or /mw-watch scan DIR.'
+  const reg = await readRegistry($)
+  const label = (id: string) => (used.has(reg.jobs.find(j => j.id === id)?.board ?? '') ? `${id} [this session]` : id)
+  return `mw-watch: found ${listIds(added.length)} (${added.map(label).join(', ')}).`
+}
+
+const scanCommand = async ($: any, dir: string): Promise<{ text: string }> => {
+  const root = dir === '' ? await homeDir($) : absPath(dir)
+  if (root === '' || !isAbsolute(root)) return { text: 'mw-watch: usage /mw-watch scan [DIR] (an absolute folder).' }
+  const res = await discover($, root, ['--depth', '4'])
+  if (res.unsupported) {
+    $.ui.toast('mw-watch: update mw for auto-discovery (mw update).', { timeoutMs: 8000 })
+    return { text: NO_BOARDS_CMD }
+  }
+  const reg = await readRegistry($)
+  const fresh = res.found.filter(b => !reg.jobs.some(j => j.board === b.dir))
+  await update($, foundAtom, () => fresh)
+  await openJobs($)
+  if (fresh.length === 0) return { text: `mw-watch: no new boards under ${root}.` }
+  return { text: `mw-watch: found ${listIds(fresh.length)} not added yet: ${fresh.map(b => b.dir).join(', ')}. Press Add in the pane.` }
+}
+
+const toggleTenant = async ($: any, boardId: string, tenant: string): Promise<{ text: string }> => {
+  const reg = await readRegistry($)
+  const b = reg.jobs.find(j => j.id === boardId)
+  if (b === undefined || !b.tenants.includes(tenant)) return { text: `mw-watch: unknown board or tenant "${boardId}" "${tenant}".` }
+  const hidden = b.hidden ?? []
+  const next = hidden.includes(tenant) ? hidden.filter(t => t !== tenant) : [...hidden, tenant]
+  if (b.tenants.every(t => next.includes(t))) return { text: 'mw-watch: keep at least one tenant shown.' }
+  await writeRegistry($, reg.jobs.map(j => (j.id === boardId ? { ...j, hidden: next } : j)))
+  await loadRegistry($)
+  await refreshAll($)
+  return { text: `mw-watch: ${tenant} ${next.includes(tenant) ? 'hidden' : 'shown'} on ${boardId}.` }
+}
+
+const foundBlock = ($: any, found: TidewatchFound[], Box: any, Text: any, Button: any) => (
+  <Box flexDirection="column">
+    <Text dimColor>{`Found ${found.length} board${found.length === 1 ? '' : 's'} not added yet:`}</Text>
+    {found.map(b => (
+      <Box key={`found-${b.dir}`} gap={1}>
+        <Button key={`add-${b.dir}`} label="Add" onPress={() => void addFound($, [b]).then(() => openJobs($))} />
+        <Text wrap="truncate-end">{`${b.session === true ? '[this session] ' : ''}${baseName(b.dir)} (${b.tenants.length} tenant${b.tenants.length === 1 ? '' : 's'}) ${b.dir}`}</Text>
+      </Box>
+    ))}
+    {found.length > 1 && <Button key="add-all" label="Add all" onPress={() => void addFound($, found).then(() => openJobs($))} />}
+  </Box>
+)
 
 const removeBoard = async ($: any, id: string) => {
   const reg = await readRegistry($)
@@ -1369,6 +1613,9 @@ const runCommand = async ($: any, args: string) => {
   if (word === 'fanfare' || word.startsWith('fanfare ')) return fanfareCommand($, word.slice(7))
   if (word === 'style' || word.startsWith('style ')) return styleCommand($, word.slice(5).trim())
   if (word === 'add' || word.startsWith('add ')) return addBoard($, word.slice(3))
+  if (word === 'scan' || word.startsWith('scan ')) return scanCommand($, word.slice(4).trim())
+  const hd = /^hide\s+(\S+)\s+(\S+)$/.exec(word)
+  if (hd) return toggleTenant($, hd[1]!, hd[2]!)
   const nw = /^news(?:\s+(.*))?$/.exec(word)
   if (nw) return openNews($, (nw[1] ?? '').trim())
   const rm = /^remove(?:\s+(.*))?$/.exec(word)
@@ -1394,9 +1641,13 @@ const runCommand = async ($: any, args: string) => {
     if (hit !== undefined) await select($, hit.id)
     else return { text: `mw-watch: unknown job "${word}"${reg.jobs.length > 0 ? ` (${reg.jobs.map(j => j.id).join(', ')})` : ''}. Add a board with /mw-watch add PATH.` }
   }
+  let note = ''
+  if (reg.jobs.length === 0 && word === '') note = await autoDiscover($)
   await openJobs($)
   void refreshAll($)
-  return { text: reg.jobs.length === 0 ? 'mw-watch: no boards yet. Add one with /mw-watch add PATH.' : 'mw-watch pane opened.' }
+  const after: TidewatchRegistry = await read($, registry)
+  if (after.jobs.length === 0) return { text: note !== '' ? note : 'mw-watch: no boards yet. Add one with /mw-watch add PATH.' }
+  return { text: note !== '' ? note : 'mw-watch pane opened.' }
 }
 
 const ALIAS_HINT = '`/tidewatch` is now `/mw-watch` (the old name goes in the next release).'
@@ -1425,8 +1676,10 @@ const importOldStore = async ($: any) => {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'mw-watch', description: 'Live mw boards: /mw-watch [job | mute | every off|30s|1m|5m | bigger|smaller|reset | style NAME|list|new NAME|import PATH|export NAME PATH | add PATH | remove ID | fanfare on|off|next|use NAME|test]' })
+    await $.command.register({ name: 'mw-fanfare', description: 'Fanfare: /mw-fanfare [on | off | next | use NAME | test]' })
     await $.command.register({ name: 'tidewatch', description: 'Deprecated alias of /mw-watch (same subcommands); the old name goes in the next release.' })
     sessionCwd = String((e as { cwd?: string }).cwd ?? '')
+    usedDirs.clear()
     await importOldStore($)
     try {
       const saved = await $.store.get('refreshEvery')
@@ -1456,6 +1709,32 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'mw-watch' }, async ($, e) => runCommand($, String((e as { args?: string }).args ?? '')))
+  // observe only: records which boards the session touches, never changes or blocks a call
+  on('tool.call', async ($, e, next) => {
+    noteUse(String((e as { tool?: string }).tool ?? ''), e as unknown as Record<string, unknown>)
+    return next(e)
+  })
+
+  on('command.run', { command: 'mw-fanfare' }, async ($, e) => fanfareSlash($, String((e as { args?: string }).args ?? '')))
+  on('ui.render', { component: 'Pane', requestId: FAN_PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e) as any
+    const reg = await read($, registry)
+    const sel = await read($, selected)
+    const job = reg.jobs.find(j => j.id === sel) ?? reg.jobs[0]
+    const fan = job === undefined ? undefined : ((await read($, fanfareAtom)) as Record<string, TidewatchFanfare>)[job.board]
+    if (job === undefined || fan === undefined) return <Text dimColor>No fanfare settings (run /mw-watch first; needs mw 0.3).</Text>
+    return (
+      <Box flexDirection="column">
+        <Text bold>Fanfare</Text>
+        <Text>{`${fan.enabled ? 'on' : 'off'}, set ${fan.use}`}</Text>
+        <Text dimColor>{`Sets: all, ${fan.sets.join(', ')}`}</Text>
+        <Box gap={1}>
+          <Button key="fanfare" label={`Fanfare: ${fanfareLabel(fan)}`} onPress={() => void fanfareCycle($, job.board)} />
+        </Box>
+        <Text dimColor>/mw-fanfare test plays it once; /mw-fanfare on|off|use NAME.</Text>
+      </Box>
+    )
+  })
   on('command.run', { command: 'tidewatch' }, async ($, e) => {
     const r = await runCommand($, String((e as { args?: string }).args ?? ''))
     return { ...r, text: `${ALIAS_HINT}\n${r.text}` }
@@ -1507,6 +1786,7 @@ export const register: Register = on => {
     const sz = (_v: string): any => ({})
 
     if (reg.jobs.length === 0) {
+      const found: TidewatchFound[] = await read($, foundAtom)
       const hasMw = (await resolveMw($)) !== undefined
       return (
         <Box flexDirection="column">
@@ -1514,8 +1794,9 @@ export const register: Register = on => {
           {reg.error !== null && <Text color="warning">{reg.error}</Text>}
           {!hasMw && <Text color="warning">{MW_HOWTO}</Text>}
           <Text dimColor>mw-watch shows the state of your miniwaves boards.</Text>
-          <Text>Add a board: /mw-watch add PATH</Text>
-          <Text dimColor>PATH is a folder that holds an mw board. Add as many as you like, then open this pane with /mw-watch.</Text>
+          <Text>No boards yet. Run /mw-watch to look for them, or /mw-watch scan DIR.</Text>
+          <Text dimColor>/mw-watch add PATH adds one folder (a folder with no board is scanned instead).</Text>
+          {found.length > 0 && foundBlock($, found, Box, Text, Button)}
         </Box>
       )
     }
@@ -1543,7 +1824,7 @@ export const register: Register = on => {
 
     const needsOf = (id: string) => (snaps[id] ? needItems(snaps[id]!).length : 0)
     const fan = ((await read($, fanfareAtom)) as Record<string, TidewatchFanfare>)[job.board]
-    const header = (
+    const headerRow = (
       <Box alignItems="center" gap={1}>
         {reg.jobs.length < 2 && <Text {...wt} wrap="truncate-end">{job.title}</Text>}
         {reg.jobs.length >= 2 && reg.jobs.map(j => (
@@ -1576,14 +1857,26 @@ export const register: Register = on => {
         <Button key="bigger" label=" + " dimColor onPress={() => void stepBy($, 1)} />
       </Box>
     )
+    const hiddenOf = job.hidden ?? []
+    const allOf = job.all ?? []
+    const found: TidewatchFound[] = await read($, foundAtom)
+    const header = (
+      <Box flexDirection="column">
+        {headerRow}
+        {allOf.length >= 2 && (
+          <Box gap={1}>
+            <Text dimColor>Tenants:</Text>
+            {allOf.map(t => (
+              <Button key={`tenant-${t}`} plain label={`${hiddenOf.includes(t) ? '○' : '●'} ${t}`} dimColor={hiddenOf.includes(t)} onPress={() => void toggleTenant($, job.boardId ?? job.id, t)} />
+            ))}
+          </Box>
+        )}
+        {found.length > 0 && foundBlock($, found, Box, Text, Button)}
+      </Box>
+    )
     const separator = <Text dimColor wrap="truncate-end">{'─'.repeat(columns)}</Text>
     // buttons only: no Select or Input on mobile
-    const footer =
-      fan === undefined ? null : (
-        <Box gap={1}>
-          <Button key="fanfare-test" label="Test" dimColor onPress={() => void fanfareTest($, job.board)} />
-        </Box>
-      )
+    const footer = null
 
     if (snap === undefined) {
       return (

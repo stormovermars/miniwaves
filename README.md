@@ -21,7 +21,7 @@ Upgrade: `mw update` (checks GitHub releases, verifies the checksum, replaces th
 - `MW_NO_PLUGINS=1` skips the plugin step in `install.sh`, `install.ps1` and `mw update`.
 - No Claude Code, or the binary only: `go install github.com/stormovermars/miniwaves@latest` (the binary is named `miniwaves`). By hand: `claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves mw-watch@miniwaves`.
 
-Open the pane: run `/mw-watch`. (It was called `tidewatch` before 0.3.4; `/tidewatch` still works for one release.)
+Open the pane: run `/mw-watch`. That is the whole setup: it finds the boards this session used, then those near the session folder, then under `~`, with their tenants; `/mw-watch scan [DIR]` and `/mw-watch add PATH` are optional extras. Fanfare is switched on with defaults at install (change it with the `Fanfare:` button or `/mw-fanfare`). (It was called `tidewatch` before 0.3.4; `/tidewatch` still works for one release.)
 
 ## Use
 

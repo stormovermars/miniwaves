@@ -131,6 +131,7 @@ func newerVersion(a, b string) bool {
 func updateCommand(args []string) error {
 	check := len(args) == 1 && args[0] == "--check"
 	if len(args) == 1 && args[0] == "--plugins" {
+		fanfareDefaults(os.Stdout)
 		installPlugins(os.Stdout)
 		return nil
 	}
@@ -165,6 +166,7 @@ func updateCommand(args []string) error {
 		return fmt.Errorf("cannot replace %s (%v); install the new version with:\n%s", exe, err, installHint)
 	}
 	fmt.Printf("%s %s → %s (%s)\n", binName, version, latest, exe)
+	fanfareDefaults(os.Stdout)
 	installPlugins(os.Stdout)
 	return nil
 }
@@ -194,6 +196,22 @@ func lastLine(s string, err error) string {
 		s = err.Error()
 	}
 	return s
+}
+
+// fanfareDefaults runs `mw user fanfare-defaults` for the freshly installed binary (best effort, idempotent).
+var fanfareDefaults = func(w io.Writer) {
+	if os.Getenv("MW_NO_FANFARE") == "1" || os.Getenv("MW_NO_PLUGINS") == "1" {
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if b, err := exec.CommandContext(ctx, exe, "user", "fanfare-defaults").CombinedOutput(); err == nil {
+		fmt.Fprint(w, string(b))
+	}
 }
 
 // installPlugins installs or updates the mw and mw-watch plugins from the miniwaves marketplace.

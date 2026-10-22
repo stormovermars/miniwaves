@@ -189,3 +189,41 @@ func TestUserFanfareOverridesBoard(t *testing.T) {
 	runAll(t, []string{"add", "task", "G", "--status", "ready"}, []string{"done", "TSK-007", "ok"})
 	plays(t, log, 3)
 }
+
+func TestUserFanfareDefaults(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "mw-user.json")
+	t.Setenv("MW_USER_CONFIG", cfg)
+	t.Setenv("MW_NO_FANFARE", "")
+	t.Setenv("MW_NO_PLUGINS", "")
+	// fresh: both keys written
+	if s := out(t, "user", "fanfare-defaults"); !strings.Contains(s, "on, set all") {
+		t.Fatalf("out %q", s)
+	}
+	if s := out(t, "user", "show", "-j"); !strings.Contains(s, `"fanfare_enabled": true`) || !strings.Contains(s, `"fanfare_use": "all"`) {
+		t.Fatalf("show %q", s)
+	}
+	// existing choices stay untouched
+	out(t, "user", "set", "fanfare.enabled=false", "fanfare.use=calm")
+	if s := out(t, "user", "fanfare-defaults"); !strings.Contains(s, "already set") {
+		t.Fatalf("out %q", s)
+	}
+	if s := out(t, "user", "show", "-j"); !strings.Contains(s, `"fanfare_enabled": false`) || !strings.Contains(s, `"fanfare_use": "calm"`) {
+		t.Fatalf("show %q", s)
+	}
+}
+
+func TestUserFanfareDefaultsOptOut(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "mw-user.json")
+	t.Setenv("MW_USER_CONFIG", cfg)
+	for _, env := range []string{"MW_NO_FANFARE", "MW_NO_PLUGINS"} {
+		t.Setenv("MW_NO_FANFARE", "")
+		t.Setenv("MW_NO_PLUGINS", "")
+		t.Setenv(env, "1")
+		if s := out(t, "user", "fanfare-defaults"); !strings.Contains(s, "skipped") {
+			t.Fatalf("%s: out %q", env, s)
+		}
+		if _, err := os.Stat(cfg); err == nil {
+			t.Fatalf("%s: config written", env)
+		}
+	}
+}

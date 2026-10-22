@@ -663,9 +663,31 @@ func playPendingFanfare(w *Workspace) {
 	}
 }
 
+//go:embed assets/fanfare-default.wav
+var defaultFanfareWAV []byte
+
+// pickPairOrBuiltin is pickPairFor; with no playable pair at all it falls back to the built-in WAV
+// (a short synthesized fanfare, played for both milestone and finale), so a fresh user hears something.
+func pickPairOrBuiltin(c FanfareConfig, dir string, pick func(int) int) (*pairInfo, error) {
+	p, err := pickPairFor(c, dir, pick)
+	if err == nil {
+		return p, nil
+	}
+	file := filepath.Join(os.TempDir(), fmt.Sprintf("mw-fanfare-default-%d.wav", len(defaultFanfareWAV)))
+	if st, serr := os.Stat(file); serr != nil || st.Size() != int64(len(defaultFanfareWAV)) {
+		if werr := writeFileAtomic(file, defaultFanfareWAV); werr != nil {
+			return nil, err
+		}
+	}
+	if !canPlay(file) {
+		return nil, fmt.Errorf("%v; the built-in sound cannot play either (no audio player found)", err)
+	}
+	return &pairInfo{Name: "built-in", Fanfare: file, Finale: file, State: "ready"}, nil
+}
+
 func playClip(w *Workspace, kind, reason string) error {
 	c := fanfareEffective(w)
-	p, err := pickPairFor(c, expandHome(c.Dir), rand.Intn)
+	p, err := pickPairOrBuiltin(c, expandHome(c.Dir), rand.Intn)
 	if err != nil {
 		return err
 	}
@@ -995,7 +1017,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		if len(pos) == 1 {
 			kind = pos[0]
 		}
-		p, err := pickPairFor(fanfareEffective(w), dir, rand.Intn)
+		p, err := pickPairOrBuiltin(fanfareEffective(w), dir, rand.Intn)
 		if err != nil {
 			return err
 		}

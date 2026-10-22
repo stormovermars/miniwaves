@@ -427,10 +427,12 @@ note as "(for NAME)"; else by --by NAME (required when stdin is not a terminal),
 (already done, so it holds nothing open) on first use. -b WHY is kept in the note as "(why: WHY)". Any board, no gate.`,
 		"user": `mw user show [-j]
 mw user set KEY=VALUE...
+mw user fanfare-defaults
 Per-user choices, kept out of the committed board, in os.UserConfigDir()/miniwaves/mw-user.json (MW_USER_CONFIG overrides the path).
 Works without a board. Keys: alerts.on (comma list of event names), alerts.exec (a JSON argv array, never run through a shell),
 fanfare.enabled (true|false; overrides the board's fanfare enabled), fanfare.use (a set name or all). An empty VALUE unsets a key.
 On Unix a file that is group- or world-writable is refused (chmod 600); on Windows there is no mode check.
+fanfare-defaults sets fanfare.enabled=true and fanfare.use=all only where they are unset and never overwrites (install and update run it; MW_NO_FANFARE=1 or MW_NO_PLUGINS=1 skips).
 Example: mw user set fanfare.enabled=false alerts.on=ask,block`,
 		"gate": `mw gate [-t SLUG] [-j]
 mw gate level trust|proof|spec|judged [-t SLUG | --workspace] [--by NAME]

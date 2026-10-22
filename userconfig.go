@@ -155,7 +155,7 @@ type userView struct {
 }
 
 func userCommand(args []string) error {
-	const use = "usage: mw user show [-j] | mw user set KEY=VALUE...  (keys: alerts.on, alerts.exec, fanfare.enabled, fanfare.use)"
+	const use = "usage: mw user show [-j] | mw user set KEY=VALUE... | mw user fanfare-defaults  (keys: alerts.on, alerts.exec, fanfare.enabled, fanfare.use)"
 	if len(args) == 0 {
 		return errors.New(use)
 	}
@@ -206,6 +206,36 @@ func userCommand(args []string) error {
 		}
 		fmt.Printf("path: %s%s\nalerts.on: %s\nalerts.exec: %s\nfanfare.enabled: %s\nfanfare.use: %s\n",
 			p, note, unset(strings.Join(c.Alerts.On, ",")), unset(ex), unset(en), unset(c.Fanfare.Use))
+		return nil
+	case "fanfare-defaults":
+		// idempotent: sets fanfare.enabled=true and fanfare.use=all only where unset; never overwrites
+		if len(pos) != 0 {
+			return errors.New("usage: mw user fanfare-defaults")
+		}
+		if os.Getenv("MW_NO_FANFARE") == "1" || os.Getenv("MW_NO_PLUGINS") == "1" {
+			fmt.Println("fanfare defaults: skipped")
+			return nil
+		}
+		changed := false
+		if c.Fanfare.Enabled == nil {
+			t := true
+			c.Fanfare.Enabled, changed = &t, true
+		}
+		if c.Fanfare.Use == "" {
+			c.Fanfare.Use, changed = "all", true
+		}
+		if !changed {
+			fmt.Println("fanfare defaults: already set")
+			return nil
+		}
+		b, _ := json.MarshalIndent(c, "", "  ")
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			return err
+		}
+		if err := writeFileAtomic(p, append(b, '\n')); err != nil {
+			return err
+		}
+		fmt.Println("fanfare defaults: on, set all")
 		return nil
 	case "set":
 		if len(pos) == 0 {

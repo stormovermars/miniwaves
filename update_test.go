@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -262,5 +263,22 @@ func TestUpdateRemovesOldTidewatch(t *testing.T) {
 	out(t, "update", "--plugins")
 	if strings.Contains(strings.Join(*calls, "|"), "uninstall") {
 		t.Fatalf("uninstall without tidewatch: %v", *calls)
+	}
+}
+
+func init() { fanfareDefaults = func(io.Writer) {} } // never re-run the test binary as mw
+
+func TestUpdateRunsFanfareDefaults(t *testing.T) {
+	fakeRelease(t, "v9.9.9", []byte("new binary"), false)
+	fakeExe(t)
+	fakeClaude(t, false, "", "")
+	n := 0
+	old := fanfareDefaults
+	t.Cleanup(func() { fanfareDefaults = old })
+	fanfareDefaults = func(io.Writer) { n++ }
+	out(t, "update")
+	out(t, "update", "--plugins")
+	if n != 2 {
+		t.Fatalf("fanfareDefaults ran %d times, want 2", n)
 	}
 }

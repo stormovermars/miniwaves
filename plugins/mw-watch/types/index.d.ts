@@ -15,7 +15,13 @@ export type TidewatchJob = {
   name?: string
   /** Id of the registered board this job came from (the job's own id when not split). */
   boardId?: string
+  /** Tenants of the registered board the person hid (kept in the registry; they stay out of `tenants`). */
+  hidden?: string[]
+  /** Every tenant of the registered board, shown or hidden (empty: the board shows all of its tenants). */
+  all?: string[]
 }
+/** A board found by `mw boards`; `session` marks one this session used. */
+export type TidewatchFound = { dir: string; name: string; tenants: string[]; session?: boolean }
 export type TidewatchRegistry = { jobs: TidewatchJob[]; error: string | null }
 export type TidewatchWave = {
   id: string
@@ -108,6 +114,8 @@ declare module 'claude-code' {
       busy: string[]
       /** The fanfare footer state per board folder; absent when that mw lacks fanfare sets or user show. */
       fanfare: Record<string, TidewatchFanfare>
+      /** Boards found by a scan or discovery that are not added yet. */
+      found: TidewatchFound[]
     }
   }
 }

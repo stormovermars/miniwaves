@@ -450,6 +450,8 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 ### 0.3.4
 
 - The `tidewatch` plugin is now `mw-watch` (`/mw-watch`, same subcommands), matching `/mw-next` and `/mw-board`. `/tidewatch` stays as a deprecated alias for one release and prints a hint. Your boards and settings carry over automatically. `install.sh`, `install.ps1` and `mw update` uninstall the old `tidewatch` plugin and install `mw-watch`.
+- `/mw-watch` needs no setup: with no boards yet it finds them with `mw boards` (boards this session used first, then the session folder, then `~`). `/mw-watch scan [DIR]` lists boards not added yet (Add / Add all), `/mw-watch add PATH` on a folder without a board scans it, `/mw-watch hide ID TENANT` and the pane's Tenants row hide tenants. An mw without `boards` gets a toast to run `mw update`.
+- Fanfare: the pane's Test button is gone; `/mw-fanfare` (state, cycle button, `test|on|off|next|use NAME`) replaces it, and a failed test says why in one line. With no fanfare pair on disk mw plays a built-in WAV. New `mw user fanfare-defaults` (run by `install.sh`, `install.ps1`, `mw update` and `mw update --plugins`) sets `fanfare.enabled=true` and `fanfare.use=all` only where unset; `MW_NO_FANFARE=1` or `MW_NO_PLUGINS=1` skips.
 
 ### 0.3.3
 

@@ -30,6 +30,9 @@ try {
     Expand-Archive -Force $archive $temp
     Copy-Item -Force (Join-Path $temp "mw.exe") (Join-Path $dest "mw.exe")
     Write-Output "installed miniwaves to $(Join-Path $dest 'mw.exe')"
+    if ($env:MW_NO_FANFARE -ne "1" -and $env:MW_NO_PLUGINS -ne "1") {
+        try { & (Join-Path $dest "mw.exe") user fanfare-defaults 2>&1 | Out-Null } catch { }
+    }
     # Put $dest on the user PATH (persisted for new shells, and for this one).
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     $parts = @($userPath -split ";" | Where-Object { $_ })

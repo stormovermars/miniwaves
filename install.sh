@@ -43,6 +43,11 @@ install -m 0755 "$tmp/mw" "$dest/mw"
 echo "installed miniwaves to $dest/mw"
 case ":$PATH:" in *":$dest:"*) ;; *) echo "add $dest to PATH: export PATH=\"$dest:\$PATH\"" ;; esac
 
+# Fanfare defaults (on, set all) only where the user has not chosen; MW_NO_FANFARE=1 or MW_NO_PLUGINS=1 skips.
+if [ "${MW_NO_FANFARE:-}" != 1 ] && [ "${MW_NO_PLUGINS:-}" != 1 ]; then
+  "$dest/mw" user fanfare-defaults 2>/dev/null || true
+fi
+
 # Claude Code plugins: best effort, never fails the binary install. MW_NO_PLUGINS=1 skips.
 if [ "${MW_NO_PLUGINS:-}" = 1 ]; then
   echo "plugins: skipped (MW_NO_PLUGINS=1)"

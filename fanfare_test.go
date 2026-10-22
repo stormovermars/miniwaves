@@ -822,3 +822,23 @@ func TestStopDialogConfig(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestBuiltinFanfareWhenNoPairs(t *testing.T) {
+	if len(defaultFanfareWAV) < 1000 || len(defaultFanfareWAV) > 100<<10 || string(defaultFanfareWAV[:4]) != "RIFF" {
+		t.Fatalf("embedded wav: %d bytes", len(defaultFanfareWAV))
+	}
+	old := lookPath
+	t.Cleanup(func() { lookPath = old })
+	lookPath = func(n string) (string, error) { return "/bin/" + n, nil }
+	p, err := pickPairOrBuiltin(FanfareConfig{}, t.TempDir(), func(int) int { return 0 })
+	if err != nil || p.Name != "built-in" || !strings.HasSuffix(p.Fanfare, ".wav") || p.Finale != p.Fanfare {
+		t.Fatalf("pair %+v err %v", p, err)
+	}
+	if b, _ := os.ReadFile(p.Fanfare); len(b) != len(defaultFanfareWAV) {
+		t.Fatal("wav not written")
+	}
+	lookPath = func(string) (string, error) { return "", errors.New("none") }
+	if _, err := pickPairOrBuiltin(FanfareConfig{}, t.TempDir(), func(int) int { return 0 }); err == nil {
+		t.Fatal("want error with no player")
+	}
+}
