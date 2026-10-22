@@ -3635,17 +3635,18 @@ const modelMetricViews = (m: Model): MetricSectionView[] => {
 const pageDate = (m: Model | undefined) => (m ? releaseDate(m) : '')
 
 /** "Issue N · date · vs issue N-1" or "Draft · since issue M". A news release is an issue of the bulletin in the panes; mw's own CLI keeps --release. */
-export const pageTitle = (entry: NewsEntry, cur: number): { title: string; marker: string } => {
+export const pageTitle = (entry: NewsEntry, cur: number): { title: string; marker: string; ref?: number } => {
   if (cur === 0) {
     const m = entry.draft
     const since = m?.release.since.number ?? (entry.latest > 0 ? entry.latest : null)
-    return { title: since === null ? 'Draft · since the start' : `Draft · since issue ${since}`, marker: m ? `Draft, not published · ${changeCount(m)} changes since ${since === null ? 'the start' : `issue ${since}`}` : 'Draft, not published' }
+    return { ref: since ?? undefined, title: since === null ? 'Draft · since the start' : `Draft · since issue ${since}`, marker: m ? `Draft, not published · ${changeCount(m)} changes since ${since === null ? 'the start' : `issue ${since}`}` : 'Draft, not published' }
   }
   const m = entry.releases[cur]
   // the release's own `since` names the one before it (releases may have gaps); without it, the one numbered before
   const since = m?.release.since.number
-  const prev = since === 0 || (since === undefined && cur <= 1) || (since === null && cur <= 1) ? 'vs the start' : `vs issue ${since ?? cur - 1}`
-  return { title: `Issue ${cur} · ${pageDate(m) || '…'} · ${prev}`, marker: '' }
+  const none = since === 0 || (since === undefined && cur <= 1) || (since === null && cur <= 1)
+  const prev = none ? 'vs the start' : `vs issue ${since ?? cur - 1}`
+  return { title: `Issue ${cur} · ${pageDate(m) || '…'} · ${prev}`, marker: '', ref: none ? undefined : (since ?? cur - 1) }
 }
 
 /** ⇤ | ◂ | ☰ | ▸ | ⇥ as one group (a dot after ☰ and ⇥ when a release came that the reader has not seen), and the Release button on the draft only. */
@@ -3826,7 +3827,7 @@ const modelNewsNodes = async (
   job: MwJobsJob,
   o: { entry: NewsEntry; view: NewsViewState; canSvg: boolean; paneW: number; given: number | undefined; step: number; style: string },
 ): Promise<any[]> => {
-  const { Box, Text, Link, Svg, Markdown } = ui
+  const { Box, Text, Link, Svg, Markdown, Button } = ui
   const { entry, view, canSvg } = o
   const cur = currentPage(entry, view)
   const nodes: any[] = [releaseNav(ui, $, job, entry, view, cur, ((await read($, releasing)) as string[]).includes(job.id))]
@@ -3849,7 +3850,15 @@ const modelNewsNodes = async (
   const t = pageTitle(entry, cur)
   nodes.push(
     <Box key="page-title" flexDirection="column">
-      <Text bold wrap="truncate-end">{t.title}</Text>
+      {t.ref !== undefined && entry.nums.includes(t.ref) && t.title.endsWith(`issue ${t.ref}`) ? (
+        // the issue it is compared with is a link to that issue
+        <Box key="page-title-line">
+          <Text bold>{t.title.slice(0, t.title.length - `issue ${t.ref}`.length)}</Text>
+          <Button key="page-title-ref" plain label={`issue ${t.ref}`} onPress={() => void goPage($, job.id, t.ref!)} />
+        </Box>
+      ) : (
+        <Text bold wrap="truncate-end">{t.title}</Text>
+      )}
       {t.marker !== '' && <Text dimColor wrap="truncate-end">{t.marker}</Text>}
     </Box>,
   )

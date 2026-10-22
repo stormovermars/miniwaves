@@ -2234,6 +2234,23 @@ test('detail panel: ids in the acceptance text and the log notes are Buttons whe
   await dp.unmount()
 })
 
+test('news issue numbers are links: the "vs issue N-1" and "since issue M" parts of the header open that issue', async ($, on) => {
+  const { state } = rig($, on, true)
+  state.draft = SMALL_DRAFT
+  seedReleases(state, 30)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await mountNews($, 'blocks')
+  await ui.press({ key: 'nav-prev' }) // from the draft to the newest issue
+  const first = await titleOf(ui)
+  expect(first).toMatch(/^Issue \d+ /)
+  const ref = await ui.find({ key: 'page-title-ref' })
+  expect(ref).toBeDefined()
+  const target = Number(String(ref!.props.label).replace('issue ', ''))
+  await ui.press({ key: 'page-title-ref' })
+  expect(await titleOf(ui)).toMatch(new RegExp(`^Issue ${target} `))
+  await ui.unmount()
+})
+
 test('an invalid or newer metrics file shows a one-line dim notice instead of the section', async ($, on) => {
   const { state } = rig($, on, true, REG_M)
   state.newsFiles.zeta = '# S'
@@ -2271,7 +2288,11 @@ const mountNews = async ($: any, style: string, surface: 'desktop' | 'terminal' 
   await cmd($, `style ${style}`)
   return $.ui.mount({ ...NEWS_PANE, props: { ...NEWS_PANE.props, bodyColumns: cols }, surface } as never)
 }
-const titleOf = async (ui: any) => (await ui.findAll({ type: 'Text' })).map((t: any) => String(t.text)).find((x: string) => NEWS_TITLE.test(x))
+const titleOf = async (ui: any) => {
+  const line = (await ui.findAll({ type: 'Text' })).map((t: any) => String(t.text)).find((x: string) => NEWS_TITLE.test(x))
+  const ref = (await ui.find({ key: 'page-title-ref' }))?.props?.label
+  return line === undefined ? undefined : `${line}${ref !== undefined && line.endsWith(' ') ? ref : ''}`
+}
 
 test('news model: the draft and its marker in every style, with the navigation group and the Release button', async ($, on) => {
   const { state } = rig($, on, true)
