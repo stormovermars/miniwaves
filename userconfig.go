@@ -84,6 +84,26 @@ func readUserConfig() (UserConfig, string, bool, error) {
 	return c, p, true, nil
 }
 
+// parseAlertExec validates an alerts.exec value: a JSON array of strings, an argv that never meets a shell.
+func parseAlertExec(val string) ([]string, error) {
+	var argv []string
+	if err := json.Unmarshal([]byte(val), &argv); err != nil {
+		return nil, errors.New(`alerts.exec: must be a JSON array of strings, for example ["notify-send","mw"]`)
+	}
+	if len(argv) == 0 || len(argv) > 32 {
+		return nil, errors.New("alerts.exec: 1 to 32 arguments")
+	}
+	if argv[0] == "" {
+		return nil, errors.New("alerts.exec: the program (first element) must not be empty")
+	}
+	for _, a := range argv {
+		if len(a) > 4096 || strings.ContainsRune(a, 0) {
+			return nil, errors.New("alerts.exec: arguments are at most 4096 bytes, with no NUL")
+		}
+	}
+	return argv, nil
+}
+
 func setUserKey(c *UserConfig, key, val string) error {
 	if !noControl(val) {
 		return fmt.Errorf("%s: no control characters", key)
@@ -110,20 +130,9 @@ func setUserKey(c *UserConfig, key, val string) error {
 			c.Alerts.Exec = nil
 			return nil
 		}
-		var argv []string
-		if err := json.Unmarshal([]byte(val), &argv); err != nil {
-			return errors.New(`alerts.exec: must be a JSON array of strings, for example ["notify-send","mw"]`)
-		}
-		if len(argv) == 0 || len(argv) > 32 {
-			return errors.New("alerts.exec: 1 to 32 arguments")
-		}
-		if argv[0] == "" {
-			return errors.New("alerts.exec: the program (first element) must not be empty")
-		}
-		for _, a := range argv {
-			if len(a) > 4096 || strings.ContainsRune(a, 0) {
-				return errors.New("alerts.exec: arguments are at most 4096 bytes, with no NUL")
-			}
+		argv, err := parseAlertExec(val)
+		if err != nil {
+			return err
 		}
 		c.Alerts.Exec = argv
 	case "fanfare.enabled":

@@ -112,8 +112,14 @@ func logCommand(w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "tenant", "session", "all", "limit", "json", "tag", "since", "since-file"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "all", "limit", "json", "tag", "since", "since-file", "follow", "exec", "poll"); err != nil {
 		return err
+	}
+	if o["follow"] == "true" {
+		return logFollowCommand(o)
+	}
+	if o["exec"] == "true" || o["poll"] != "" {
+		return errors.New("--exec and --poll need --follow")
 	}
 	_, since := o["since"]
 	_, sinceFile := o["since-file"]

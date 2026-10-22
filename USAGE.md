@@ -145,6 +145,7 @@ mw next --claim [-s NAME] [-a ROLE] [-t SLUG] [-k KIND] [-j]   # pick + start in
 mw archive [--days N] [-t SLUG] [--dry-run]   # done items older than N days (30) -> .miniwaves/<slug>.archive.json
 mw log [-t SLUG | -A] [-n N] [-j]   # activity feed, newest first
 mw log [-t SLUG | -A] --since CURSOR|start [-n N] [-j]   # resumable feed, oldest first, plus a next cursor
+mw log [-t SLUG | -A] --follow [--since CURSOR|start] [--poll SEC] [--exec] [-j]   # live feed; --exec runs alerts.exec per alerts.on event
 mw board [-t SLUG | -A] [-v] [-j]   # last: <ago> <item> <action>, today: N done; -A sorted by last activity
 mw context [-t SLUG] [-s NAME] [-j]
 ```
@@ -307,6 +308,8 @@ block/done note.
 
 `mw log [-t SLUG | -A] --since CURSOR|start [-n N] [-j]` is an event feed a poller can resume. It lists, oldest first, the events the cursor has not delivered, then a `next` cursor (`-j`: `{"events": [...], "next": "..."}`, each event with a `key`; text: a last `next: CURSOR` line). `--since ""` and `--since start` return everything; `-n` keeps the first N and `next` resumes after them.
 
+`mw log --follow` polls the board (every 2 s, `--poll SEC`) and prints new events as they arrive, oldest first, starting from now (`--since CURSOR|start` catches up first; `-j` is one JSON object per line). With `--exec` it also runs your `alerts.exec` for each event whose action is listed in `alerts.on` (an empty `alerts.on` runs nothing). The command is an argv array, never a shell; the event is written as JSON (`ts`, `tenant`, `item`, `action`, `by`, `note`, `key`) to a private temp file whose path is appended as the last argument, stdin is closed, it has 30 s, and a failure goes to stderr without stopping the feed. `MW_ALERT_EXEC` (the same JSON array) overrides `alerts.exec`; the tests use it as a stub. Board text only ever reaches the command inside that file.
+
 - The cursor is opaque and bounded (base64 of the newest delivered time and 8-byte hashes of the delivered events stamped within the 24 hours before it). An event's key is `tenant/item/H`, H being 12 hex digits of a hash of the event's stamp, action, actor and note, so a `git merge` that reorders events never moves a key.
 - Each read returns the events stamped after the cursor time, plus those stamped within the 24h window up to it whose key hash is not in the cursor. An event from another clone, or from a tenant that stamped before another tenant's save, is returned exactly once when it reaches the board, even with an older stamp. One older than the window is not returned: read from `start` to see it. The window is fixed at 24 hours.
 - `--since-file PATH` reads the cursor from PATH (a missing file means `start`) and writes the next cursor back atomically, so the cursor need not fit on a command line. Do not combine it with `--since`.
@@ -351,9 +354,9 @@ Two older keys are set the same way and are not part of `user get`:
 | Key | Value |
 |---|---|
 | `alerts.on` | comma list of event names (lowercase letters, digits, `.` `_` `-`) |
-| `alerts.exec` | a JSON argv array, for example `["notify-send","mw"]`; stored as data, never run through a shell |
+| `alerts.exec` | a JSON argv array, for example `["notify-send","mw"]`; stored as data; run only by `mw log --follow --exec`, never through a shell |
 
-Writes (`user set`, `configure`, `user fanfare-defaults`) take `mw-user.json.lock` and re-read the file inside it, so concurrent writers lose nothing. On Unix mw refuses to read the file when it is group- or world-writable (`chmod 600` fixes it), because `alerts.exec` names a command. On Windows there are no comparable mode bits and no check is made. A broken file never fails a board command: fanfare ignores it with one note on stderr. `log --follow --exec` (which would run `alerts.exec`) is not built yet.
+Writes (`user set`, `configure`, `user fanfare-defaults`) take `mw-user.json.lock` and re-read the file inside it, so concurrent writers lose nothing. On Unix mw refuses to read the file when it is group- or world-writable (`chmod 600` fixes it), because `alerts.exec` names a command. On Windows there are no comparable mode bits and no check is made. A broken file never fails a board command: fanfare ignores it with one note on stderr. `mw log --follow --exec` runs `alerts.exec` (see `mw log --follow` below).
 
 ## Coordinated jobs
 
