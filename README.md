@@ -21,7 +21,7 @@ Upgrade: `mw update` (checks GitHub releases, verifies the checksum, replaces th
 - `MW_NO_PLUGINS=1` skips the plugin step in `install.sh`, `install.ps1` and `mw update`.
 - No Claude Code, or the binary only: `go install github.com/stormovermars/miniwaves@latest` (the binary is named `miniwaves`). By hand: `claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves mw-jobs@miniwaves`.
 
-Open the panes: run `/mw jobs` or `/mw news` (settings: `/mw-configure`). That is the whole setup: mw-jobs finds the boards this session used, then those near the session folder, then under `~`, with their tenants (`mw boards` does the finding). Fanfare is switched on with defaults at install (change it with `mw configure`). `mw-watch` (formerly `tidewatch`) is retired; mw-jobs replaces it.
+Open the panes: run `/mw-watch` (or `/mw-jobs`, `/mw-news`; settings: `/mw-configure`; fanfare: `/mw-fanfare`). That is the whole setup: mw-jobs finds the boards this session used, then those near the session folder, then under `~`, with their tenants (`mw boards` does the finding). Fanfare is switched on with defaults at install (change it with `mw configure`). `mw-watch` (formerly `tidewatch`) is retired; mw-jobs replaces it.
 
 ## Use
 
@@ -58,7 +58,7 @@ All off until you turn them on. Details in [USAGE.md](USAGE.md).
 | Uncapped news lists | `mw news --job ID --full -o FILE` (or `-o -`, `--format json\|text`) | leave `--full` off |
 | Personal settings (pane, alerts, fanfare, chat bar, discovery) | `mw configure` (or `mw configure KEY=VALUE...`) | `mw user set KEY=` resets a key |
 | Fanfare set | `mw fanfare use NAME` | `mw fanfare use all` |
-| mw-jobs panes: jobs, news, settings, alerts, chat-bar status (Claude Code): `/mw jobs`, `/mw news`, `/mw-configure` | installed with the `mw` plugin (`mw update --plugins`); no setup, it finds your boards | `claude plugin uninstall mw-jobs` |
+| mw-jobs panes: jobs, news, settings, alerts, chat-bar status (Claude Code): `/mw-watch`, `/mw-jobs`, `/mw-news`, `/mw-configure`, `/mw-fanfare` | installed with the `mw` plugin (`mw update --plugins`); no setup, it finds your boards | `claude plugin uninstall mw-jobs` |
 
 To share mw-jobs with your team, install it, then ask Claude Code: "publish the mw-jobs plugin to my organization". It shows every file and asks before sending; an admin may review it first. Colleagues then install it from the organization library.
 
