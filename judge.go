@@ -139,13 +139,14 @@ type reviewDoc struct {
 	Acceptance []reviewItem `json:"acceptance"`
 	Waves      []waveRow    `json:"waves"`
 	Stale      []reviewItem `json:"stale"`
+	Needs      []needRow    `json:"needs"`
 }
 
 func reviewOf(w *Workspace, t *Tenant) (reviewDoc, bool) {
 	gs := gateStates(w, t)
 	judgeOn, accOn := byName(gs, "judge").Effective, byName(gs, "acceptance").Effective
 	evOn := byName(gs, "evidence").Effective
-	d := reviewDoc{Judge: []reviewItem{}, Blocked: []reviewItem{}, Acceptance: []reviewItem{}, Waves: []waveRow{}, Stale: []reviewItem{}}
+	d := reviewDoc{Judge: []reviewItem{}, Blocked: []reviewItem{}, Acceptance: []reviewItem{}, Waves: []waveRow{}, Stale: []reviewItem{}, Needs: needsOf(t)}
 	mk := func(it Item) reviewItem {
 		return reviewItem{ID: it.ID, Type: it.Kind, State: it.Status, Title: compactText(it.Title, 72), Attempts: it.Attempts}
 	}
@@ -253,6 +254,10 @@ func reviewCommand(w *Workspace, args []string) error {
 	if len(d.Stale) > 0 {
 		fmt.Printf("STALE (%d)\n", len(d.Stale))
 		items(d.Stale)()
+	}
+	if len(d.Needs) > 0 {
+		fmt.Printf("needs you (%d)\n", len(d.Needs))
+		printNeeds(d.Needs)
 	}
 	section("judge", len(d.Judge), items(d.Judge))
 	section("blocked", len(d.Blocked), items(d.Blocked))

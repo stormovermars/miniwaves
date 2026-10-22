@@ -114,6 +114,9 @@ mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
 mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]   # -c under a session only while acceptance is empty
 mw gate [-t SLUG] [-j] | mw gate level trust|proof|spec|judged [-t SLUG] [--workspace] [--by NAME] | mw gate evidence|acceptance|judge on|off|auto [--by NAME] [--workspace]
 mw version [-j]   # {version, schema, board_schema, board}: nearest workspace and its schema (null if none)
+mw ask ID QUESTION... [-t SLUG] [-s NAME]   # a question for a human, as an event (see "Needs you and decisions")
+mw answer ID TEXT... --by NAME [-t SLUG]   # human only; closes the item's open ask
+mw decide TEXT... --by NAME [-b WHY] [-p ID] [-t SLUG]   # a decision event on ID, else on the tenant's "Decisions" chore
 mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]   # coordinated-job config (see "Coordinated jobs")
 mw review [-t SLUG] [-j]
 mw judge ID [-t SLUG]
@@ -273,6 +276,16 @@ Without the key the defaults above apply.
 `mw note ID TEXT...` appends a timestamped note to any item or wave (any
 status); `mw show ID` lists the notes. It never changes the status or the
 block/done note.
+
+## Needs you and decisions
+
+`ask`, `answer` and `decide` append item events (`ask`, `answer`, `decide`; see PROTOCOL.md). They work on any board: there is no gate and no job is needed, and they never change an item's status.
+
+- `mw ask ID QUESTION... [-s NAME]` records a question for a human. Any session may ask.
+- `mw answer ID TEXT... --by NAME` is human only, like `accept`: it is refused under `MW_SESSION` or `-s`, and `--by` is required when stdin is not a terminal. It is refused when the item has no open ask.
+- An **open ask** is the last `ask` of an item with no later `answer` on that item (one answer closes every earlier ask).
+- `mw review` shows open asks as `needs you`, `mw review -j` gains `needs` (`[{tenant, item, question, by, at}]`, always an array), and the text `mw board` prints a `NEEDS YOU` block.
+- `mw decide TEXT... --by NAME [-b WHY] [-p ID]` appends a `decide` event to `-p ID`, else to the tenant's `Decisions` chore, created on first use (already `done`, so it never holds the tenant open). `-b WHY` is stored as `(why: WHY)` at the end of the note.
 
 ## Coordinated jobs
 

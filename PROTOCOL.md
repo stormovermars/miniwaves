@@ -14,3 +14,18 @@ The board's top-level `protocol` key overrides this list.
 - cleanup | clean up
 - plan | plan revised
 - plan-audit | plan audited, plan issues solved
+
+# Item events (not steps: this section is prose, the step parser reads only the list above)
+
+Every item keeps an activity log of events `{at, action, by, note}`. Three actions carry the
+needs-human and decision flow; they are ungated and valid on any board, and an mw that predates
+them reads them as plain strings.
+
+| action | written by | by | note |
+|---|---|---|---|
+| ask | `mw ask ID QUESTION... [-s NAME]` | the session, if any | the question |
+| answer | `mw answer ID TEXT... --by NAME` (human only) | the human | the answer |
+| decide | `mw decide TEXT... --by NAME [-b WHY] [-p ID]` | the decider | the decision, then `(why: WHY)` |
+
+An open ask is the last `ask` of an item with no later `answer` on the same item.
+`decide` goes to the item given with `-p`, else to the tenant's "Decisions" chore.

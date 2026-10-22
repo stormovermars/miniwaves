@@ -220,6 +220,12 @@ func dispatch(path string, w *Workspace, args []string) error {
 		return fanfareCommand(path, w, args[1:])
 	case "jobs":
 		return jobsCommand(path, w, args[1:])
+	case "ask":
+		return askCommand(path, w, args[1:])
+	case "answer":
+		return answerCommand(path, w, args[1:])
+	case "decide":
+		return decideCommand(path, w, args[1:])
 	case "gate":
 		return gateCommand(path, w, args[1:])
 	case "edit":
@@ -366,6 +372,15 @@ Keys (defaults): title (the id), max_workers 1..32 (4), worktrees on|off (on), l
 news.out (docs/news/), news.url (http/https), summary (none), pane on|off (on), pane.style ([a-z0-9-]{1,32}).
 news.out and summary must be relative, inside the workspace (no .., no absolute path, no ~). An empty VALUE resets a key.
 Job ids match ^[a-z0-9][a-z0-9-]{0,31}$. Example: mw jobs enable tiny -t sheet,doc && mw jobs set tiny max_workers=3`,
+		"ask": `mw ask ID QUESTION... [-t SLUG] [-s NAME]
+Record a question that needs a human, as an "ask" event on the item (any board, no gate; the status is unchanged).
+It stays open until an answer follows it on the same item. mw review shows it as "needs you" (-j: needs), and so does mw board.`,
+		"answer": `mw answer ID TEXT... --by NAME [-t SLUG]
+Human only (refused under MW_SESSION or -s; --by NAME when stdin is not a terminal). Appends an "answer" event that
+closes the item's open ask; refused when the item has none.`,
+		"decide": `mw decide TEXT... --by NAME [-b WHY] [-p ID] [-t SLUG]
+Record a decision as a "decide" event on item ID (-p), else on the tenant's "Decisions" chore, which is created
+(already done, so it holds nothing open) on first use. -b WHY is kept in the note as "(why: WHY)". Any board, no gate.`,
 		"gate": `mw gate [-t SLUG] [-j]
 mw gate level trust|proof|spec|judged [-t SLUG | --workspace] [--by NAME]
 mw gate evidence|acceptance|judge on|off|auto [-t SLUG] [--by NAME]
@@ -379,7 +394,7 @@ Humans only (refused under MW_SESSION or -s); --by NAME is required when stdin i
 		"review": `mw review [-t SLUG] [-j]
 What needs a human: judge (judgeable items awaiting judgement, ×N = rejections; [] while the
 judge gate is off), blocked, acceptance (needs acceptance; only with that gate on) and waves
-ready to close. -j prints {judge, blocked, acceptance, waves}.`,
+ready to close. "needs you" lists open asks (mw ask, closed by mw answer). -j prints {judge, blocked, acceptance, waves, stale, needs}.`,
 		"judge": `mw judge ID [-t SLUG]
 Three lines to decide on: Outcome (title, status, verification), Evidence (the item's folder; a story
 adds each child's), Decision (the effective acceptance as a checklist). Judgeable = a story or a
@@ -428,7 +443,7 @@ With the evidence gate on, <evidence>/<tenant>/<ID>/ must hold a non-empty file
 Return an item to inbox and release its session owner.`,
 		"log": `mw log [-t SLUG | -A] [-n N] [-j]
 Activity feed, newest first (default 20): time, tenant, item, action, session, note. Actions: created,
-ready, start, block, done, reopen, accept, reject, note, edit, step, unstep. -A spans all tenants.`,
+ready, start, block, done, reopen, accept, reject, note, ask, answer, decide, edit, step, unstep. -A spans all tenants.`,
 		"wave": `mw wave create TITLE... [-t SLUG] [-p WAVE] [-b TEXT]
 mw wave add|remove WAVE ID... [-t SLUG]
 mw wave step WAVE KEY=NOTE [KEY=NOTE...] [--na] [-t SLUG]   (several steps in one call; --na applies to all)
@@ -499,6 +514,7 @@ Usage:
   mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]
   mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]
+  mw ask ID QUESTION... [-s NAME] | mw answer ID TEXT... --by NAME | mw decide TEXT... --by NAME [-b WHY] [-p ID]
   mw gate [-t SLUG] [-j] | gate level trust|proof|spec|judged | gate evidence|acceptance|judge on|off|auto [--by NAME]
   mw review [-t SLUG] [-j]
   mw judge ID [-t SLUG]

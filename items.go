@@ -1121,6 +1121,12 @@ func printBoardJ(t *Tenant, sessions []Session, full bool, gates string, judgeOn
 		fmt.Println(gates)
 	}
 	fmt.Println()
+	needs := needsOf(t)
+	if len(needs) > 0 {
+		fmt.Printf("NEEDS YOU (%d)\n", len(needs))
+		printNeeds(needs)
+		fmt.Println()
+	}
 	shownWaves := false
 	for _, it := range t.Items {
 		if it.Kind == "wave" && (full || it.Status != "done") {
@@ -1178,7 +1184,7 @@ func printBoardJ(t *Tenant, sessions []Session, full bool, gates string, judgeOn
 		}
 		fmt.Println()
 	}
-	if !full && !shownAny && !shownWaves {
+	if !full && !shownAny && !shownWaves && len(needs) == 0 {
 		fmt.Println("quiet")
 	}
 }
