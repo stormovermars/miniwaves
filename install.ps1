@@ -59,7 +59,7 @@ try {
                     & claude plugin uninstall tidewatch@miniwaves 2>&1 | Out-Null
                     if ($LASTEXITCODE -eq 0) { Write-Output "plugin tidewatch: removed (renamed to mw-watch)" }
                 }
-                foreach ($p in "mw", "mw-watch") {
+                foreach ($p in "mw", "mw-watch", "mw-jobs") {
                     $id = "$p@miniwaves"
                     $cmd = if ($listing -match "(?m)\s$([regex]::Escape($id))\s*$") { "update" } else { "install" }
                     $po = (& claude plugin $cmd $id 2>&1 | Out-String).Trim()

@@ -1,7 +1,9 @@
 {
   "name": "miniwaves",
   "description": "miniwaves: a tiny work board for coding assistants.",
-  "owner": { "name": "stormovermars" },
+  "owner": {
+    "name": "stormovermars"
+  },
   "plugins": [
     {
       "name": "mw",
@@ -13,7 +15,18 @@
       "source": "./plugins/mw-watch",
       "description": "Opt-in live pane for mw boards: status line, alerts, news and user-defined styles.",
       "version": "0.3.0",
-      "author": { "name": "stormovermars" }
+      "author": {
+        "name": "stormovermars"
+      }
+    },
+    {
+      "name": "mw-jobs",
+      "source": "./plugins/mw-jobs",
+      "description": "Opt-in live mw jobs and news panes, settings and alerts.",
+      "version": "0.3.4",
+      "author": {
+        "name": "stormovermars"
+      }
     }
   ]
 }

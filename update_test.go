@@ -192,13 +192,13 @@ func TestUpdateRunsPluginStep(t *testing.T) {
 	calls := fakeClaude(t, true, "", "mw@miniwaves")
 	t.Setenv("MW_NO_PLUGINS", "")
 	s := out(t, "update")
-	for _, want := range []string{"plugin mw: updated", "plugin mw-watch: installed"} {
+	for _, want := range []string{"plugin mw: updated", "plugin mw-watch: installed", "plugin mw-jobs: installed"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("missing %q in %q", want, s)
 		}
 	}
 	all := strings.Join(*calls, "|")
-	for _, want := range []string{"plugin marketplace add stormovermars/miniwaves", "plugin marketplace update miniwaves", "plugin update mw@miniwaves", "plugin install mw-watch@miniwaves"} {
+	for _, want := range []string{"plugin marketplace add stormovermars/miniwaves", "plugin marketplace update miniwaves", "plugin update mw@miniwaves", "plugin install mw-watch@miniwaves", "plugin install mw-jobs@miniwaves"} {
 		if !strings.Contains(all, want) {
 			t.Fatalf("missing call %q in %q", want, all)
 		}

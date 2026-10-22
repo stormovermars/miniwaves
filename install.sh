@@ -64,7 +64,7 @@ else
         echo "plugin tidewatch: removed (renamed to mw-watch)"
       fi
     fi
-    for p in mw mw-watch; do
+    for p in mw mw-watch mw-jobs; do
       if printf '%s\n' "$listing" | grep -q "[[:space:]]$p@miniwaves\$"; then
         verb=updated; cmd=update
       else
