@@ -2,6 +2,7 @@
   {
     "id": "other",
     "title": "other",
+    "description": "",
     "tenants": [
       "jobs-app"
     ],
@@ -17,6 +18,7 @@
   {
     "id": "tiny",
     "title": "Tiny corpus",
+    "description": "",
     "tenants": [
       "sheet",
       "doc"

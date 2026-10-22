@@ -155,3 +155,48 @@ func TestJobsReadOnlyShow(t *testing.T) {
 		t.Fatal("jobs show is a read; the rest write")
 	}
 }
+
+func TestJobsDescription(t *testing.T) {
+	path := jobsBoard(t)
+	runAll(t, []string{"jobs", "enable", "j1", "-t", "sheet"})
+	show := func() JobView {
+		var v JobView
+		out := captureOutput(t, func() { runAll(t, []string{"jobs", "show", "j1", "-j"}) })
+		if err := json.Unmarshal([]byte(out), &v); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, `"description"`) {
+			t.Fatalf("no description key: %s", out)
+		}
+		return v
+	}
+	runAll(t, []string{"jobs", "set", "j1", "description=One line about the job"})
+	if v := show(); v.Description != "One line about the job" {
+		t.Fatalf("set: %+v", v)
+	}
+	if txt := captureOutput(t, func() { runAll(t, []string{"jobs", "show", "j1"}) }); !strings.Contains(txt, "One line about the job") {
+		t.Fatalf("text show: %s", txt)
+	}
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), `"description"`) {
+		t.Fatalf("not stored: %s", b)
+	}
+	// refusals store nothing
+	for _, bad := range []string{strings.Repeat("é", 121), "a\nb", "a\x1b[31mb", "a\tb"} {
+		if err := run([]string{"jobs", "set", "j1", "description=" + bad}); err == nil {
+			t.Errorf("%q: expected an error", bad)
+		}
+	}
+	if v := show(); v.Description != "One line about the job" {
+		t.Fatalf("changed by a refusal: %+v", v)
+	}
+	runAll(t, []string{"jobs", "set", "j1", "description=" + strings.Repeat("é", 120)})
+	runAll(t, []string{"jobs", "set", "j1", "description="})
+	if v := show(); v.Description != "" {
+		t.Fatalf("reset: %+v", v)
+	}
+	b, _ = os.ReadFile(path)
+	if strings.Contains(string(b), `"description"`) {
+		t.Fatalf("omitempty: %s", b)
+	}
+}

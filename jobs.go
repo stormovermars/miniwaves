@@ -22,38 +22,40 @@ var (
 
 // JobConfig holds the explicitly set keys of one job; zero values mean "default".
 type JobConfig struct {
-	Title      string `json:"title,omitempty"`
-	MaxWorkers int    `json:"max_workers,omitempty"`
-	Worktrees  string `json:"worktrees,omitempty"`
-	Lock       string `json:"lock,omitempty"`
-	NewsOut    string `json:"news.out,omitempty"`
-	NewsURL    string `json:"news.url,omitempty"`
-	Summary    string `json:"summary,omitempty"`
-	Pane       string `json:"pane,omitempty"`
-	PaneStyle  string `json:"pane.style,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	MaxWorkers  int    `json:"max_workers,omitempty"`
+	Worktrees   string `json:"worktrees,omitempty"`
+	Lock        string `json:"lock,omitempty"`
+	NewsOut     string `json:"news.out,omitempty"`
+	NewsURL     string `json:"news.url,omitempty"`
+	Summary     string `json:"summary,omitempty"`
+	Pane        string `json:"pane,omitempty"`
+	PaneStyle   string `json:"pane.style,omitempty"`
 }
 
 // JobView is a job with its defaults applied and its tenants listed.
 type JobView struct {
-	ID         string   `json:"id" toon:"id"`
-	Title      string   `json:"title" toon:"title"`
-	Tenants    []string `json:"tenants" toon:"tenants"`
-	MaxWorkers int      `json:"max_workers" toon:"max_workers"`
-	Worktrees  string   `json:"worktrees" toon:"worktrees"`
-	Lock       string   `json:"lock" toon:"lock"`
-	NewsOut    string   `json:"news.out" toon:"news.out"`
-	NewsURL    string   `json:"news.url" toon:"news.url"`
-	Summary    string   `json:"summary" toon:"summary"`
-	Pane       string   `json:"pane" toon:"pane"`
-	PaneStyle  string   `json:"pane.style" toon:"pane.style"`
+	ID          string   `json:"id" toon:"id"`
+	Title       string   `json:"title" toon:"title"`
+	Description string   `json:"description" toon:"description"`
+	Tenants     []string `json:"tenants" toon:"tenants"`
+	MaxWorkers  int      `json:"max_workers" toon:"max_workers"`
+	Worktrees   string   `json:"worktrees" toon:"worktrees"`
+	Lock        string   `json:"lock" toon:"lock"`
+	NewsOut     string   `json:"news.out" toon:"news.out"`
+	NewsURL     string   `json:"news.url" toon:"news.url"`
+	Summary     string   `json:"summary" toon:"summary"`
+	Pane        string   `json:"pane" toon:"pane"`
+	PaneStyle   string   `json:"pane.style" toon:"pane.style"`
 }
 
-var jobKeys = []string{"title", "max_workers", "worktrees", "lock", "news.out", "news.url", "summary", "pane", "pane.style"}
+var jobKeys = []string{"title", "description", "max_workers", "worktrees", "lock", "news.out", "news.url", "summary", "pane", "pane.style"}
 
 // jobView applies the defaults.
 func jobView(w *Workspace, id string) JobView {
 	c := w.Jobs[id]
-	v := JobView{ID: id, Title: c.Title, Tenants: []string{}, MaxWorkers: c.MaxWorkers, Worktrees: c.Worktrees, Lock: c.Lock,
+	v := JobView{ID: id, Title: c.Title, Description: c.Description, Tenants: []string{}, MaxWorkers: c.MaxWorkers, Worktrees: c.Worktrees, Lock: c.Lock,
 		NewsOut: c.NewsOut, NewsURL: c.NewsURL, Summary: c.Summary, Pane: c.Pane, PaneStyle: c.PaneStyle}
 	if v.Title == "" {
 		v.Title = id
@@ -124,6 +126,11 @@ func setJobKey(c *JobConfig, key, val string) error {
 			return errors.New("title: at most 120 characters")
 		}
 		c.Title = val
+	case "description":
+		if len([]rune(val)) > 120 {
+			return errors.New("description: at most 120 characters")
+		}
+		c.Description = val
 	case "max_workers":
 		if val == "" {
 			c.MaxWorkers = 0
