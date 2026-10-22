@@ -71,4 +71,4 @@ Numbers are clamped, other bad values dropped. Mono draws sizes as whole pixels,
 
 ## Alerts
 
-New needs-you and blocked items ping (`assets/Ping.aiff`) and notify once per event; a closed milestone only toasts and notifies, since mw's fanfare already plays for it. `mute` silences both.
+New needs-you and blocked items ping (`assets/Ping.aiff`) and toast once per event, never as a system notification banner; a closed milestone only toasts, since mw's fanfare already plays for it. `mute` silences both.

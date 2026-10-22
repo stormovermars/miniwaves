@@ -1052,13 +1052,7 @@ const refreshJob = async ($: any, job: TidewatchJob) => {
             // no player: skip
           }
         }
-        for (const a of us.alertMessage ? send.slice(0, 3) : []) {
-          try {
-            await $.ui.notify(a.text, { title: job.title })
-          } catch {
-            // notifications unavailable: the toast already showed it
-          }
-        }
+        // no system notification banners: the in-app toast and the ping carry the alert
       }
     }
   } catch {
