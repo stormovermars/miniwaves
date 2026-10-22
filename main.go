@@ -29,7 +29,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "lookback": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "format": true,
+	"since": true, "lookback": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "format": true, "width": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -389,13 +389,14 @@ mw fanfare stop
 Play a short clip when a wave closes and a longer finale when a tenant is finished (items exist, none inbox/ready/doing/blocked, no open wave; once per transition).
 Playback is a detached player (afplay, ffplay, mpv, paplay, Windows .wav) and never fails a board command. "fetch" downloads public-domain, CC0 and CC-BY pairs; the
 bring-your-own pair folders stay empty until you add fanfare.<ext> and finale.<ext>. Example: mw fanfare set enabled=true`,
-		"news": `mw news [--job ID] [--format md|html] [-o PATH|-] [-j]
+		"news": `mw news [--job ID] [--format md|html|text] [--width N] [-o PATH|-] [-j]
 Write a status page from board data: headline, milestones, needs you, blocked, in progress, last 20 events,
 decisions, and the job's summary file (key summary, read as data, at most 20 KB). Default: every job, one file each at
 <news.out>/status.md (.html), or the workspace when no job exists (docs/news/). news.out must stay inside the workspace;
 only -o may point elsewhere (-o - prints to stdout). Markdown is kept under 9,500 characters per job, trimming events first.
 The file is rewritten only when the content changed (the generated-at line is not hashed; the hash is kept in PATH.hash);
-otherwise it prints "unchanged". No network. Example: mw news --job tiny`,
+otherwise it prints "unchanged". --format text is plain text for terminals (no colour codes; stdout by default, a file only with -o PATH;
+80 columns, or --width N clamped 40..160). No network. Example: mw news --job tiny`,
 		"jobs": `mw jobs enable ID -t SLUG...
 mw jobs disable ID [-t SLUG]
 mw jobs set ID KEY=VALUE...
@@ -561,7 +562,7 @@ Usage:
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]
   mw user show [-j] | mw user set KEY=VALUE...
   mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]
-  mw news [--job ID] [--format md|html] [-o PATH] [-j]
+  mw news [--job ID] [--format md|html|text] [--width N] [-o PATH] [-j]
   mw ask ID QUESTION... [-s NAME] | mw answer ID TEXT... --by NAME | mw decide TEXT... --by NAME [-b WHY] [-p ID]
   mw gate [-t SLUG] [-j] | gate level trust|proof|spec|judged | gate evidence|acceptance|judge on|off|auto [--by NAME]
   mw review [-t SLUG] [-j]

@@ -474,12 +474,20 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "job", "format", "out", "json"); err != nil {
+	if err := allowOptions(o, "job", "format", "out", "json", "width"); err != nil {
 		return err
 	}
 	format := value(o, "format", "md")
-	if format != "md" && format != "html" {
-		return fmt.Errorf("--format %q: use md or html", format)
+	if format != "md" && format != "html" && format != "text" {
+		return fmt.Errorf("--format %q: use md, html or text", format)
+	}
+	width := 0
+	if format == "text" {
+		if width, err = newsTextWidth(o["width"]); err != nil {
+			return err
+		}
+	} else if o["width"] != "" {
+		return fmt.Errorf("--width is only for --format text")
 	}
 	root := filepath.Dir(path)
 	var ids []string
@@ -498,6 +506,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		ids = []string{""} // no jobs: the workspace is the one section
 	}
 	stdout := o["out"] == "-"
+	text := format == "text"
 	// everything is validated and rendered before anything is written
 	var parts []newsPart
 	var datas []newsData
@@ -533,6 +542,23 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		}
 		parts, targets = append(parts, p), append(targets, target)
 		datas = append(datas, newsCollect(p, newsPrevStamp(target)))
+	}
+	if text { // stdout by default; a file only with -o PATH; no news.out, no sidecar
+		out := ""
+		if o["out"] != "" && !stdout {
+			out = htmlPath(path, o["out"])
+		}
+		if err := newsTextOut(parts, datas, width, out); err != nil {
+			return err
+		}
+		if out == "" {
+			return nil
+		}
+		if o["json"] == "true" {
+			return printJSON([]newsResult{{"", out, true}})
+		}
+		fmt.Println("wrote", out)
+		return nil
 	}
 	now := time.Now()
 	var results []newsResult

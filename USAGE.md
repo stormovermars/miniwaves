@@ -119,7 +119,7 @@ mw answer ID TEXT... --by NAME [-t SLUG]   # human only; closes the item's open 
 mw decide TEXT... --by NAME [-b WHY] [-p ID] [-t SLUG]   # a decision event on ID, else on the tenant's "Decisions" chore
 mw user show [-j] | mw user set KEY=VALUE...   # per-user config (see "Per-user config")
 mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]   # coordinated-job config (see "Coordinated jobs")
-mw news [--job ID] [--format md|html] [-o PATH] [-j]   # status page from board data (see "News")
+mw news [--job ID] [--format md|html|text] [--width N] [-o PATH] [-j]   # status page from board data (see "News")
 mw review [-t SLUG] [-j]
 mw judge ID [-t SLUG]
 mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]
@@ -346,10 +346,13 @@ Job ids match `^[a-z0-9][a-z0-9-]{0,31}$`. `jobs show` is a read; the other thre
 `mw news` writes a status page from board data only (no network, no publishing). Per job it holds a headline (needs you, blocked, in progress, done, and how many events moved since the last run), the milestones with done/total, the open asks, blocked items with their reason, in-progress items, the last 20 events, the decisions (`decide`, `accept`, `reject`), and the contents of the job's `summary` file.
 
 ```text
-mw news [--job ID] [--format md|html] [-o PATH|-] [-j]
+mw news [--job ID] [--format md|html|text] [--width N] [-o PATH|-] [-j]
 ```
 
 - Default: every job, one file each at `<news.out>/status.md` (`.html` with `--format html`); with no job at all, the workspace to `docs/news/status.md`. Two jobs that resolve to the same file are refused. `-j` prints `[{job, path, written}]`.
+- `--format text` is plain text for terminals: no ANSI or colour codes, styled with characters only (`══` title, `── NEEDS YOU ──` heads marked `!` `◐` `✓`, `▸` bullets, a `│` milestone table with a 20-cell `█░` bar, the summary in a `┌─┐` box, one-line events cut to the width). It prints to stdout; it writes a file only with `-o PATH` and uses neither `news.out` nor the hash sidecar (so no "moved since the last run" count).
+- `--width N` (text only): else exactly 80 (`$COLUMNS` is not read); clamped to 40..160. Long lines wrap with a hanging indent; wide (CJK, emoji) runes count as two cells.
+- Text strips control characters (ESC included) and bidi/zero-width marks from board text, so nothing can inject terminal codes, and shows real characters (no `\|` or `&lt;`).
 - `news.out` and `summary` are checked each run: relative, no `..`, no absolute path, no `~`, and inside the workspace after symlinks are resolved. Only `-o` may point elsewhere (`-o -` prints to stdout). With several jobs, `-o` writes one file holding all of them.
 - `summary` is read as data (never run): a regular file, at most 20 KB, shown as a code block (a `<pre>` block in HTML).
 - The Markdown is kept under 9,500 characters per job (the tidewatch pane's limit); the events are trimmed first, then the summary.
