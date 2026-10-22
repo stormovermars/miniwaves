@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -344,7 +346,7 @@ func playFinale(dir, file string, secs int, vol float64, stopDialog bool, reason
 		return err
 	}
 	if stopDialog {
-		startStopControl(dir, pid, secs, finaleMessage(reason, finaleSong(dir, file), secs))
+		startStopControl(dir, pid, secs, finaleMessage(reason, finaleSong(dir, file), secs), finaleIcon(dir, file))
 	}
 	return nil
 }
@@ -419,10 +421,10 @@ func finaleSong(dir, file string) string {
 
 // stopControlCommand builds the command of the finale's Stop dialog: a dialog showing msg with a
 // Stop button that times out after secs+2 seconds and kills the player (pid) itself. ok is false
-// when this platform has no dialog. msg is data: it travels only as an argument (or, on Windows,
+// when this platform has no dialog. icon (a file path, may be "") is data too. msg is data: it travels only as an argument (or, on Windows,
 // the MW_FANFARE_MSG variable in env) and never inside the script text. MW_FANFARE_PLAYER (test
 // stub) disables it unless MW_FANFARE_STOP_CONTROL names a stub, called as: STUB PLAYERPID SECONDS MSG.
-func stopControlCommand(goos string, playerPID, secs int, msg string, look func(string) (string, error)) (name string, args, env []string, ok bool) {
+func stopControlCommand(goos string, playerPID, secs int, msg, icon string, look func(string) (string, error)) (name string, args, env []string, ok bool) {
 	if stub := os.Getenv("MW_FANFARE_STOP_CONTROL"); stub != "" {
 		return stub, []string{strconv.Itoa(playerPID), strconv.Itoa(secs), msg}, nil, true
 	}
@@ -432,19 +434,29 @@ func stopControlCommand(goos string, playerPID, secs int, msg string, look func(
 	n := strconv.Itoa(secs + 2)
 	p := strconv.Itoa(playerPID)
 	switch goos {
-	case "darwin": // sh -c SCRIPT sh MSG PID SECONDS
-		script := `r=$(osascript -e 'on run argv' -e 'display dialog (item 1 of argv) with title "miniwaves" buttons {"Stop"} default button 1 giving up after (item 2 of argv as integer)' -e 'end run' "$1" "$3")` +
+	case "darwin": // sh -c SCRIPT sh MSG PID SECONDS [ICON]
+		ic, extra := ` with icon note`, []string(nil)
+		if icon != "" {
+			ic, extra = ` with icon (POSIX file (item 3 of argv))`, []string{icon}
+		}
+		script := `r=$(osascript -e 'on run argv' -e 'display dialog (item 1 of argv) with title "miniwaves"` + ic + ` buttons {"Stop"} default button 1 giving up after (item 2 of argv as integer)' -e 'end run' "$1" "$3" "$4")` +
 			`; case "$r" in *"gave up:true"*) ;; *"button returned:Stop"*) kill -TERM -"$2" 2>/dev/null || kill -TERM "$2";; esac`
-		return "sh", []string{"-c", script, "sh", msg, p, n}, nil, true
-	case "windows":
-		script := `$r=(New-Object -ComObject WScript.Shell).Popup($env:MW_FANFARE_MSG + "` + "`n`n" + `Click OK to stop.",` + n + `,'miniwaves',0); if($r -eq 1){taskkill /PID ` + p + ` /T /F}`
+		return "sh", append([]string{"-c", script, "sh", msg, p, n}, extra...), nil, true
+	case "windows": // the Popup cannot show a picture: flag 64 is the information icon
+		script := `$r=(New-Object -ComObject WScript.Shell).Popup($env:MW_FANFARE_MSG + "` + "`n`n" + `Click OK to stop.",` + n + `,'miniwaves',64); if($r -eq 1){taskkill /PID ` + p + ` /T /F}`
 		return "powershell", []string{"-NoProfile", "-c", script}, []string{"MW_FANFARE_MSG=" + msg}, true
 	}
 	if _, err := look("zenity"); err == nil {
-		script := `zenity --question --no-markup --title=miniwaves --text="$1" --ok-label=Stop --cancel-label=Close --timeout="$3" && kill -TERM -"$2" 2>/dev/null || true`
-		return "sh", []string{"-c", script, "sh", msg, p, n}, nil, true
+		argv := []string{"-c", "", "sh", msg, p, n}
+		flags := ""
+		if icon != "" && zenityBodyIcon() { // older zenity has no body icon: nothing is added
+			flags = ` --icon="$4"`
+			argv = append(argv, icon)
+		}
+		argv[1] = `zenity --question --no-markup --title=miniwaves` + flags + ` --text="$1" --ok-label=Stop --cancel-label=Close --timeout="$3" && kill -TERM -"$2" 2>/dev/null || true`
+		return "sh", argv, nil, true
 	}
-	if _, err := look("kdialog"); err == nil {
+	if _, err := look("kdialog"); err == nil { // kdialog's --icon is only the title-bar icon: none is passed
 		// kdialog has no timeout: a timer closes it, and the player is killed only on a click (exit 0), not by the timer (143).
 		script := `kdialog --title miniwaves --msgbox "$1" --ok-label Stop & k=$!; (sleep "$3"; kill $k 2>/dev/null) & t=$!; wait $k; r=$?; kill $t 2>/dev/null; [ $r -eq 0 ] && kill -TERM -"$2" 2>/dev/null; true`
 		return "sh", []string{"-c", script, "sh", msg, p, n}, nil, true
@@ -452,9 +464,48 @@ func stopControlCommand(goos string, playerPID, secs int, msg string, look func(
 	return "", nil, nil, false
 }
 
+// zenityBodyIcon reports whether zenity is 3.90 or newer (GTK4), the first with --icon=PATH, the
+// picture beside the text; older zenity rejects the flag. A variable so tests need no zenity.
+var zenityBodyIcon = func() bool {
+	out, err := exec.Command("zenity", "--version").Output()
+	if err != nil {
+		return false
+	}
+	parts := strings.SplitN(strings.TrimSpace(string(out)), ".", 3)
+	if len(parts) < 2 {
+		return false
+	}
+	maj, e1 := strconv.Atoi(parts[0])
+	min, e2 := strconv.Atoi(parts[1])
+	return e1 == nil && e2 == nil && (maj > 3 || (maj == 3 && min >= 90))
+}
+
+//go:embed assets/fanfare-icon.png
+var fanfareIconPNG []byte
+
+// finaleIcon picks the picture of the Stop dialog: cover.png, cover.jpg or cover.icns in the
+// played pair's folder, else mw's built-in icon written once to <dir>/.mw-fanfare-icon.png.
+// "" (no picture) when the built-in cannot be written.
+func finaleIcon(dir, file string) string {
+	for _, n := range []string{"cover.png", "cover.jpg", "cover.icns"} {
+		p := filepath.Join(filepath.Dir(file), n)
+		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
+			return p
+		}
+	}
+	p := filepath.Join(dir, ".mw-fanfare-icon.png")
+	if cur, err := os.ReadFile(p); err == nil && bytes.Equal(cur, fanfareIconPNG) {
+		return p
+	}
+	if os.MkdirAll(dir, 0o755) != nil || os.WriteFile(p, fanfareIconPNG, 0o644) != nil {
+		return ""
+	}
+	return p
+}
+
 // startStopControl launches the Stop dialog detached and records it (best effort, never fails).
-func startStopControl(dir string, playerPID, secs int, msg string) {
-	name, args, env, ok := stopControlCommand(runtime.GOOS, playerPID, secs, msg, lookPath)
+func startStopControl(dir string, playerPID, secs int, msg, icon string) {
+	name, args, env, ok := stopControlCommand(runtime.GOOS, playerPID, secs, msg, icon, lookPath)
 	if !ok {
 		return
 	}
