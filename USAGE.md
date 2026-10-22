@@ -119,6 +119,7 @@ mw answer ID TEXT... --by NAME [-t SLUG]   # human only; closes the item's open 
 mw decide TEXT... --by NAME [-b WHY] [-p ID] [-t SLUG]   # a decision event on ID, else on the tenant's "Decisions" chore
 mw user show [-j] | mw user set KEY=VALUE...   # per-user config (see "Per-user config")
 mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]   # coordinated-job config (see "Coordinated jobs")
+mw news [--job ID] [--format md|html] [-o PATH] [-j]   # status page from board data (see "News")
 mw review [-t SLUG] [-j]
 mw judge ID [-t SLUG]
 mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]
@@ -339,6 +340,21 @@ mw jobs show [ID] [-j]              # effective values (defaults applied) and th
 | `pane.style` | none | `^[a-z0-9-]{1,32}$` |
 
 Job ids match `^[a-z0-9][a-z0-9-]{0,31}$`. `jobs show` is a read; the other three write the index. Values are data: nothing here is executed.
+
+## News
+
+`mw news` writes a status page from board data only (no network, no publishing). Per job it holds a headline (needs you, blocked, in progress, done, and how many events moved since the last run), the milestones with done/total, the open asks, blocked items with their reason, in-progress items, the last 20 events, the decisions (`decide`, `accept`, `reject`), and the contents of the job's `summary` file.
+
+```text
+mw news [--job ID] [--format md|html] [-o PATH|-] [-j]
+```
+
+- Default: every job, one file each at `<news.out>/status.md` (`.html` with `--format html`); with no job at all, the workspace to `docs/news/status.md`. Two jobs that resolve to the same file are refused. `-j` prints `[{job, path, written}]`.
+- `news.out` and `summary` are checked each run: relative, no `..`, no absolute path, no `~`, and inside the workspace after symlinks are resolved. Only `-o` may point elsewhere (`-o -` prints to stdout). With several jobs, `-o` writes one file holding all of them.
+- `summary` is read as data (never run): a regular file, at most 20 KB, shown as a code block (a `<pre>` block in HTML).
+- The Markdown is kept under 9,500 characters per job (the tidewatch pane's limit); the events are trimmed first, then the summary.
+- Markdown cells and lines escape the characters < > & ` | \ and newlines; HTML uses the same escaping as `board --html`, so a title such as `<script>` stays inert.
+- It writes only when the content changed. The generated-at line is left out of the hash, which sits in `PATH.hash` beside the page (`unix time` then `sha256`). Otherwise it prints `unchanged PATH`. `news` takes the board lock like any write.
 
 ## Fanfare
 
