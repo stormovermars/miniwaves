@@ -44,6 +44,20 @@ type FanfareConfig struct {
 	Use              string              `json:"use,omitempty"`         // active set; "" or "all" = every playable pair
 }
 
+// fanfareBoardOffHint is shown by mw fanfare when an explicit board "enabled": false beats the user's own
+// fanfare.enabled=true. Boards written before 0.3.4 stored enabled:false for "never set" (a plain bool), which
+// reads the same as a deliberate off, so mw cannot clear it on its own (TSK-058): it says so instead.
+const fanfareBoardOffHint = "board says off; mw fanfare set enabled=true to follow your setting"
+
+// fanfareBoardSilencesUser is true when the user layer says on and the board's explicit off wins.
+func fanfareBoardSilencesUser(w *Workspace) bool {
+	if !boardFanfareOff(w) {
+		return false
+	}
+	u, _, _, err := readUserConfig()
+	return err == nil && u.Fanfare.Enabled != nil && *u.Fanfare.Enabled
+}
+
 func fanfareCfg(w *Workspace) FanfareConfig {
 	c := FanfareConfig{}
 	if w != nil && w.Fanfare != nil {
@@ -948,7 +962,11 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		_, merr := os.Stat(filepath.Join(dir, manifestName))
 		eff, src := fanfareEffectiveSrc(w) // config stays the board's; enabled/use are what a play would do
 		if o["json"] == "true" {
-			return fanfareStatusJSON(map[string]any{"config": c, "dir": dir, "ready": ready, "unplayable": unplayable, "incomplete": incomplete, "empty": empty, "manifest": merr == nil, "source": src}, eff, pairs)
+			base := map[string]any{"config": c, "dir": dir, "ready": ready, "unplayable": unplayable, "incomplete": incomplete, "empty": empty, "manifest": merr == nil, "source": src}
+			if fanfareBoardSilencesUser(w) {
+				base["hint"] = fanfareBoardOffHint
+			}
+			return fanfareStatusJSON(base, eff, pairs)
 		}
 		onOff := func(b bool) string { return map[bool]string{true: "enabled", false: "disabled"}[b] }
 		state := onOff(fanfareOn(eff))
@@ -964,6 +982,9 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 			fmt.Printf("use: %s (user; board: %s)\n", activeSet(eff), activeSet(c))
 		} else {
 			fmt.Printf("use: %s\n", activeSet(c))
+		}
+		if fanfareBoardSilencesUser(w) {
+			fmt.Println("hint: " + fanfareBoardOffHint)
 		}
 		man := "manifest present"
 		if merr != nil {
