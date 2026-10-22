@@ -604,48 +604,98 @@ func TestStopControlCommand(t *testing.T) {
 		}
 		return "", errors.New("no")
 	}
+	hostile := "/tmp/a'\"$(touch x)/.mw-fanfare-icon.png"
+	old := zenityBodyIcon
+	defer func() { zenityBodyIcon = old }()
+	zenityBodyIcon = func() bool { return true }
 	evil := `Tenant "x'"$(touch x)` + "`;" + ` finished`
 	script := func(a []string) string { return a[1] }
-	n, a, env, ok := stopControlCommand("darwin", 4242, 60, evil, none)
+	n, a, env, ok := stopControlCommand("darwin", 4242, 60, evil, hostile, none)
 	s := script(a)
 	if !ok || n != "sh" || len(env) != 0 || !strings.Contains(s, "osascript") || !strings.Contains(s, "item 2 of argv as integer") || !strings.Contains(s, `kill -TERM -"$2"`) || !strings.Contains(s, "button returned:Stop") {
 		t.Fatalf("darwin: %s %v", n, a)
 	}
-	if a[0] != "-c" || a[2] != "sh" || a[3] != evil || a[4] != "4242" || a[5] != "62" || strings.Contains(s, "touch") || strings.Contains(s, "4242") {
+	if a[0] != "-c" || a[2] != "sh" || a[3] != evil || a[4] != "4242" || a[5] != "62" || len(a) != 7 || a[6] != hostile || !strings.Contains(s, "with icon (POSIX file (item 3 of argv))") || strings.Contains(s, "icon note") || strings.Contains(s, "touch") || strings.Contains(s, "4242") {
 		t.Fatalf("darwin argv: %q", a)
 	}
-	n, a, env, ok = stopControlCommand("windows", 77, 60, evil, none)
+	_, a, _, _ = stopControlCommand("darwin", 4242, 60, evil, "", none)
+	if !strings.Contains(a[1], "with icon note") || len(a) != 6 {
+		t.Fatalf("darwin no icon: %q", a)
+	}
+	n, a, env, ok = stopControlCommand("windows", 77, 60, evil, hostile, none)
 	s = a[2]
-	if !ok || n != "powershell" || !strings.Contains(s, "$env:MW_FANFARE_MSG") || !strings.Contains(s, ",62,") || !strings.Contains(s, "taskkill /PID 77 /T /F") || strings.Contains(s, "touch") || strings.Contains(strings.Join(a, " "), "touch") {
+	if !ok || n != "powershell" || !strings.Contains(s, "$env:MW_FANFARE_MSG") || !strings.Contains(s, ",'miniwaves',64)") || strings.Contains(strings.Join(a, " "), "fanfare-icon") || !strings.Contains(s, ",62,") || !strings.Contains(s, "taskkill /PID 77 /T /F") || strings.Contains(s, "touch") || strings.Contains(strings.Join(a, " "), "touch") {
 		t.Fatalf("windows: %s %v", n, a)
 	}
 	if len(env) != 1 || env[0] != "MW_FANFARE_MSG="+evil {
 		t.Fatalf("windows env: %q", env)
 	}
-	n, a, env, ok = stopControlCommand("linux", 9, 10, evil, has)
+	n, a, env, ok = stopControlCommand("linux", 9, 10, evil, hostile, has)
 	s = script(a)
-	if !ok || n != "sh" || len(env) != 0 || !strings.Contains(s, "zenity") || !strings.Contains(s, "--no-markup") || !strings.Contains(s, `--text="$1"`) || !strings.Contains(s, `kill -TERM -"$2"`) || strings.Contains(s, "touch") || a[3] != evil || a[4] != "9" || a[5] != "12" {
+	if !ok || n != "sh" || len(env) != 0 || !strings.Contains(s, "zenity") || !strings.Contains(s, "--no-markup") || !strings.Contains(s, `--text="$1"`) || !strings.Contains(s, `kill -TERM -"$2"`) || strings.Contains(s, "touch") || a[3] != evil || a[4] != "9" || a[5] != "12" || len(a) != 7 || a[6] != hostile || !strings.Contains(s, `--icon="$4"`) || strings.Contains(s, "window-icon") {
 		t.Fatalf("linux zenity: %s %q", n, a)
 	}
-	n, a, _, ok = stopControlCommand("linux", 9, 10, "", onlyK)
+	zenityBodyIcon = func() bool { return false }
+	_, a, _, _ = stopControlCommand("linux", 9, 10, evil, hostile, has)
+	if len(a) != 6 || strings.Contains(a[1], "icon") || strings.Contains(strings.Join(a, " "), "fanfare-icon") {
+		t.Fatalf("old zenity must get no icon: %q", a)
+	}
+	n, a, _, ok = stopControlCommand("linux", 9, 10, "", hostile, onlyK)
 	s = script(a)
-	if !ok || n != "sh" || strings.Contains(s, "zenity") || !strings.Contains(s, "kdialog") || !strings.Contains(s, `--msgbox "$1"`) || !strings.Contains(s, `sleep "$3"`) || !strings.Contains(s, `kill -TERM -"$2"`) || a[3] != "" {
+	if !ok || n != "sh" || strings.Contains(s, "zenity") || !strings.Contains(s, "kdialog") || !strings.Contains(s, `--msgbox "$1"`) || !strings.Contains(s, `sleep "$3"`) || !strings.Contains(s, `kill -TERM -"$2"`) || a[3] != "" || len(a) != 6 || strings.Contains(s, "icon") {
 		t.Fatalf("linux kdialog: %s %q", n, a)
 	}
-	_, a, _, _ = stopControlCommand("linux", 9, 10, evil, onlyK)
+	_, a, _, _ = stopControlCommand("linux", 9, 10, evil, hostile, onlyK)
 	if s = script(a); strings.Contains(s, "touch") || a[3] != evil || a[4] != "9" || a[5] != "12" {
 		t.Fatalf("kdialog argv: %q", a)
 	}
-	if _, _, _, ok = stopControlCommand("linux", 9, 10, "m", none); ok {
+	if _, _, _, ok = stopControlCommand("linux", 9, 10, "m", hostile, none); ok {
 		t.Fatal("linux with neither zenity nor kdialog must have no control")
 	}
 	t.Setenv("MW_FANFARE_PLAYER", "/stub")
-	if _, _, _, ok = stopControlCommand("darwin", 1, 5, "m", none); ok {
+	if _, _, _, ok = stopControlCommand("darwin", 1, 5, "m", hostile, none); ok {
 		t.Fatal("player stub must disable the control")
 	}
 	t.Setenv("MW_FANFARE_STOP_CONTROL", "/ctl")
-	if n, a, _, ok = stopControlCommand("darwin", 1, 5, "hello", none); !ok || n != "/ctl" || len(a) != 3 || a[0] != "1" || a[1] != "5" || a[2] != "hello" {
+	if n, a, _, ok = stopControlCommand("darwin", 1, 5, "hello", hostile, none); !ok || n != "/ctl" || len(a) != 3 || a[0] != "1" || a[1] != "5" || a[2] != "hello" {
 		t.Fatalf("stub: %s %v", n, a)
+	}
+}
+
+func TestFinaleIcon(t *testing.T) {
+	dir := t.TempDir()
+	pair := filepath.Join(dir, "pair")
+	if err := os.MkdirAll(pair, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(pair, "finale.mp3")
+	want := filepath.Join(dir, ".mw-fanfare-icon.png")
+	if got := finaleIcon(dir, file); got != want {
+		t.Fatalf("built-in: %s", got)
+	}
+	if b, _ := os.ReadFile(want); !bytes.Equal(b, fanfareIconPNG) || len(b) < 100 || len(b) > 30000 {
+		t.Fatal("built-in icon not written or wrong size")
+	}
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	os.Chtimes(want, old, old)
+	finaleIcon(dir, file)
+	if st, _ := os.Stat(want); !st.ModTime().Equal(old) {
+		t.Fatal("identical built-in icon was rewritten")
+	}
+	os.WriteFile(want, []byte("junk"), 0o644)
+	finaleIcon(dir, file)
+	if b, _ := os.ReadFile(want); !bytes.Equal(b, fanfareIconPNG) {
+		t.Fatal("differing icon not restored")
+	}
+	for _, n := range []string{"cover.icns", "cover.jpg", "cover.png"} { // each later in the loop outranks the former
+		os.WriteFile(filepath.Join(pair, n), []byte("x"), 0o644)
+		if got := finaleIcon(dir, file); got != filepath.Join(pair, n) {
+			t.Fatalf("%s: got %s", n, got)
+		}
+	}
+	os.Remove(filepath.Join(pair, "cover.png"))
+	if got := finaleIcon(dir, file); got != filepath.Join(pair, "cover.jpg") {
+		t.Fatalf("jpg before icns: %s", got)
 	}
 }
 

@@ -78,7 +78,10 @@ func TestLogSinceStartAndResume(t *testing.T) {
 		t.Fatalf("start: %+v", d)
 	}
 	for i := 1; i < len(d.Events); i++ {
-		if d.Events[i].At < d.Events[i-1].At {
+		// parse: RFC3339Nano drops trailing zeros, so string order is not time order
+		a, _ := time.Parse(time.RFC3339Nano, d.Events[i-1].At)
+		b, _ := time.Parse(time.RFC3339Nano, d.Events[i].At)
+		if b.Before(a) {
 			t.Fatalf("not oldest first: %+v", d.Events)
 		}
 	}
