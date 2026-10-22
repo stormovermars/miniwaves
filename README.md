@@ -44,7 +44,10 @@ All off until you turn them on. Details in [USAGE.md](USAGE.md).
 |---|---|---|
 | Coordinated job (groups tenants) | `mw jobs enable ID -t SLUG,SLUG` | `mw jobs disable ID` |
 | Job description | `mw jobs set ID description="One line"` | `mw jobs set ID description=` |
-| News page | `mw news --job ID` (`--format md\|html\|text`) | don't run it |
+| News bulletin | `mw news --job ID` (`--format md\|html\|text\|json`) | don't run it |
+| News releases | `mw news --job ID --release` (numbered, frozen, compared with the last release) | don't cut one |
+| Tracker tickets (optional) | `mw jobs set ID tracker=jira tracker_url=URL`, `mw add ... --ticket KEY` | unset the key |
+| Job metrics | `mw jobs set ID metrics=PATH` (a `metrics.json` your tooling writes) | unset the key |
 | Coordinator kit (plan, news desk, build lock) | `mw init --kit coordinated --job ID` | delete the files it wrote |
 | Fanfare, per board | `mw fanfare set enabled=true` | `mw fanfare set enabled=false` |
 | Fanfare, just for you | `mw user set fanfare.enabled=true` | `mw user set fanfare.enabled=false` |

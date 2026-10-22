@@ -6,7 +6,7 @@ Owner: the news desk session. Reader: the human who owns the job. Rev 1, @@DATE@
 
 | Page | Content | Source | Made by |
 |---|---|---|---|
-| Status | Headline; needs-you at the top; milestone bars; numbers; last 10 events | `mw news --job @@JOB@@`, `mw review` | mw |
+| Status | Headline; needs-you at the top; milestone bars; numbers; last 10 events | `mw news --job @@JOB@@ --format json` (the model), `mw review` | mw data, desk page |
 | Plan | Goal, scope, milestones and what each means, task table (id, title, owner, state) | PLAN.md + mw | script + short intro |
 | Changelog | Dated entries, newest first: merges, closed milestones, rejections, new tasks, failures | `mw log -A --since`, git logs of the repos in PLAN.md | script |
 | Decisions | D-NNN: date, decision, decided by, why, alternatives dropped, link. Append-only | `mw decide` events, PLAN.md | desk, by hand |
@@ -16,6 +16,8 @@ Owner: the news desk session. Reader: the human who owns the job. Rev 1, @@DATE@
 ## Rules
 - Sources live in `docs/human/*.md` (committed); the page is built from them. The desk commits only `docs/human/` and its own helper scripts, nothing else.
 - Facts come from the board (`mw news`, `mw review`, `mw log`). `mw news` writes only when the facts changed.
+- **The tick writes the draft only, and never releases.** Run `mw news --job @@JOB@@` (it refreshes the draft bulletin in `news.out`); never run `mw news --release`. A release is cut only when the human asks (the Release button in the news pane, or chat), and then by the human's request, not by the desk's own schedule.
+- **A page the job already has stays yours.** If the job publishes its own page (`news_url` is its link), keep building and publishing that page from the model or the board as before; never replace it with mw's `--format html`. The gopher-style bulletin (`--format html|md|text`) is for jobs that have no page of their own.
 - Update triggers:
   - **On event:** the dispatcher sends the desk a one-line message (merge, task done or rejected, milestone closed, new tasks, needs-you item). The desk updates at once and records any decision with a named decider.
   - **Periodic:** a tick as a safety net; it does nothing when `mw news` reports no change.

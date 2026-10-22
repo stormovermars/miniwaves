@@ -110,8 +110,8 @@ mw session list [-t SLUG] [-j] [-v] | stop NAME [--release]
 mw session reap [-t SLUG | -A] [--older-than DUR] [--except NAME,NAME] [-n|--dry-run] [-j]
 mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]   # exit 3 if NAME exists
 mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
-mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
-mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]   # -c under a session only while acceptance is empty
+mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [--ticket KEY]
+mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY]   # -c under a session only while acceptance is empty
 mw gate [-t SLUG] [-j] | mw gate level trust|proof|spec|judged [-t SLUG] [--workspace] [--by NAME] | mw gate evidence|acceptance|judge on|off|auto [--by NAME] [--workspace]
 mw version [-j]   # {version, schema, board_schema, board}: nearest workspace and its schema (null if none)
 mw ask ID QUESTION... [-t SLUG] [-s NAME]   # a question for a human, as an event (see "Needs you and decisions")
@@ -119,7 +119,7 @@ mw answer ID TEXT... --by NAME [-t SLUG]   # human only; closes the item's open 
 mw decide TEXT... [--by NAME] [-s SESSION] [-b WHY] [-p ID] [-t SLUG]   # a decision event on ID, else on the tenant's "Decisions" chore
 mw user show [-j] | mw user set KEY=VALUE...   # per-user config (see "Per-user config")
 mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]   # coordinated-job config (see "Coordinated jobs")
-mw news [--job ID] [--format md|html|text] [--width N] [-o PATH] [-j]   # status page from board data (see "News")
+mw news [--job ID] [--format md|html|text|json] [--release [--force]] [-o PATH] [-j]   # news bulletin from board data (see "News")
 mw review [-t SLUG] [-j]
 mw judge ID [-t SLUG]
 mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]
@@ -321,7 +321,7 @@ On Unix mw refuses to read the file when it is group- or world-writable (`chmod 
 
 A job groups tenants under one coordinator. mw only stores the config and ships prompts and data; it never starts a session. The config lives in `.miniwaves.json` as an omitempty `jobs` object keyed by job id (a tenant carries `"job": ID`), in schema 9 (a board from 0.2.x needs `mw migrate`, which only bumps the version; a 0.2.8 or older mw then refuses the board instead of silently rewriting the index without `jobs`, `job` and fanfare `sets`).
 
-JSON uses snake_case keys like every other `-j` output: the board and `jobs show -j` store `news_out`, `news_url` and `pane_style`, and `user show -j` has `alerts_on`, `alerts_exec`, `fanfare_enabled`, `fanfare_use`. The CLI keys stay dotted (`mw jobs set ID news.out=...`, `mw user set fanfare.use=...`). `mw jobs enable` prints `moved SLUG from job OLD` when a tenant leaves another job.
+JSON uses snake_case keys like every other `-j` output: the board and `jobs show -j` store `news_out`, `news_url` and `pane_style`, and `user show -j` has `alerts_on`, `alerts_exec`, `fanfare_enabled`, `fanfare_use`. `news_releases`, `metrics`, `tracker` and `tracker_url` are plain snake_case in both places; the snake_case names `news_out`, `news_url` and `pane_style` also work in `mw jobs set`. The dotted CLI keys stay (`mw jobs set ID news.out=...`, `mw user set fanfare.use=...`). `mw jobs enable` prints `moved SLUG from job OLD` when a tenant leaves another job.
 
 ```text
 mw jobs enable ID -t SLUG...        # create the job if needed and put the tenants in it (-t repeats or takes a comma list)
@@ -338,7 +338,11 @@ mw jobs show [ID] [-j]              # effective values (defaults applied) and th
 | `worktrees` | `on` | `on` or `off` |
 | `lock` | none | a command name only (`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`), never a command line |
 | `news.out` | `docs/news/` | relative, cleaned, inside the workspace: no `..`, no absolute path, no `~`, no drive |
-| `news.url` | none | an `http(s)` URL |
+| `news.url` | none | an `http(s)` URL; the link to the job's own page (mw never replaces that page) |
+| `news_releases` | `<news.out>/releases` | the folder of numbered releases; a path with the `news.out` rules |
+| `metrics` | none | a path to the job's `metrics.json` (the `news.out` rules; see "Metrics") |
+| `tracker` | none | one of `jira linear youtrack github gitlab azure shortcut clickup asana`; off unless set (see "Tickets") |
+| `tracker_url` | none | the tracker's base URL: https only, no query, fragment or credentials; a trailing `/` is trimmed; clickup and asana may leave it empty |
 | `summary` | none | a path with the `news.out` rules |
 | `pane` | `on` | `on` or `off` |
 | `pane.style` | none | `^[a-z0-9-]{1,32}$` |
@@ -347,21 +351,35 @@ Job ids match `^[a-z0-9][a-z0-9-]{0,31}$`. `jobs show` is a read; the other thre
 
 ## News
 
-`mw news` writes a status page from board data only (no network, no publishing). Per job it holds a headline (needs you, blocked, in progress, done, and how many events moved since the last run), the milestones with done/total, the open asks, blocked items with their reason, in-progress items, the last 20 events, the decisions (`decide`, `accept`, `reject`), and the contents of the job's `summary` file.
+`mw news` builds one **model** per job (version 1: `job`, `release`, `now`, `happened`, `next`, `metrics`, `summary`) from board data only (no network, no publishing) and draws every format from it, so a number is computed once. The default view is a 70-column, plain-monospace **bulletin** in the style of a 1990s gopher hole: a masthead (`RELEASE N / date`, or `DRAFT - NOT RELEASED`), numbered sections `1. IN SHORT`, `2. WHAT HAPPENED`, `3. ONGOING`, `4. WHAT'S NEXT`, `5. METRICS`, item lines `T tenant/ID  title ..... state` with a type character (`0` item, `1` milestone, `!` needs you, `?` review, `-` blocked, `+` in progress, `>` next), ASCII metric bars with `▲`/`▼` changes, and a footer listing the releases. Lists show their top rows and then `... N more (see full board)`.
 
 ```text
-mw news [--job ID] [--format md|html|text] [--width N] [-o PATH|-] [-j]
+mw news [--job ID] [--format md|html|text|json] [-o PATH|-] [-j]
+mw news --job ID --release [--force] [--format ...] [-j]
 ```
 
-- Default: every job, one file each at `<news.out>/status.md` (`.html` with `--format html`); with no job at all, the workspace to `docs/news/status.md`. Two jobs that resolve to the same file are refused (set `news.out` per job, e.g. `docs/news/ID/`). `-j` prints `[{job, path, written}]`; it is an error with `-o -` or `--format text` (nothing is written).
-- `--format text` is plain text for terminals: no ANSI or colour codes, styled with characters only (`══` title, `── NEEDS YOU ──` heads marked `!` `◐` `✓`, `▸` bullets, a `│` milestone table with a 20-cell `█░` bar, the summary in a `┌─┐` box, one-line events cut to the width). It prints to stdout; it writes a file only with `-o PATH` and uses neither `news.out` nor the hash sidecar (so no "moved since the last run" count).
-- `--width N` (text only): else exactly 80 (`$COLUMNS` is not read); clamped to 40..160. Long lines wrap with a hanging indent; wide (CJK, emoji) runes count as two cells.
-- Text strips control characters (ESC included) and bidi/zero-width marks from board text, so nothing can inject terminal codes, and shows real characters (no `\|` or `&lt;`).
-- `news.out` and `summary` are checked each run: relative, no `..`, no absolute path, no `~`, and inside the workspace after symlinks are resolved. Only `-o` may point elsewhere (`-o -` prints to stdout). With several jobs, `-o` writes one file holding all of them.
-- `summary` is read as data (never run): a regular file, at most 20 KB, shown as a code block (a `<pre>` block in HTML).
-- The Markdown is kept under 9,500 characters per job (the tidewatch pane's limit); the events are trimmed first, then the summary.
-- Markdown cells and lines escape the characters < > & ` | \ and newlines; HTML uses the same escaping as `board --html`, so a title such as `<script>` stays inert.
-- It writes only when the content changed. The generated-at line is left out of the hash, which sits in `PATH.hash` beside the page (`unix time` then `sha256`). Otherwise it prints `unchanged PATH`. `news` takes the board lock like any write, except `-o -` and `--format text` without `-o` (shared lock, no file, no "moved" segment). Board text is stripped of control characters and bidi marks in every format; Markdown escapes all ASCII punctuation, so titles can't become links or images. A `summary` that is not a regular file (FIFO, device) is ignored.
+- **Formats.** `md` is one fenced `text` block (a ticket with a link adds a short Markdown list after the block, because links do not render inside a code block); `html` is a green-on-black page with one `<pre>` (each footer release number links to that release); `text` is the bare bulletin; `json` is the model. The bulletin is kept under 9,500 characters by showing fewer rows per list. The bulletin is for jobs that have no page of their own: a job's own page (`news_url`) is never replaced by mw, and `news_url` keeps meaning "the link to that page". `--width` is accepted for `--format text` and ignored (the bulletin is always 70 columns); it is refused for the other formats.
+- **Draft.** Without `--release`, the output is the draft since the latest release (`release.number` is `null`; `release.previous` names the release it follows, `release.changes` counts the events and changed metric rows). It is a function of the board and the window, so an unchanged board gives identical bytes. Default: every job, one file each at `<news.out>/status.md` (`.html` with `--format html`); with no job at all, the workspace to `docs/news/status.md`. Two jobs that resolve to the same file are refused (set `news.out` per job). `text` and `json` print to stdout and write a file only with `-o PATH` (no `news.out`, no sidecar); `-o -` prints md or html to stdout. `-j` prints `[{job, path, written}]` and is an error without a file target. `--format json` needs `--job` when several jobs exist.
+- **Model limits.** Every list has a cap and a `more` count: the `now` lists hold 50, `milestones.open` 200, each `happened` list 100, `next.ready` 10, `next_milestones` 5. No item text is longer than 200 characters and the whole model stays under 1 MB (`truncated: true` marks rows dropped to fit). Item shape: `{tenant, id, title, note, since, by}` plus `ticket`, `ticket_label`, `ticket_url` when the item has a ticket. Asks are gathered from every tenant of the job. A blocked item whose reason starts with `awaiting review` is listed under `review`, not `blocked`.
+- **Releases.** `--release` cuts release N+1 under the board lock (the job lock) with atomic writes: `RELEASE_DIR/N.json` (the frozen model), `N.md`, `N.html`, then `latest` (the number). `RELEASE_DIR` is the job key `news_releases`, default `<news.out dir>/releases`. Release N compares with release N-1 (the window is `(N-1.at, N.at]`, metric changes are against N-1's frozen metrics); release 1 compares with the start. An empty release (no events, no metric change) is refused with exit 0 and `nothing new since release N` unless `--force`. After a release, the `news.out` page shows it. Nothing cuts a release automatically: the news desk tick only refreshes the draft. `-j` prints `{job, released, number, path, message}`; `--format json` also prints the model.
+- **Metrics.** The job key `metrics` names a `metrics.json` that the job's own tooling writes (temp file plus rename). It is read as data: confined to the workspace, a regular file, at most 256 KB, at most 8 sections of at most 40 rows, `title`, `name`, `unit` and legend names at most 60 characters and `note` at most 120 (control characters are stripped), finite numbers, counts integers >= 0, `done` <= `total`; unknown fields are ignored. Kinds: `split` (`good warn bad none`, drawn `[#####=====xxxx....]`), `progress` (`done total`, or `not started`), `value` (`value`, `unit`, `target`, `better`). An invalid file gives `{error}` in the model and `metrics file invalid: REASON` in the bulletin. A higher `version` gives a `newer metrics format` notice (what can be read is still shown). No key or no file means no section. Deltas (`delta{field: n}`, drawn `▲n`/`▼n`) are against the previous release's frozen metrics. Full format: `docs/specs/metrics.md`.
+- **Tickets (optional, off by default).** A job may name one issue tracker (`mw jobs set ID tracker=jira tracker_url=https://acme.atlassian.net`) and an item may carry one ticket from it (`mw add task TITLE --ticket MOB-142`, `mw edit ID ticket=MOB-142`, `ticket=` clears it). mw validates the ticket against the tracker kind, stores it in canonical form, and builds the link from a fixed template; it never calls the tracker. A ticket is refused when the job has no tracker. mw ids (`TSK-011`) are never taken as tickets and the mw id is always in the model.
+
+  | `tracker` | Accepted | Shown as | Link |
+  |---|---|---|---|
+  | `jira` | `MOB-142` | MOB-142 | `{base}/browse/{key}` |
+  | `linear` | `ENG-42` | ENG-42 | `{base}/issue/{key}` |
+  | `youtrack` | `APP-7` | APP-7 | `{base}/issue/{key}` |
+  | `github` | `123`, `#123` | #123 | `{base}/issues/{n}` |
+  | `gitlab` | `123`, `#123` | #123 | `{base}/-/issues/{n}` |
+  | `azure` | `123`, `AB#123` | AB#123 | `{base}/_workitems/edit/{n}` |
+  | `shortcut` | `123`, `sc-123` | sc-123 | `{base}/story/{n}` |
+  | `clickup` | `86abc12xy`, `#86abc12xy` | #86abc12xy | `https://app.clickup.com/t/{id}` |
+  | `asana` | `1203456789012345` | Asana 1203456789012345 | `https://app.asana.com/0/0/{gid}` |
+
+  Key kinds are upper-cased before checking (`^[A-Z][A-Z0-9_]{0,9}-[0-9]{1,9}$`). A ticket under an unknown or newer `tracker` value is kept and shown as plain text, without a link. In the bulletin a ticket shows as `[MOB-142]` after the title (a link in html, a link in the list after the md block, plain text in `text`). `list -j` and `show -j` carry `ticket`. With no tracker and no tickets every output is identical to a board without the feature.
+- **Safety.** `news.out`, `news_releases`, `metrics` and `summary` are checked each run: relative, no `..`, no absolute path, no `~`, and inside the workspace after symlinks are resolved. Only `-o` may point elsewhere. `summary` is read as data: a regular file, at most 20 KB, shown under 1. IN SHORT (a FIFO or device is ignored). Board text is stripped of control characters and bidi marks in every format; md puts the bulletin in a code fence longer than any backtick run in it, and html escapes everything, so a title such as `<script>` stays inert.
+- **Locking and writes.** A file is rewritten only when the content changed (hash in `PATH.hash`); otherwise it prints `unchanged PATH`. `news` takes the board lock like any write, except when it only prints (`-o -`, or `--format text|json` without `-o`, and never with `--release`).
 
 ### Roles (prompts)
 

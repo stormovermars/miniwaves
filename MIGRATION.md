@@ -39,3 +39,9 @@ Tenant tags and the archived flag live only in the index (`.miniwaves.json`) and
 - Flag `-n` means `--limit`.
 - A session is always optional: `mw start ID` without a session uses `local`.
 - mw has no git commands: commit the board with your code.
+
+## News bulletin and releases (0.3.0, schema 9, no migration step)
+
+`mw news` changed its output. The Markdown, HTML and text pages are now one gopher-style, 70-column bulletin drawn from a single model, so the old layout (the `Headline`, `Needs you`, `Last events` sections, the milestone table, the `Updated` line, the "moved since the last run" count and the 80-column `══`/`──` text) is gone; anything that parsed those pages must read `mw news --job ID --format json` instead (model version 1). `--width` still works for `--format text` and is ignored; it is refused for md and html. `status.md` and `status.html` are rewritten once on the first run; after that they change only when the board does (the page has no generated-at line any more).
+
+New optional job keys, all in schema 9 (an older mw drops unknown index keys when it saves, so use one mw version per workspace): `news_releases`, `metrics`, `tracker`, `tracker_url`. New optional item field `ticket` (omitted when empty); mw now also keeps item fields it does not know when it saves a tenant file. Boards that set no tracker and no tickets produce the same `list`, `show`, `board` and `jobs show` output as before apart from the two new job keys in `jobs show`. `mw news --release` creates `docs/news/releases/` (or `news_releases`) next to the page; commit it if you want the history.
