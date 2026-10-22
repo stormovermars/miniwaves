@@ -32,7 +32,14 @@ type promptData struct {
 	// Coordinated-job variables (neutral defaults without --job; jobs.<id> with it).
 	Job, Title, Lock, Worktrees, NewsOut, NewsURL string
 	MaxWorkers                                    int
+	// Ceremony variables (docs/specs/ceremonies.md): a section renders only for the ceremonies the job lists.
+	Ceremonies                                  bool
+	CerReview, CerPlanning, CerTriage, CerSpike bool
+	ReadyMin, CerPerDay                         int
 }
+
+// ceremonyPerDay is the default cap of ceremony sessions per day (a prompt variable, not a job key).
+const ceremonyPerDay = 4
 
 func (d promptData) render(name string) string {
 	var b strings.Builder
@@ -80,6 +87,22 @@ func jobPromptData(w *Workspace, job string) (promptData, error) {
 	}
 	v := jobView(w, job)
 	d.Job, d.Title, d.Lock, d.Worktrees, d.MaxWorkers, d.NewsOut, d.NewsURL = job, v.Title, v.Lock, v.Worktrees, v.MaxWorkers, v.NewsOut, v.NewsURL
+	for _, n := range v.Ceremonies {
+		d.Ceremonies = true
+		switch n {
+		case "review":
+			d.CerReview = true
+		case "planning":
+			d.CerPlanning = true
+		case "triage":
+			d.CerTriage = true
+		case "spike":
+			d.CerSpike = true
+		}
+	}
+	if d.Ceremonies {
+		d.ReadyMin, d.CerPerDay = v.ReadyMin, ceremonyPerDay
+	}
 	return d, nil
 }
 

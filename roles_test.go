@@ -87,3 +87,45 @@ func TestRolePromptVariables(t *testing.T) {
 }
 
 var rolesTestdata, _ = filepath.Abs("testdata")
+
+func TestDispatcherCeremoniesGoldens(t *testing.T) {
+	path := rolesBoard(t)
+	dir := filepath.Dir(path)
+	r, _ := filepath.EvalSymlinks(dir)
+	home := os.Getenv("HOME")
+	rh, _ := filepath.EvalSymlinks(home)
+	norm := func(s string) string { return osNorm(replacePath(replacePath(s, dir, r, "<DIR>"), home, rh, "<HOME>")) }
+	cap := func(args ...string) string { return norm(captureOutput(t, func() { runAll(t, args) })) }
+	base := cap("get-prompt", "dispatcher", "--job", "tiny")
+	if strings.Contains(base, "Ceremonies") {
+		t.Fatalf("no ceremonies set, yet the prompt has the section:\n%s", base)
+	}
+	runAll(t, []string{"jobs", "set", "tiny", "ceremonies=review,planning,triage,spike", "ready_min=5"})
+	all := cap("get-prompt", "dispatcher", "--job", "tiny")
+	rolesGolden(t, "dispatcher-ceremonies-all", all)
+	for _, want := range []string{"fewer than 5 items are ready", "at most 4 per day", "`mw list -k chore`", "never `doing` ones", "At most one `mw ask`", "`Review WAV-NNN`", "`-a planner`", "`-a spike`", "older than 2h", "`URGENT`", "merging main is a release"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("all-ceremonies prompt missing %q", want)
+		}
+	}
+	// only listed names render
+	runAll(t, []string{"jobs", "set", "tiny", "ceremonies=triage"})
+	one := cap("get-prompt", "dispatcher", "--job", "tiny")
+	rolesGolden(t, "dispatcher-ceremonies-triage", one)
+	for _, gone := range []string{"- review:", "- planning:", "- spike:", "Hotfix lane", "fewer than"} {
+		if strings.Contains(one, gone) {
+			t.Errorf("triage-only prompt has %q", gone)
+		}
+	}
+	if !strings.Contains(one, "- triage:") || !strings.Contains(one, "mw list -k chore") {
+		t.Errorf("triage-only prompt lost its section:\n%s", one)
+	}
+	// clearing the list restores today's prompt byte for byte; without --job nothing changes either
+	runAll(t, []string{"jobs", "set", "tiny", "ceremonies="})
+	if again := cap("get-prompt", "dispatcher", "--job", "tiny"); again != base {
+		t.Errorf("ceremonies cleared but the prompt differs:\n%s", again)
+	}
+	if def := cap("get-prompt", "dispatcher"); strings.Contains(def, "Ceremonies") {
+		t.Errorf("default prompt has ceremonies")
+	}
+}
