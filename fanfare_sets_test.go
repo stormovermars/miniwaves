@@ -117,8 +117,9 @@ func TestFanfareStatusJSONSuperset(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &m); err != nil {
 		t.Fatal(err)
 	}
+	dirJSON, _ := json.Marshal(dir)
 	want := map[string]string{
-		"dir": `"` + dir + `"`, "ready": "3", "unplayable": "0", "incomplete": "1", "empty": "1", "manifest": "false",
+		"dir": string(dirJSON), "ready": "3", "unplayable": "0", "incomplete": "1", "empty": "1", "manifest": "false",
 		"enabled": "true", "use": `"mine"`, "sets": `{"mine":["a","c"]}`, "milestone_seconds": "15", "finale_seconds": "60", "volume": "0.5",
 		"pairs": `[{"name":"a","playable":true},{"name":"b","playable":true},{"name":"c","playable":true},{"name":"half","playable":false},{"name":"star-wars","playable":false}]`,
 	}

@@ -11,25 +11,7 @@ import (
 
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
-	old := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stderr = w
-	defer func() { os.Stderr = old }()
-	fn()
-	_ = w.Close()
-	var sb strings.Builder
-	buf := make([]byte, 4096)
-	for {
-		n, err := r.Read(buf)
-		sb.Write(buf[:n])
-		if err != nil {
-			break
-		}
-	}
-	return sb.String()
+	return captureFile(t, &os.Stderr, fn)
 }
 
 // gateEnv makes a temp board and home; evidence lives in <home>/evidence.

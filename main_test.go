@@ -670,21 +670,42 @@ func TestCoachPromptAndCompactBoard(t *testing.T) {
 
 func captureOutput(t *testing.T, fn func()) string {
 	t.Helper()
-	old := os.Stdout
+	return captureFile(t, &os.Stdout, fn)
+}
+
+// captureFile swaps *f for a pipe while fn runs and returns what fn wrote.
+// The pipe is drained concurrently: a Windows pipe buffers only a few KB, so
+// reading after fn returns deadlocks once the output outgrows the buffer.
+func captureFile(t *testing.T, f **os.File, fn func()) string {
+	t.Helper()
+	old := *f
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.Stdout = w
-	fn()
-	_ = w.Close()
-	os.Stdout = old
-	b, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
+	type result struct {
+		b   []byte
+		err error
 	}
+	done := make(chan result, 1)
+	go func() {
+		b, err := io.ReadAll(r)
+		done <- result{b, err}
+	}()
+	*f = w
+	func() {
+		defer func() {
+			_ = w.Close()
+			*f = old
+		}()
+		fn()
+	}()
+	res := <-done
 	_ = r.Close()
-	return string(b)
+	if res.err != nil {
+		t.Fatal(res.err)
+	}
+	return string(res.b)
 }
 
 func runAll(t *testing.T, cmds ...[]string) {
