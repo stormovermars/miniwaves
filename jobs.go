@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -125,6 +127,7 @@ type JobView struct {
 	Summary      string   `json:"summary" toon:"summary"`
 	Pane         string   `json:"pane" toon:"pane"`
 	PaneStyle    string   `json:"pane_style" toon:"pane_style"`
+	NewsPath     string   `json:"news_path" toon:"news_path"` // jobs show only: the real, confined path of the desk's status.md; "" when it does not resolve
 }
 
 var jobKeys = []string{"title", "description", "max_workers", "worktrees", "lock", "news.out", "news.url", "news_releases", "metrics", "tracker", "tracker_url", "summary", "pane", "pane.style"}
@@ -158,6 +161,19 @@ func jobView(w *Workspace, id string) JobView {
 		}
 	}
 	return v
+}
+
+// jobNewsPath is the real absolute path of the job's status.md (news.out + "status.md") after newsConfined,
+// or "" when news.out is refused (.., a symlink out of the workspace, mw's own files). Consumers open it, never build it.
+func jobNewsPath(root string, v JobView) string {
+	d, err := newsConfined(root, "news.out", strings.TrimSuffix(v.NewsOut, "/")+"/status.md")
+	if err != nil {
+		return ""
+	}
+	if fi, e := os.Lstat(d); e == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return "" // a dangling link: where it points is unknown
+	}
+	return d
 }
 
 func noControl(s string) bool {
@@ -441,7 +457,9 @@ func jobsCommand(p string, w *Workspace, args []string) error {
 			if _, ok := w.Jobs[pos[0]]; !ok {
 				return fmt.Errorf("job %s not found", pos[0])
 			}
-			return printData(jobView(w, pos[0]), o)
+			v := jobView(w, pos[0])
+			v.NewsPath = jobNewsPath(filepath.Dir(p), v)
+			return printData(v, o)
 		}
 		ids := make([]string, 0, len(w.Jobs))
 		for id := range w.Jobs {
@@ -450,7 +468,9 @@ func jobsCommand(p string, w *Workspace, args []string) error {
 		sort.Strings(ids)
 		views := make([]JobView, 0, len(ids))
 		for _, id := range ids {
-			views = append(views, jobView(w, id))
+			v := jobView(w, id)
+			v.NewsPath = jobNewsPath(filepath.Dir(p), v)
+			views = append(views, v)
 		}
 		return printData(views, o)
 	}

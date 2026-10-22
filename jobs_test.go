@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -198,5 +199,43 @@ func TestJobsDescription(t *testing.T) {
 	b, _ = os.ReadFile(path)
 	if strings.Contains(string(b), `"description"`) {
 		t.Fatalf("omitempty: %s", b)
+	}
+}
+
+func TestJobsShowNewsPath(t *testing.T) {
+	path := jobsBoard(t)
+	root := filepath.Dir(path)
+	runAll(t, []string{"jobs", "enable", "tiny", "-t", "sheet"})
+	realRoot, _ := filepath.EvalSymlinks(root)
+	get := func() string {
+		var v JobView
+		out := captureOutput(t, func() { runAll(t, []string{"jobs", "show", "tiny", "-j"}) })
+		if err := json.Unmarshal([]byte(out), &v); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+		return v.NewsPath
+	}
+	if want := filepath.Join(realRoot, "docs", "news", "status.md"); get() != want {
+		t.Fatalf("default news_path = %q, want %q", get(), want)
+	}
+	runAll(t, []string{"jobs", "set", "tiny", "news.out=docs/n/tiny/"})
+	if want := filepath.Join(realRoot, "docs", "n", "tiny", "status.md"); get() != want {
+		t.Fatalf("news_path = %q, want %q", get(), want)
+	}
+	// a symlink out of the workspace resolves to ""
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	runAll(t, []string{"jobs", "set", "tiny", "news.out=escape/"})
+	if got := get(); got != "" {
+		t.Fatalf("symlink out: news_path = %q, want empty", got)
+	}
+	// a symlinked status.md pointing out is refused too
+	runAll(t, []string{"jobs", "set", "tiny", "news.out=ok/"})
+	os.MkdirAll(filepath.Join(root, "ok"), 0o755)
+	os.Symlink(filepath.Join(outside, "x.md"), filepath.Join(root, "ok", "status.md"))
+	if got := get(); got != "" {
+		t.Fatalf("symlinked status.md out: news_path = %q, want empty", got)
 	}
 }

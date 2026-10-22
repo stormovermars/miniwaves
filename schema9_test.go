@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -54,7 +55,9 @@ func TestMigrateDottedJobKeys(t *testing.T) {
 	if w.Jobs["tiny"].NewsURL == "" || w.Jobs["tiny"].MaxWorkers != 3 {
 		t.Fatalf("dotted keys not read: %+v", w.Jobs["tiny"])
 	}
-	before, _ := json.Marshal(jobView(w, "tiny"))
+	bv := jobView(w, "tiny")
+	bv.NewsPath = jobNewsPath(filepath.Dir(path), bv)
+	before, _ := json.Marshal(bv)
 	runAll(t, []string{"migrate"})
 	b, _ := os.ReadFile(path)
 	if strings.Contains(string(b), `"news.`) || strings.Contains(string(b), `"pane.`) || !strings.Contains(string(b), `"news_url"`) || !strings.Contains(string(b), `"version":9`) {
