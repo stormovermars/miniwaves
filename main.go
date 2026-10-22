@@ -324,9 +324,11 @@ func usage(topic string) error {
 Explain what miniwaves does and show the human and coding-assistant workflows.
 Works before initialization. Output is TOON by default; -j selects JSON.`,
 		"boards": `mw boards [DIR] [--depth N] [--up] [-j]
-Read-only discovery of mw boards: scans DIR (default .) down to --depth (default 3, max 8) for
-.miniwaves.json; --up also adds the nearest ancestor board. Skips dot folders, node_modules, build,
-dist, vendor and symlinks; capped at 200 boards and 5 s. Reads only the index files.`,
+Read-only discovery of mw boards: scans DIR (default .) down to --depth (1..6; default: your discover.depth, 4) for
+.miniwaves.json; --up also adds the nearest ancestor board, never looking inside macOS-protected
+folders (Documents, Desktop, Downloads, Library, Pictures, Movies, Music) unless DIR is inside one.
+Skips dot folders, node_modules, build, dist, vendor, symlinks and, on Windows, AppData; capped at
+200 boards and 5 s. Reads only the index files (an index over 1 MB is an error entry).`,
 		"migrate": `mw migrate [--dry-run] [PATH]
 Upgrade an old workspace file (schema 5 to 8) to schema 9 in place (the index stays .miniwaves.json, each tenant moves to .miniwaves/<slug>.json); PATH defaults to the
 .miniwaves.json found upward from the current folder. Backs it up to <file>.bak<schema> (e.g. .miniwaves.json.bak7) and

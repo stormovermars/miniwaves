@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -135,5 +136,96 @@ func TestBoardsJSONShape(t *testing.T) {
 		`,"name":"W","schema":9,"tenants":[{"slug":"a","name":"A","archived":false},{"slug":"b","name":"B","archived":true}]}],"truncated":false,"reason":""}`
 	if string(b) != exp {
 		t.Fatalf("got %s\nwant %s", b, exp)
+	}
+}
+
+func TestBoardsIndexSizeCap(t *testing.T) {
+	root := t.TempDir()
+	big := `{"version":9,"name":"` + strings.Repeat("x", boardsIndexMax) + `","tenants":[]}`
+	mkBoard(t, root, big)
+	r := discoverBoards(root, 1, false)
+	if len(r.Boards) != 1 || !strings.Contains(r.Boards[0].Error, "limit") {
+		t.Fatalf("over 1 MB: %+v", r.Boards)
+	}
+	ok := t.TempDir()
+	mkBoard(t, ok, okIndex)
+	if r := discoverBoards(ok, 1, false); len(r.Boards) != 1 || r.Boards[0].Error != "" {
+		t.Fatalf("small index: %+v", r.Boards)
+	}
+}
+
+func TestBoardsSkipsAppDataEnv(t *testing.T) {
+	root := t.TempDir()
+	app := filepath.Join(root, "Users", "me", "AppRoaming")
+	mkBoard(t, app, okIndex)
+	mkBoard(t, filepath.Join(root, "Users", "me", "proj"), okIndex)
+	old := boardsAppData
+	t.Cleanup(func() { boardsAppData = old })
+	boardsAppData = func() []string { return []string{app} }
+	eqDirs(t, dirsOf(discoverBoards(root, 4, false)), filepath.Join(root, "Users", "me", "proj"))
+}
+
+func TestBoardsUpProtectedFolders(t *testing.T) {
+	home := t.TempDir()
+	old := boardsProtected
+	t.Cleanup(func() { boardsProtected = old })
+	boardsProtected = func() []string {
+		return []string{filepath.Join(home, "Documents"), filepath.Join(home, "Library")}
+	}
+	mkBoard(t, home, okIndex)
+	mkBoard(t, filepath.Join(home, "Documents", "p"), okIndex)
+	// outside a protected folder: --up reaches the board in the (unprotected) parent
+	free := filepath.Join(home, "work", "x")
+	if err := os.MkdirAll(free, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	eqDirs(t, dirsOf(discoverBoards(free, 2, true)), home)
+	// the user asked for a protected folder: its own ancestors are fine
+	sub := filepath.Join(home, "Documents", "p", "a")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	eqDirs(t, dirsOf(discoverBoards(sub, 2, true)), filepath.Join(home, "Documents", "p"))
+	// protected folders are not walked into from a parent scan
+	eqDirs(t, dirsOf(discoverBoards(home, 4, false)), home)
+	// the ancestor check itself never reports a board whose folder is protected and not asked for
+	if !insideAny(filepath.Join(home, "Library", "Mobile Documents", "x"), boardsProtected()) || insideAny(home, boardsProtected()) {
+		t.Fatal("insideAny wrong")
+	}
+}
+
+func TestBoardsDepthFlag(t *testing.T) {
+	for _, bad := range []string{"0", "7", "-1", "x"} {
+		if err := run([]string{"boards", t.TempDir(), "--depth", bad}); err == nil || !strings.Contains(err.Error(), "--depth must be 1..6") {
+			t.Errorf("--depth %s: %v", bad, err)
+		}
+	}
+	for _, good := range []string{"1", "6"} {
+		if err := run([]string{"boards", t.TempDir(), "--depth", good}); err != nil {
+			t.Errorf("--depth %s: %v", good, err)
+		}
+	}
+}
+
+func TestBoardsDefaultDepthFromConfig(t *testing.T) {
+	userCfgPath(t)
+	if d := boardsDefaultDepth(); d != 4 {
+		t.Fatalf("default %d", d)
+	}
+	runAll(t, []string{"user", "set", "discover.depth=2"})
+	if d := boardsDefaultDepth(); d != 2 {
+		t.Fatalf("configured %d", d)
+	}
+	root := t.TempDir()
+	mkBoard(t, filepath.Join(root, "a", "b", "c"), okIndex)
+	mkBoard(t, filepath.Join(root, "a"), okIndex)
+	o := captureOutput(t, func() { runAll(t, []string{"boards", root, "-j"}) })
+	if strings.Contains(o, filepath.Join("a", "b", "c")) || !strings.Contains(o, filepath.Join(root, "a")) {
+		t.Fatalf("depth 2 scan: %s", o)
+	}
+	runAll(t, []string{"user", "set", "discover.depth=4"})
+	o = captureOutput(t, func() { runAll(t, []string{"boards", root, "-j"}) })
+	if !strings.Contains(o, filepath.Join("a", "b", "c")) {
+		t.Fatalf("depth 4 scan: %s", o)
 	}
 }

@@ -21,7 +21,13 @@ var (
 	boardsTimeLimit = 5 * time.Second
 )
 
-const boardsDepthMax = 8
+// The --depth range is the discover.depth range of userkeys.go.
+const (
+	boardsDepthMin  = 1
+	boardsDepthMax  = 6
+	boardsIndexMax  = 1 << 20 // a board index larger than this is an error entry, never read
+	boardsDefaultDp = 4       // discover.depth default when the user config has none
+)
 
 type boardTenant struct {
 	Slug     string `json:"slug"`
@@ -47,7 +53,8 @@ type boardsResult struct {
 
 var boardsSkipNames = map[string]bool{"node_modules": true, "build": true, "dist": true, "vendor": true}
 
-func boardsProtected() []string {
+// boardsProtected lists the macOS folders behind TCC prompts (a var so tests can use a fake home).
+var boardsProtected = func() []string {
 	if runtime.GOOS != "darwin" {
 		return nil
 	}
@@ -56,17 +63,65 @@ func boardsProtected() []string {
 		return nil
 	}
 	var out []string
+	// iCloud Drive (~/Library/Mobile Documents) lies inside ~/Library
 	for _, n := range []string{"Documents", "Desktop", "Downloads", "Library", "Movies", "Music", "Pictures"} {
 		out = append(out, filepath.Join(home, n))
 	}
 	return out
 }
 
+// inside reports whether dir is p or below it.
+func inside(dir, p string) bool {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" { // case-insensitive file systems
+		dir, p = strings.ToLower(dir), strings.ToLower(p)
+	}
+	return dir == p || strings.HasPrefix(dir, p+string(filepath.Separator))
+}
+
+func insideAny(dir string, ps []string) bool {
+	for _, p := range ps {
+		if inside(dir, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// boardsAppData lists the Windows AppData folders (empty elsewhere): never scanned.
+var boardsAppData = func() []string {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	var out []string
+	for _, e := range []string{"APPDATA", "LOCALAPPDATA"} {
+		if v := os.Getenv(e); v != "" {
+			out = append(out, filepath.Clean(v))
+		}
+	}
+	return out
+}
+
+// boardsDefaultDepth is discover.depth from the user config, else 4.
+func boardsDefaultDepth() int {
+	if c, _, _, err := readUserConfig(); err == nil {
+		if n, err := strconv.Atoi(c.Settings["discover.depth"]); err == nil && n >= boardsDepthMin && n <= boardsDepthMax {
+			return n
+		}
+	}
+	return boardsDefaultDp
+}
+
 // readBoardIndex reads one index file and nothing else. A parse failure is reported in Error.
 func readBoardIndex(dir string) boardInfo {
 	p := filepath.Join(dir, ".miniwaves.json")
 	b := boardInfo{Dir: dir, Path: p, Tenants: []boardTenant{}}
-	data, err := readFileShared(p)
+	var data []byte
+	var err error
+	if fi, serr := os.Stat(p); serr == nil && fi.Size() > boardsIndexMax {
+		err = fmt.Errorf("%s is %d bytes: larger than the %d byte limit, not read", p, fi.Size(), boardsIndexMax)
+	} else if data, err = readFileShared(p); err == nil && len(data) > boardsIndexMax {
+		err = fmt.Errorf("%s is larger than the %d byte limit, not read", p, boardsIndexMax)
+	}
 	if err == nil {
 		var doc struct {
 			Version int           `json:"version"`
@@ -94,6 +149,7 @@ func discoverBoards(root string, depth int, up bool) boardsResult {
 	res := boardsResult{Root: root, Boards: []boardInfo{}}
 	deadline := time.Now().Add(boardsTimeLimit)
 	protected := boardsProtected()
+	appData := boardsAppData()
 	seen := map[string]bool{}
 	stop := false
 	add := func(dir string) {
@@ -134,10 +190,18 @@ func discoverBoards(root string, depth int, up bool) boardsResult {
 			if !e.IsDir() || e.Type()&os.ModeSymlink != 0 || strings.HasPrefix(n, ".") || boardsSkipNames[n] {
 				continue
 			}
+			if runtime.GOOS == "windows" && strings.EqualFold(n, "AppData") {
+				continue
+			}
 			sub := filepath.Join(dir, n)
 			skip := false
 			for _, p := range protected {
 				if sub == p {
+					skip = true
+				}
+			}
+			for _, p := range appData {
+				if strings.EqualFold(sub, p) || inside(sub, p) {
 					skip = true
 				}
 			}
@@ -148,9 +212,17 @@ func discoverBoards(root string, depth int, up bool) boardsResult {
 	}
 	walk(root, 0)
 	if up && !stop {
-		for d := filepath.Dir(root); d != root; root, d = d, filepath.Dir(d) {
-			if hasIndex(d) {
-				add(d)
+		// never stat an ancestor inside a TCC-protected folder (it would raise a permission prompt),
+		// unless the start folder is itself inside one: then the user asked for it
+		userAsked := insideAny(root, protected)
+		for d := filepath.Dir(root); ; d = filepath.Dir(d) {
+			if userAsked || !insideAny(d, protected) {
+				if hasIndex(d) {
+					add(d)
+					break
+				}
+			}
+			if filepath.Dir(d) == d {
 				break
 			}
 		}
@@ -160,7 +232,7 @@ func discoverBoards(root string, depth int, up bool) boardsResult {
 }
 
 func boardsCommand(args []string) error {
-	depth, up, asJSON, dir := 3, false, false, ""
+	depth, up, asJSON, dir := 0, false, false, ""
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
 		case a == "--up":
@@ -173,8 +245,8 @@ func boardsCommand(args []string) error {
 			}
 			i++
 			n, err := strconv.Atoi(args[i])
-			if err != nil || n < 0 || n > boardsDepthMax {
-				return fmt.Errorf("--depth must be 0..%d", boardsDepthMax)
+			if err != nil || n < boardsDepthMin || n > boardsDepthMax {
+				return fmt.Errorf("--depth must be %d..%d (the discover.depth range)", boardsDepthMin, boardsDepthMax)
 			}
 			depth = n
 		case strings.HasPrefix(a, "-"):
@@ -184,6 +256,9 @@ func boardsCommand(args []string) error {
 		default:
 			return errors.New("usage: mw boards [DIR] [--depth N] [--up] [-j]")
 		}
+	}
+	if depth == 0 {
+		depth = boardsDefaultDepth()
 	}
 	if dir == "" {
 		dir = "."
