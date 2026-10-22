@@ -4,10 +4,14 @@ A live pane for your [miniwaves](../../README.md) (`mw`) boards: a status line, 
 
 ## Install and open
 
+`install.sh`, `install.ps1` and `mw update` install or update this plugin (and `mw`) when Claude Code is present. `MW_NO_PLUGINS=1` skips that; `mw update --plugins` (re)installs them. By hand:
+
 ```
 /plugin install tidewatch@miniwaves
 /tidewatch
 ```
+
+Then add a board with `/tidewatch add PATH`.
 
 It needs the `mw` command; it finds it once at start (PATH, then the usual install folders) and always runs it by absolute path. If it is not found, the pane says so.
 
@@ -20,7 +24,9 @@ It needs the `mw` command; it finds it once at start (PATH, then the usual insta
 /tidewatch news [ID]     # the news pane (the News button does the same)
 ```
 
-Boards are stored with absolute paths in the plugin's store, with their tenants from `mw list -A -j`. Other commands: `mute`, `every off|30s|1m|5m`, `bigger|smaller|reset`, `stalled MINUTES`.
+Boards are stored with absolute paths in the plugin's store, with their tenants from `mw list -A -j`. Other commands: `fanfare next`, `mute`, `every off|30s|1m|5m`, `bigger|smaller|reset`, `stalled MINUTES`.
+
+The top button row has one `Fanfare: off|all|<set>` button; each press cycles off, all, then each fanfare set, then off again (like the `Auto:` timer button). `/tidewatch fanfare next` does the same. The footer keeps only Test.
 
 The `mw news` pane renders `docs/news/status.md` of the board (or the job's `newsFile`) as Markdown. It only reads the file, cuts it at 9,500 characters, and shows a how-to when the file is missing.
 

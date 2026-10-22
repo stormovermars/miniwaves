@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -128,8 +130,12 @@ func newerVersion(a, b string) bool {
 
 func updateCommand(args []string) error {
 	check := len(args) == 1 && args[0] == "--check"
+	if len(args) == 1 && args[0] == "--plugins" {
+		installPlugins(os.Stdout)
+		return nil
+	}
 	if len(args) > 0 && !check {
-		return errors.New("usage: " + binName + " update [--check]")
+		return errors.New("usage: " + binName + " update [--check] [--plugins]")
 	}
 	rel, err := latestRelease()
 	if err != nil {
@@ -159,7 +165,68 @@ func updateCommand(args []string) error {
 		return fmt.Errorf("cannot replace %s (%v); install the new version with:\n%s", exe, err, installHint)
 	}
 	fmt.Printf("%s %s → %s (%s)\n", binName, version, latest, exe)
+	installPlugins(os.Stdout)
 	return nil
+}
+
+// Claude Code plugins: best effort, never changes the exit status.
+var (
+	pluginNames = []string{"mw", "tidewatch"}
+	claudeFound = func() bool { _, err := exec.LookPath("claude"); return err == nil }
+	// claudeRun runs `claude args...` with a timeout and returns its combined output.
+	claudeRun = func(args ...string) (string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		b, err := exec.CommandContext(ctx, "claude", args...).CombinedOutput()
+		if ctx.Err() != nil {
+			return string(b), errors.New("timed out")
+		}
+		return string(b), err
+	}
+)
+
+func lastLine(s string, err error) string {
+	s = strings.TrimSpace(s)
+	if i := strings.LastIndex(s, "\n"); i >= 0 {
+		s = strings.TrimSpace(s[i+1:])
+	}
+	if s == "" && err != nil {
+		s = err.Error()
+	}
+	return s
+}
+
+// installPlugins installs or updates the mw and tidewatch plugins from the miniwaves marketplace.
+func installPlugins(w io.Writer) {
+	if os.Getenv("MW_NO_PLUGINS") == "1" {
+		fmt.Fprintln(w, "plugins: skipped (MW_NO_PLUGINS=1)")
+		return
+	}
+	if !claudeFound() {
+		fmt.Fprintln(w, "plugins: claude not found; later run: mw update --plugins")
+		return
+	}
+	// "already added" is fine: ignore the add result, then refresh the catalog.
+	claudeRun("plugin", "marketplace", "add", "stormovermars/"+repoName)
+	if o, err := claudeRun("plugin", "marketplace", "update", repoName); err != nil {
+		fmt.Fprintf(w, "plugins: failed: marketplace update: %s\n", lastLine(o, err))
+		return
+	}
+	listing, _ := claudeRun("plugin", "list")
+	for _, p := range pluginNames {
+		id := p + "@" + repoName
+		verb, args := "installed", []string{"plugin", "install", id}
+		for _, l := range strings.Split(listing, "\n") {
+			if strings.HasSuffix(strings.TrimSpace(l), " "+id) || strings.TrimSpace(l) == id {
+				verb, args = "updated", []string{"plugin", "update", id}
+			}
+		}
+		if o, err := claudeRun(args...); err != nil {
+			fmt.Fprintf(w, "plugin %s: failed: %s\n", p, lastLine(o, err))
+		} else {
+			fmt.Fprintf(w, "plugin %s: %s\n", p, verb)
+		}
+	}
 }
 
 // fetchVerified downloads the asset and checksums.txt, checks the sha256 and returns the binary.

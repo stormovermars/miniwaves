@@ -758,21 +758,48 @@ const fanExtra = (user: Record<string, unknown> = { 'fanfare.enabled': null, 'fa
 }
 const fanRuns = (state: { runs: string[][] }) => state.runs.filter(r => r[1] === 'user' || r[1] === 'fanfare').map(r => r.slice(1, -1).join(' ')).filter(r => /^user set|^fanfare test/.test(r))
 
-test('fanfare footer: buttons run user set / fanfare test; the per-user value wins', async ($, on) => {
+test('fanfare: top-row button cycles off -> all -> sets -> off; footer keeps only Test', async ($, on) => {
   const { state } = rig($, on, { extra: fanExtra({ 'fanfare.enabled': true, 'fanfare.use': 'calm' }) })
   await start($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await ui.find({ key: 'fanfare-toggle' })).toBeDefined()
-  expect(await ui.find({ type: 'Button', label: 'Fanfare: on' } as never)).toBeDefined()
-  expect(await ui.find({ type: 'Button', label: 'Set: calm' } as never)).toBeDefined()
+  expect(await ui.find({ key: 'fanfare' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', label: 'Fanfare: calm' } as never)).toBeDefined()
+  expect(await ui.find({ key: 'fanfare-toggle' })).toBeUndefined()
+  expect(await ui.find({ key: 'fanfare-set' })).toBeUndefined()
+  expect(await ui.find({ key: 'fanfare-test' })).toBeDefined()
   // no Select, no Input
   expect(await ui.find({ type: 'Select' })).toBeUndefined()
-  await ui.press({ key: 'fanfare-toggle' })
-  await ui.press({ key: 'fanfare-set' })
+  await ui.press({ key: 'fanfare' })
   await ui.press({ key: 'fanfare-test' })
-  expect(fanRuns(state)).toEqual(['user set fanfare.enabled=false', 'user set fanfare.use=loud', 'fanfare test milestone'])
+  expect(fanRuns(state)).toEqual(['user set fanfare.use=loud', 'fanfare test milestone'])
   // argv[0] absolute, cwd is the board
   expect(state.runs.filter(r => r[1] === 'user' && r[2] === 'set').every(r => r[0] === MW && r.at(-1) === '@/boards/alpha')).toBe(true)
+  await ui.unmount()
+})
+
+test('fanfare cycle with sets [calm, loud]: off, all, calm, loud, off', async ($, on) => {
+  const { state } = rig($, on, { extra: fanExtra() })
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Button', label: 'Fanfare: off' } as never)).toBeDefined()
+  for (const _ of [1, 2, 3, 4]) await ui.press({ key: 'fanfare' })
+  expect(fanRuns(state)).toEqual([
+    'user set fanfare.enabled=true fanfare.use=all',
+    'user set fanfare.use=calm',
+    'user set fanfare.use=loud',
+    'user set fanfare.enabled=false',
+  ])
+  await ui.unmount()
+})
+
+test('fanfare cycle with no sets: off, all, off; /tidewatch fanfare next does the same', async ($, on) => {
+  const { state } = rig($, on, { extra: fanExtra(undefined, { config: { enabled: false }, enabled: false, use: 'all', sets: {} }) })
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'fanfare' })
+  await ui.press({ key: 'fanfare' })
+  await cmd($, 'fanfare next')
+  expect(fanRuns(state)).toEqual(['user set fanfare.enabled=true fanfare.use=all', 'user set fanfare.enabled=false', 'user set fanfare.enabled=true fanfare.use=all'])
   await ui.unmount()
 })
 
@@ -791,7 +818,7 @@ const oldMwChecks = async ($: any, on: any, extra: (argv: string[]) => unknown) 
   const { state } = rig($, on, { extra })
   await start($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await ui.find({ key: 'fanfare-toggle' })).toBeUndefined()
+  expect(await ui.find({ key: 'fanfare' })).toBeUndefined()
   expect(await ui.find({ key: 'fanfare-test' })).toBeUndefined()
   expect(String((await cmd($, 'fanfare on')).text)).toContain('no fanfare')
   expect(fanRuns(state)).toEqual([])

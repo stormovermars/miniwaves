@@ -42,3 +42,29 @@ tar -xzf "$archive" -C "$tmp"
 install -m 0755 "$tmp/mw" "$dest/mw"
 echo "installed miniwaves to $dest/mw"
 case ":$PATH:" in *":$dest:"*) ;; *) echo "add $dest to PATH: export PATH=\"$dest:\$PATH\"" ;; esac
+
+# Claude Code plugins: best effort, never fails the binary install. MW_NO_PLUGINS=1 skips.
+if [ "${MW_NO_PLUGINS:-}" = 1 ]; then
+  echo "plugins: skipped (MW_NO_PLUGINS=1)"
+elif ! command -v claude >/dev/null 2>&1; then
+  echo "plugins: claude not found; later run: mw update --plugins"
+else
+  claude plugin marketplace add "$repo" >/dev/null 2>&1 || true
+  if ! mo="$(claude plugin marketplace update miniwaves 2>&1)"; then
+    echo "plugins: failed: marketplace update: $(printf '%s' "$mo" | tail -n 1)"
+  else
+    listing="$(claude plugin list 2>/dev/null || true)"
+    for p in mw tidewatch; do
+      if printf '%s\n' "$listing" | grep -q "[[:space:]]$p@miniwaves\$"; then
+        verb=updated; cmd=update
+      else
+        verb=installed; cmd=install
+      fi
+      if po="$(claude plugin "$cmd" "$p@miniwaves" 2>&1)"; then
+        echo "plugin $p: $verb"
+      else
+        echo "plugin $p: failed: $(printf '%s' "$po" | tail -n 1)"
+      fi
+    done
+  fi
+fi

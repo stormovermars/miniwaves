@@ -457,9 +457,11 @@ judgeable item judged; a story whose children are all done becomes done and judg
 Human only. Counts an attempt, notes the reason and clears judgement. A story goes back to ready with a
 ready task "Fix: REASON"; a child goes to ready and reopens its done story. Refused in a closed wave.
 --evidence-gap latches the evidence gate.`,
-		"update": `mw update [--check]
+		"update": `mw update [--check] [--plugins]
 Replace this mw with the latest GitHub release for this OS/CPU (checksum verified; on Windows the old
-binary is kept as mw.exe.old). --check only reports. Exit 2 when already current.`,
+binary is kept as mw.exe.old). --check only reports. Exit 2 when already current. After a real update it
+also installs/updates the Claude Code plugins mw and tidewatch (best effort; MW_NO_PLUGINS=1 skips).
+--plugins runs only that plugin step.`,
 		"version": `mw version [-j]
 Print the mw version and schema; -j prints {version, schema, board_schema, board, tenants}: the nearest
 workspace file and its schema number (null when there is none; an old schema is reported, not an error)
@@ -558,7 +560,7 @@ Usage:
   mw description [-j]
   mw migrate [--dry-run] [PATH]
   mw version [-j]
-  mw update [--check]
+  mw update [--check] [--plugins]
   mw init [workspace name] | mw init --kit coordinated --job ID
   mw tenant add SLUG [NAME...] [-d DIR]
   mw tenant list [-j] [-v] [--tag T] | default [SLUG|-] | archive|restore SLUG | tag SLUG +T -T

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -69,6 +70,7 @@ func fakeExe(t *testing.T) string {
 	exe := filepath.Join(t.TempDir(), binName)
 	os.WriteFile(exe, []byte("old"), 0o755)
 	exePath = func() (string, error) { return exe, nil }
+	fakeClaude(t, false, "", "") // never touch the real claude
 	return exe
 }
 
@@ -159,5 +161,89 @@ func TestReplaceExeRollback(t *testing.T) {
 	}
 	if m, _ := filepath.Glob(filepath.Join(dir, "*.new")); len(m) != 0 {
 		t.Fatalf("temp left: %v", m)
+	}
+}
+
+// fakeClaude swaps the claude runner; calls collects the argument lines.
+func fakeClaude(t *testing.T, found bool, fail string, installed string) *[]string {
+	t.Helper()
+	var calls []string
+	oF, oR := claudeFound, claudeRun
+	t.Cleanup(func() { claudeFound, claudeRun = oF, oR })
+	claudeFound = func() bool { return found }
+	claudeRun = func(args ...string) (string, error) {
+		line := strings.Join(args, " ")
+		calls = append(calls, line)
+		if fail != "" && strings.Contains(line, fail) {
+			return "boom: bad thing\n", errors.New("exit 1")
+		}
+		if line == "plugin list" {
+			return "Installed plugins:\n\n  ❯ " + installed + "\n    Version: 1\n", nil
+		}
+		return "", nil
+	}
+	return &calls
+}
+
+func TestUpdateRunsPluginStep(t *testing.T) {
+	fakeRelease(t, "v9.9.9", []byte("new binary"), false)
+	fakeExe(t)
+	calls := fakeClaude(t, true, "", "mw@miniwaves")
+	t.Setenv("MW_NO_PLUGINS", "")
+	s := out(t, "update")
+	for _, want := range []string{"plugin mw: updated", "plugin tidewatch: installed"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %q in %q", want, s)
+		}
+	}
+	all := strings.Join(*calls, "|")
+	for _, want := range []string{"plugin marketplace add stormovermars/miniwaves", "plugin marketplace update miniwaves", "plugin update mw@miniwaves", "plugin install tidewatch@miniwaves"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("missing call %q in %q", want, all)
+		}
+	}
+}
+
+func TestUpdatePluginsOptOut(t *testing.T) {
+	fakeRelease(t, "v9.9.9", []byte("new binary"), false)
+	fakeExe(t)
+	calls := fakeClaude(t, true, "", "")
+	t.Setenv("MW_NO_PLUGINS", "1")
+	if s := out(t, "update"); !strings.Contains(s, "plugins: skipped") || len(*calls) != 0 {
+		t.Fatalf("out %q calls %v", s, *calls)
+	}
+}
+
+func TestUpdatePluginsNoClaudeHint(t *testing.T) {
+	t.Setenv("MW_NO_PLUGINS", "")
+	calls := fakeClaude(t, false, "", "")
+	if s := out(t, "update", "--plugins"); !strings.Contains(s, "claude not found; later run: mw update --plugins") || len(*calls) != 0 {
+		t.Fatalf("out %q calls %v", s, *calls)
+	}
+}
+
+func TestUpdatePluginFailureKeepsExit(t *testing.T) {
+	fakeRelease(t, "v9.9.9", []byte("new binary"), false)
+	exe := fakeExe(t)
+	fakeClaude(t, true, "install tidewatch", "")
+	t.Setenv("MW_NO_PLUGINS", "")
+	if err := run([]string{"update"}); err != nil {
+		t.Fatalf("exit changed: %v", err)
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "new binary" {
+		t.Fatal("binary not replaced")
+	}
+	fakeClaude(t, true, "marketplace update", "")
+	if s := out(t, "update", "--plugins"); !strings.Contains(s, "failed: marketplace update: boom: bad thing") {
+		t.Fatalf("out %q", s)
+	}
+}
+
+func TestUpdatePluginsAlone(t *testing.T) {
+	t.Setenv("MW_NO_PLUGINS", "")
+	calls := fakeClaude(t, true, "", "tidewatch@miniwaves")
+	s := out(t, "update", "--plugins")
+	if !strings.Contains(s, "plugin mw: installed") || !strings.Contains(s, "plugin tidewatch: updated") || len(*calls) == 0 {
+		t.Fatalf("out %q", s)
 	}
 }

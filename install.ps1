@@ -38,6 +38,35 @@ try {
         Write-Output "added $dest to the user PATH (open a new terminal to use mw)"
     }
     if (($env:PATH -split ";") -notcontains $dest) { $env:PATH = "$env:PATH;$dest" }
+    # Claude Code plugins: best effort, never fails the binary install. MW_NO_PLUGINS=1 skips.
+    $ErrorActionPreference = "Continue"
+    if ($env:MW_NO_PLUGINS -eq "1") {
+        Write-Output "plugins: skipped (MW_NO_PLUGINS=1)"
+    } elseif (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+        Write-Output "plugins: claude not found; later run: mw update --plugins"
+    } else {
+        try {
+            & claude plugin marketplace add $repo *> $null
+            $mo = (& claude plugin marketplace update miniwaves 2>&1 | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0) {
+                Write-Output ("plugins: failed: marketplace update: " + ($mo -split "`n" | Select-Object -Last 1))
+            } else {
+                $listing = (& claude plugin list 2>&1 | Out-String)
+                foreach ($p in "mw", "tidewatch") {
+                    $id = "$p@miniwaves"
+                    $cmd = if ($listing -match "(?m)\s$([regex]::Escape($id))\s*$") { "update" } else { "install" }
+                    $po = (& claude plugin $cmd $id 2>&1 | Out-String).Trim()
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Output ("plugin ${p}: " + $(if ($cmd -eq "update") { "updated" } else { "installed" }))
+                    } else {
+                        Write-Output ("plugin ${p}: failed: " + ($po -split "`n" | Select-Object -Last 1))
+                    }
+                }
+            }
+        } catch {
+            Write-Output "plugins: failed: $($_.Exception.Message)"
+        }
+    }
 } finally {
     if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }
 }

@@ -438,7 +438,7 @@ Git is the coding agent's job, not mw's. Commit `.miniwaves.json` and `.miniwave
 
 mw runs natively on Windows 10/11 (amd64, arm64); the same board works from PowerShell, cmd and Git Bash, and a board folder can be shared with macOS/Linux checkouts.
 
-- Install: `install.ps1` puts `mw.exe` in `%USERPROFILE%\.local\bin` and adds it to the user PATH (set `MINIWAVES_NO_PATH=1` to skip). The Claude Code plugin hook runs in Git Bash and installs the Windows release there.
+- Install: `install.ps1` also installs/updates the Claude Code plugins when `claude` is present (`MW_NO_PLUGINS=1` skips). It puts `mw.exe` in `%USERPROFILE%\.local\bin` and adds it to the user PATH (set `MINIWAVES_NO_PATH=1` to skip). The Claude Code plugin hook runs in Git Bash and installs the Windows release there.
 - Home is `%USERPROFILE%`; `~/` and `~\` both expand in folders, `--evidence` and `publish.html`.
 - Writes and reads: lockless readers open the board, tenant and index files with `FILE_SHARE_READ|WRITE|DELETE`, so they never block a writer's rename, and retry a sharing violation or access-denied open (50 x 20 ms); a writer retries its rename the same way before failing.
 - Lock wait: a writer waits up to `MW_LOCK_WAIT` seconds for the board lock (default 15 on Windows, 5 elsewhere), then fails with `board locked (pid P): lock wait timed out ...`; raise it for many concurrent runners on a slow machine. Directory fsync is skipped (Windows cannot open a directory); file fsync stays. Locks are `LockFileEx` and are released when the process exits.
@@ -446,6 +446,11 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 - Prompts print PowerShell setup (`$env:MW_SESSION=...`, `Set-Location`).
 
 ## Changelog
+
+### 0.3.3
+
+- Installing or upgrading mw also installs or updates the Claude Code plugins `mw` and `tidewatch` when `claude` is on PATH: `install.sh`, `install.ps1` and `mw update` (after a real update) do it, best effort; a failed plugin step never fails the install or changes the exit status. `MW_NO_PLUGINS=1` skips it. `mw update --plugins` runs only that step.
+- tidewatch: one `Fanfare: off|all|<set>` button in the top row cycles off, all, each fanfare set, then off on every press (like `Auto:`); `/tidewatch fanfare next` does the same. The footer Fanfare and Set buttons are gone; Test stays.
 
 ### 0.3.2
 
@@ -511,7 +516,7 @@ The first working release after 0.1.0 (the v0.2.0 tag never produced release ass
 - `mw start` guard: only inbox/ready (or your own) items start; `mw reopen` for done ones.
 - `mw archive` moves done items out of the hot board file (archived tenants are skipped).
 - `mw tenant archive` refuses while a tenant has a `doing` item or a live session (names them); `--force` overrides. Archived tenants no longer show in `wave list -A` or the gate lines of `board --html`.
-- `mw update`: 120 s timeout for the downloads (5 s for the API call); asset URLs are pinned to github.com and objects.githubusercontent.com (redirects too); on Windows a failed swap restores the old exe. Renames retry only on Windows (50 x 20 ms).
+- `mw update` plugin step: each `claude` call has a 60 s timeout; output is one line per plugin. `mw update`: 120 s timeout for the downloads (5 s for the API call); asset URLs are pinned to github.com and objects.githubusercontent.com (redirects too); on Windows a failed swap restores the old exe. Renames retry only on Windows (50 x 20 ms).
 - Schema 8, per-tenant storage: `.miniwaves.json` is the index, each tenant lives in `.miniwaves/<slug>.json` (+ `.archive.json`); `mw migrate` converts older boards in place (backup `.miniwaves.json.bak7`).
 - Kernel locks for writers (per tenant, 5 s deadline) and lockless reads; 40 runners on one board finish every item exactly once.
 - `mw board --html` and `publish` write a static page, rewritten only when the board changed and at most every `publish.interval` seconds (default 60, minimum 5).
@@ -520,6 +525,6 @@ The first working release after 0.1.0 (the v0.2.0 tag never produced release ass
 - Claude Code plugin (`claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves`), install scripts for macOS, Linux and Windows, CI with `go vet` and `go test -race` (plain `go test` on Windows).
 - `mw tenant archive|restore SLUG`: an archived tenant keeps its files but is hidden from `board -A`, `list -A`, `log -A`, `next`, `tenant list` (shown with `-v`) and the page (shown greyed with `--archived`); `version -j` marks it `archived` so runners skip it; `-t SLUG` on it fails with "SLUG is archived: mw tenant restore SLUG".
 - `mw tenant tag SLUG +TAG -TAG...` (lowercase, unique, sorted; stored in the index); `--tag T` (repeatable, AND) filters `tenant list`, `board -A`, `list -A`, `log -A`; tags show in `board`, `tenant list`, `version -j` and as chips on the page.
-- `mw update [--check]` replaces the binary with the latest GitHub release (checksum verified, exit 2 when current); `mw version` and `mw help` print the releases URL, `version -j` adds `repo` and `releases_url`.
+- `mw update [--check] [--plugins]` replaces the binary with the latest GitHub release (checksum verified, exit 2 when current); `mw version` and `mw help` print the releases URL, `version -j` adds `repo` and `releases_url`.
 - Windows: rename retry for writes over an open board file, `~\` paths, `install.ps1` adds mw to the user PATH, the plugin hook installs the Windows asset from Git Bash, CI on windows-latest is a gate (see [Windows](#windows)).
 - Removed since 0.1.0: `mw tenant use` (folder default, tenant path, `MW_TENANT` and the first tenant select the tenant; `tenant default` stays).

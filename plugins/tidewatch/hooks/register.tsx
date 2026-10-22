@@ -1191,8 +1191,8 @@ const loadFanfare = async ($: any, board: string) => {
   return next
 }
 
-const fanfareSet = async ($: any, board: string, kv: string) => {
-  const r = await runMw($, board, ['user', 'set', kv])
+const fanfareSet = async ($: any, board: string, kv: string[]) => {
+  const r = await runMw($, board, ['user', 'set', ...kv])
   await loadFanfare($, board)
   return r !== undefined && r.exitCode === 0
 }
@@ -1200,15 +1200,24 @@ const fanfareSet = async ($: any, board: string, kv: string) => {
 const fanfareToggle = async ($: any, board: string, on?: boolean) => {
   const cur = ((await read($, fanfareAtom)) as Record<string, TidewatchFanfare>)[board]
   if (cur === undefined) return false
-  return fanfareSet($, board, `fanfare.enabled=${on ?? !cur.enabled}`)
+  return fanfareSet($, board, [`fanfare.enabled=${on ?? !cur.enabled}`])
+}
+
+/** The top-row button's label: off, all, or the set name. */
+const fanfareLabel = (f: TidewatchFanfare) => (f.enabled ? f.use : 'off')
+
+/** One press: off -> all -> <set 1> -> <set 2> ... -> off. Returns the `mw user set` args for the next step. */
+const fanfareNextArgs = (f: TidewatchFanfare): string[] => {
+  if (!f.enabled) return ['fanfare.enabled=true', 'fanfare.use=all']
+  const i = f.sets.indexOf(f.use)
+  const nextSet = i < 0 ? f.sets[0] : f.sets[i + 1] // 'all' (or a stale name) starts the sets
+  return nextSet === undefined ? ['fanfare.enabled=false'] : [`fanfare.use=${nextSet}`]
 }
 
 const fanfareCycle = async ($: any, board: string) => {
   const cur = ((await read($, fanfareAtom)) as Record<string, TidewatchFanfare>)[board]
   if (cur === undefined) return false
-  const all = ['all', ...cur.sets]
-  const next = all[(Math.max(0, all.indexOf(cur.use)) + 1) % all.length]!
-  return fanfareSet($, board, `fanfare.use=${next}`)
+  return fanfareSet($, board, fanfareNextArgs(cur))
 }
 
 const fanfareTest = async ($: any, board: string) => {
@@ -1230,16 +1239,21 @@ const fanfareCommand = async ($: any, rest: string) => {
     const done = await fanfareToggle($, job.board, w === 'on')
     return { text: done ? `Tidewatch: fanfare ${w}.` : 'Tidewatch: could not change fanfare.' }
   }
+  if (w === 'next') {
+    const done = await fanfareCycle($, job.board)
+    const now = ((await read($, fanfareAtom)) as Record<string, TidewatchFanfare>)[job.board]
+    return { text: done && now ? `Tidewatch: fanfare ${fanfareLabel(now)}.` : 'Tidewatch: could not change fanfare.' }
+  }
   if (w === 'test') {
     return { text: (await fanfareTest($, job.board)) ? 'Tidewatch: fanfare test started.' : 'Tidewatch: fanfare test failed.' }
   }
   const u = /^use\s+(\S+)$/.exec(w)
   if (u) {
     if (u[1] !== 'all' && !cur.sets.includes(u[1]!)) return { text: `Tidewatch: unknown set "${u[1]}" (all, ${cur.sets.join(', ')}).` }
-    const done = await fanfareSet($, job.board, `fanfare.use=${u[1]}`)
+    const done = await fanfareSet($, job.board, [`fanfare.use=${u[1]}`])
     return { text: done ? `Tidewatch: fanfare set ${u[1]}.` : 'Tidewatch: could not change the fanfare set.' }
   }
-  return { text: `Tidewatch: fanfare ${cur.enabled ? 'on' : 'off'}, set ${cur.use}. Usage: /tidewatch fanfare on|off|use NAME|test` }
+  return { text: `Tidewatch: fanfare ${cur.enabled ? 'on' : 'off'}, set ${cur.use}. Usage: /tidewatch fanfare on|off|next|use NAME|test` }
 }
 
 const toggleMute = async ($: any) => {
@@ -1387,7 +1401,7 @@ const runCommand = async ($: any, args: string) => {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'tidewatch', description: 'Live mw boards: /tidewatch [job | mute | every off|30s|1m|5m | bigger|smaller|reset | style NAME|list|new NAME|import PATH|export NAME PATH | add PATH | remove ID | fanfare on|off|use NAME|test]' })
+    await $.command.register({ name: 'tidewatch', description: 'Live mw boards: /tidewatch [job | mute | every off|30s|1m|5m | bigger|smaller|reset | style NAME|list|new NAME|import PATH|export NAME PATH | add PATH | remove ID | fanfare on|off|next|use NAME|test]' })
     sessionCwd = String((e as { cwd?: string }).cwd ?? '')
     try {
       const saved = await $.store.get('refreshEvery')
@@ -1499,6 +1513,7 @@ export const register: Register = on => {
     const density = step < 0 ? 'compact' : step > 0 ? 'roomy' : 'default'
 
     const needsOf = (id: string) => (snaps[id] ? needItems(snaps[id]!).length : 0)
+    const fan = ((await read($, fanfareAtom)) as Record<string, TidewatchFanfare>)[job.board]
     const header = (
       <Box alignItems="center" gap={1}>
         {reg.jobs.length < 2 && <Text {...wt} wrap="truncate-end">{job.title}</Text>}
@@ -1520,6 +1535,7 @@ export const register: Register = on => {
         <Button key="refresh" label="Refresh" onPress={() => void refreshSelected($)} />
         <Button key="news" label="News" dimColor onPress={() => void openNews($, job.id)} />
         <Button key="every" label={`Auto: ${every}`} dimColor onPress={() => void cycleEvery($)} />
+        {fan !== undefined && <Button key="fanfare" label={`Fanfare: ${fanfareLabel(fan)}`} dimColor onPress={() => void fanfareCycle($, job.board)} />}
         <Button
           key="style"
           label={`Style: ${wanted}`}
@@ -1532,13 +1548,10 @@ export const register: Register = on => {
       </Box>
     )
     const separator = <Text dimColor wrap="truncate-end">{'─'.repeat(columns)}</Text>
-    const fan = ((await read($, fanfareAtom)) as Record<string, TidewatchFanfare>)[job.board]
     // buttons only: no Select or Input on mobile
     const footer =
       fan === undefined ? null : (
         <Box gap={1}>
-          <Button key="fanfare-toggle" label={`Fanfare: ${fan.enabled ? 'on' : 'off'}`} dimColor onPress={() => void fanfareToggle($, job.board)} />
-          <Button key="fanfare-set" label={`Set: ${fan.use}`} dimColor onPress={() => void fanfareCycle($, job.board)} />
           <Button key="fanfare-test" label="Test" dimColor onPress={() => void fanfareTest($, job.board)} />
         </Box>
       )
