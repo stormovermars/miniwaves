@@ -1220,7 +1220,7 @@ test('/mw-jobs list: one line per job and every subcommand; jobs, news, mute, ev
   const releases = () => state.runs.filter(r => r.startsWith('mw news --job zeta --release'))
   await mwCmd($, 'release zeta')
   expect(releases()).toHaveLength(0)
-  expect(state.toasts.at(-1)).toContain('release zeta?')
+  expect(state.toasts.at(-1)).toContain('publish the next issue of zeta?')
   await mwCmd($, 'release zeta')
   expect(releases()).toHaveLength(1)
 
@@ -2176,7 +2176,7 @@ const svgText = async (ui: any) => [...(await ui.findAll({ type: 'Svg' })).map((
 /** A row name: Text, or the plain Button it became when it opens the detail panel. */
 const nameNode = async (ui: any, re: RegExp) => (await ui.find({ type: 'Text', text: re })) ?? (await ui.findAll({ type: 'Button' })).find((b: any) => re.test(String(b.props?.label ?? '')))
 
-const NEWS_TITLE = /^(Release \d+|Draft) \u00b7/
+const NEWS_TITLE = /^(Issue \d+|Draft) \u00b7/
 
 const mountNews = async ($: any, style: string, surface: 'desktop' | 'terminal' = 'desktop', cols = 80) => {
   await cmd($, `style ${style}`)
@@ -2191,15 +2191,15 @@ test('news model: the draft and its marker in every style, with the navigation g
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   for (const style of ['normal', 'blocks', 'gopher', 'agile', 'kanban']) {
     const ui = await mountNews($, style)
-    expect(await titleOf(ui)).toBe('Draft \u00b7 since release 6')
-    expect(await allText(ui)).toContain('Draft, not released \u00b7 8 changes since release 6')
+    expect(await titleOf(ui)).toBe('Draft \u00b7 since issue 6')
+    expect(await allText(ui)).toContain('Draft, not published \u00b7 8 changes since issue 6')
     expect(shape(await ui.find({ key: 'nav-group' }))).toEqual(['nav-first', '|', 'nav-prev', '|', 'nav-list', '|', 'nav-next', '|', 'nav-last'])
     expect(await ui.find({ key: 'release' })).toBeDefined()
     await ui.unmount()
   }
   // the terminal draws the same navigation and title
   const t = await mountNews($, 'gopher', 'terminal')
-  expect(await titleOf(t)).toBe('Draft \u00b7 since release 6')
+  expect(await titleOf(t)).toBe('Draft \u00b7 since issue 6')
   expect(await t.find({ key: 'nav-group' })).toBeDefined()
   await t.unmount()
 })
@@ -2212,18 +2212,18 @@ test('news model: step, jump, list click, and the position stays when a new rele
   for (const style of ['normal', 'blocks', 'gopher', 'agile', 'kanban']) {
     const ui = await mountNews($, style)
     const at = async () => titleOf(ui)
-    expect(await at()).toBe('Draft \u00b7 since release 6')
+    expect(await at()).toBe('Draft \u00b7 since issue 6')
     await ui.press({ key: 'nav-prev' })
-    expect(await at()).toContain('Release 30 \u00b7 2026-11-02 \u00b7 vs release 29')
+    expect(await at()).toContain('Issue 30 \u00b7 2026-11-02 \u00b7 vs issue 29')
     expect(await ui.find({ key: 'release' })).toBeUndefined() // past releases are read-only
     await ui.press({ key: 'nav-prev' })
-    expect(await at()).toContain('Release 29')
+    expect(await at()).toContain('Issue 29')
     await ui.press({ key: 'nav-next' })
-    expect(await at()).toContain('Release 30')
+    expect(await at()).toContain('Issue 30')
     await ui.press({ key: 'nav-first' })
-    expect(await at()).toContain('Release 1 \u00b7 2026-10-01 \u00b7 vs the start')
+    expect(await at()).toContain('Issue 1 \u00b7 2026-10-01 \u00b7 vs the start')
     await ui.press({ key: 'nav-last' })
-    expect(await at()).toBe('Draft \u00b7 since release 6')
+    expect(await at()).toBe('Draft \u00b7 since issue 6')
     expect(await ui.find({ key: 'release' })).toBeDefined()
     // the list: newest first, 20 to a page, a click opens that release
     await ui.press({ key: 'nav-list' })
@@ -2236,11 +2236,11 @@ test('news model: step, jump, list click, and the position stays when a new rele
     const rows2 = (await ui.findAll({ type: 'Button' })).filter((b: any) => /^list-\d+$/.test(String(b.props.key)))
     expect(rows2.map((b: any) => b.props.key)).toEqual(Array.from({ length: 10 }, (_, i) => `list-${10 - i}`))
     await ui.press({ key: 'list-7' })
-    expect(await at()).toContain('Release 7 \u00b7')
+    expect(await at()).toContain('Issue 7 \u00b7')
     // a refresh keeps the page; a new release (31) puts a dot on the list and on latest and does not move the reader
     seedReleases(state, 31)
     await ui.press({ key: 'news-refresh' })
-    expect(await at()).toContain('Release 7 \u00b7')
+    expect(await at()).toContain('Issue 7 \u00b7')
     expect(((await ui.find({ key: 'nav-list' }))?.props.label)).toBe('\u2630\u25cf')
     expect(((await ui.find({ key: 'nav-last' }))?.props.label)).toBe('\u21e5\u25cf')
     await ui.press({ key: 'nav-last' })
@@ -2260,16 +2260,20 @@ test('news model: the Release button asks first, runs mw news --release, and sho
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await mountNews($, 'normal')
   const runs = () => state.runs.filter(r => r === 'mw news --job zeta --release')
+  // the pane calls a news release an issue: the button is Publish, the question names the next issue number
+  expect((await ui.find({ key: 'release' }))?.props.label).toBe('Publish')
   await ui.press({ key: 'release' })
   expect(runs()).toHaveLength(0)
   expect(await ui.find({ key: 'release-yes' })).toBeDefined()
+  expect((await ui.find({ key: 'release-yes' }))?.props.label).toBe('Yes, publish')
+  expect(await allText(ui)).toContain('Publish issue 4?')
   await ui.press({ key: 'release-no' })
   expect(await ui.find({ key: 'release-yes' })).toBeUndefined()
-  state.releaseOut = { code: 1, text: 'nothing new since release 3' }
+  state.releaseOut = { code: 1, text: 'nothing new since release 3' } // mw's CLI wording; the pane says issue
   await ui.press({ key: 'release' })
   await ui.press({ key: 'release-yes' })
   expect(runs()).toHaveLength(1)
-  expect(state.toasts.at(-1)).toContain('nothing new since release 3')
+  expect(state.toasts.at(-1)).toContain('nothing new since issue 3')
   await ui.unmount()
 })
 
@@ -2941,7 +2945,7 @@ test('T3 + T10: mute, the open groups and the news page survive a reload (they a
   r.state.store.set('expanded', { zeta: { needs: 30 } })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const again = await $.ui.mount({ ...NEWS_PANE, surface: 'desktop' } as never)
-  expect(await allText(again)).toContain('Release 5')
+  expect(await allText(again)).toContain('Issue 5')
   await again.unmount()
 })
 
@@ -2979,9 +2983,9 @@ test('X3 + T6 + X4 + E4: an unreadable release says so and the arrows still work
   await ui.press({ key: 'nav-prev' })
   await r.clock.advance(1000)
   const t = await allText(ui)
-  expect(t.includes('release 3 unreadable') || t.includes('Release 3')).toBe(true)
+  expect(t.includes('issue 3 unreadable') || t.includes('Issue 3')).toBe(true)
   await ui.press({ key: 'nav-prev' })
-  expect((await titleOf(ui)) ?? '').toContain('Release 2')
+  expect((await titleOf(ui)) ?? '').toContain('Issue 2')
   await ui.press({ key: 'nav-next' })
   await ui.unmount()
   // a draft with no changes: Release is dim and gives the reason
@@ -2994,7 +2998,7 @@ test('X3 + T6 + X4 + E4: an unreadable release says so and the arrows still work
   await ui2.press({ key: 'nav-last' })
   const rel = await ui2.find({ key: 'release' })
   expect(rel?.props.dimColor).toBe(true)
-  expect(await allText(ui2)).toContain('Nothing new since release 5')
+  expect(await allText(ui2)).toContain('Nothing new since issue 5')
   await ui2.unmount()
 })
 

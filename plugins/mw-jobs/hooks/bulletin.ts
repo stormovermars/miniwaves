@@ -179,7 +179,7 @@ export const total = (l: MList, counted?: number) => Math.max(counted ?? 0, l.it
 const HAPPENED_KEYS = ['closed_milestones', 'done', 'accepted', 'sent_back', 'answers', 'decisions', 'new_items'] as const
 export const happenedCount = (m: Model, key: (typeof HAPPENED_KEYS)[number]) => total(m.happened[key], m.happened.counts[key])
 
-/** How many things happened in the span: the draft's "N changes since release M". */
+/** How many things happened in the span: the draft's "N changes since issue M". */
 export const changeCount = (m: Model): number => m.release.changes ?? HAPPENED_KEYS.reduce((n, k) => n + happenedCount(m, k), 0)
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
@@ -327,7 +327,7 @@ export const shortLines = (m: Model): string[] => {
   const doing = total(m.now.doing, c.doing)
   const ongoing = [needs > 0 ? `${needs} need you` : '', review > 0 ? `${review} to review` : '', blocked > 0 ? `${blocked} blocked` : '', doing > 0 ? `${doing} in progress` : ''].filter(Boolean)
   const ready = total(m.next.ready, c.ready)
-  const lines = [happened.length > 0 ? happened.join(', ') : m.release.number === null ? 'nothing new yet' : 'nothing happened in this release']
+  const lines = [happened.length > 0 ? happened.join(', ') : m.release.number === null ? 'nothing new yet' : 'nothing happened in this issue']
   if (ongoing.length > 0) lines.push(ongoing.join(', '))
   if (ready > 0 || m.next.next_milestones.items.length > 0) lines.push([ready > 0 ? `${ready} ready` : '', m.next.next_milestones.items.length > 0 ? `${plural(total(m.next.next_milestones), 'milestone')} open next` : ''].filter(Boolean).join(', '))
   return lines.slice(0, 3)
@@ -431,9 +431,9 @@ export const bulletin = (m: Model, o: BulletinOpts): BLine[] => {
   const rule = (ch: string): BLine => ({ t: ch.repeat(w), tone: 'dim' })
   const draft = m.release.number === null
   const title = `${ascii(m.job.title || m.job.id).toUpperCase()} BULLETIN`
-  const head1 = lr(` ${title}`, draft ? 'DRAFT - NOT RELEASED ' : `RELEASE ${m.release.number} / ${releaseDate(m)} `, w)
+  const head1 = lr(` ${title}`, draft ? 'DRAFT - NOT PUBLISHED ' : `ISSUE ${m.release.number} / ${releaseDate(m)} `, w)
   const since = m.release.since
-  const left2 = draft ? (since.number !== null ? ` since release ${since.number}${o.prevAt ? ` (${date10(o.prevAt)})` : ''}` : ' since the start') : since.number !== null ? ` vs release ${since.number}${o.prevAt ? ` (${date10(o.prevAt)})` : ''}` : ' since the start'
+  const left2 = draft ? (since.number !== null ? ` since issue ${since.number}${o.prevAt ? ` (${date10(o.prevAt)})` : ''}` : ' since the start') : since.number !== null ? ` vs issue ${since.number}${o.prevAt ? ` (${date10(o.prevAt)})` : ''}` : ' since the start'
   const url = ascii(o.url || m.job.url || `gopher://local/1/news/${m.job.id}`)
   const head2 = lr(left2, `${url} `, w)
   const out: BLine[] = [rule('='), { t: head1, tone: 'head' }, { t: head2, tone: 'dim' }, rule('=')]
@@ -452,7 +452,7 @@ export const bulletin = (m: Model, o: BulletinOpts): BLine[] => {
     ...group({ type: '0', list: hp.decisions, state: () => 'decided', top: T(10), counted: hp.counts.decisions }, w),
     ...group({ type: '0', list: hp.answers, state: () => 'answered', top: T(10), counted: hp.counts.answers }, w),
   ]
-  out.push(...(happenedLines.length > 0 ? happenedLines : [{ t: draft ? 'nothing yet since the last release' : 'nothing happened in this release', tone: 'dim' as const }]))
+  out.push(...(happenedLines.length > 0 ? happenedLines : [{ t: draft ? 'nothing yet since the last issue' : 'nothing happened in this issue', tone: 'dim' as const }]))
 
   out.push({ t: '', tone: 'fg' }, ...section(3, 'ONGOING', w))
   const c = m.now.counts
@@ -478,7 +478,7 @@ export const bulletin = (m: Model, o: BulletinOpts): BLine[] => {
   const nums = [...o.releases].sort((a, b) => b - a)
   const tail = 'end of bulletin '
   let list = nums.join(' ')
-  const maxList = w - ' releases: '.length - tail.length - 2
+  const maxList = w - ' issues: '.length - tail.length - 2
   if (list.length > maxList) {
     let cut = ''
     for (const n of nums) {
@@ -487,7 +487,7 @@ export const bulletin = (m: Model, o: BulletinOpts): BLine[] => {
     }
     list = `${cut} ...`
   }
-  out.push({ t: '', tone: 'fg' }, rule('-'), { t: lr(` releases: ${list}`, tail, w), tone: 'dim' }, rule('='))
+  out.push({ t: '', tone: 'fg' }, rule('-'), { t: lr(` issues: ${list}`, tail, w), tone: 'dim' }, rule('='))
   return out
 }
 
@@ -647,7 +647,7 @@ export const newsSegments = (m: Model, o: { metrics?: MViewSection[]; labels?: R
     md('')
   }
   for (const [title, rows] of happened) if (rows.length > 0) md(`### ${title}`, '', ...rows, '')
-  if (closed.length === 0 && happened.every(([, r]) => r.length === 0)) md(m.release.number === null ? 'Nothing yet since the last release.' : 'Nothing happened in this release.', '')
+  if (closed.length === 0 && happened.every(([, r]) => r.length === 0)) md(m.release.number === null ? 'Nothing yet since the last issue.' : 'Nothing happened in this issue.', '')
   md('## Ongoing', '', `needs ${total(m.now.needs, c.needs)} \u00b7 review ${total(m.now.review, c.review)} \u00b7 blocked ${total(m.now.blocked, c.blocked)} \u00b7 doing ${total(m.now.doing, c.doing)}${c.total !== undefined ? ` \u00b7 done ${c.done ?? 0}/${c.total}` : ''}`, '')
   const ongoing: Array<[string, string[]]> = [
     ['Needs you', mdList(m.now.needs, 'needs', 5, labels, c.needs)],

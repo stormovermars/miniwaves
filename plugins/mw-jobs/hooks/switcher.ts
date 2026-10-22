@@ -195,7 +195,7 @@ export const pickLine = (e: Entry, w: number, tail: string, o: { keyW?: number }
   return fitMid(`${countsShort(e).padEnd(8)}${keyCol(e.id, kw)}  `, e.title, ` ${tail}`, w)
 }
 
-/** The news pane's job line: `id  title  release N (date) · draft: K changes  !N`. */
+/** The news pane's job line: `id  title  issue N (date) · draft: K changes  !N`. */
 export const newsLine = (e: Entry, w: number, style: RowStyle = 'text', o: { keyW?: number } = {}): string => {
   const kw = o.keyW ?? 10
   const tail = `${e.news ?? ''}${e.needs > 0 ? `  !${e.needs}` : ''}`

@@ -3540,7 +3540,7 @@ const goPage = async ($: any, id: string, page: number) => {
   await setNewsView($, id, { page, list: false, confirm: false, ...(atNewest ? { seen: entry!.latest } : {}) })
 }
 
-/** Release button, second press: `mw news --job ID --release`. "nothing new since release N" is shown as a toast. */
+/** Publish button, second press: `mw news --job ID --release`. "nothing new since issue N" is shown as a toast. */
 const releasingNow = new Set<string>()
 const doRelease = async ($: any, job: MwJobsJob) => {
   // one release at a time per job: a second press while it runs does nothing
@@ -3569,11 +3569,11 @@ const doReleaseRun = async ($: any, job: MwJobsJob) => {
   }
   const nothing = /nothing new since release \d+/i.exec(out)
   if (nothing) {
-    $.ui.toast(`Jobs: ${nothing[0]}`, { timeoutMs: 6000 })
+    $.ui.toast(`Jobs: ${nothing[0].replace(/release/i, 'issue')}`, { timeoutMs: 6000 })
     return
   }
   if (code !== 0) {
-    $.ui.toast(`Jobs: release failed${out ? ` — ${out.split('\n')[0]!.slice(0, 120)}` : ''}`, { timeoutMs: 8000 })
+    $.ui.toast(`Jobs: publish failed${out ? ` — ${out.split('\n')[0]!.slice(0, 120)}` : ''}`, { timeoutMs: 8000 })
     return
   }
   // queue the refresh behind the one in flight (never clear its guard)
@@ -3616,18 +3616,18 @@ const modelMetricViews = (m: Model): MetricSectionView[] => {
 
 const pageDate = (m: Model | undefined) => (m ? releaseDate(m) : '')
 
-/** "Release N · date · vs release N-1" or "Draft · since release M". */
+/** "Issue N · date · vs issue N-1" or "Draft · since issue M". A news release is an issue of the bulletin in the panes; mw's own CLI keeps --release. */
 export const pageTitle = (entry: NewsEntry, cur: number): { title: string; marker: string } => {
   if (cur === 0) {
     const m = entry.draft
     const since = m?.release.since.number ?? (entry.latest > 0 ? entry.latest : null)
-    return { title: since === null ? 'Draft · since the start' : `Draft · since release ${since}`, marker: m ? `Draft, not released · ${changeCount(m)} changes since ${since === null ? 'the start' : `release ${since}`}` : 'Draft, not released' }
+    return { title: since === null ? 'Draft · since the start' : `Draft · since issue ${since}`, marker: m ? `Draft, not published · ${changeCount(m)} changes since ${since === null ? 'the start' : `issue ${since}`}` : 'Draft, not published' }
   }
   const m = entry.releases[cur]
   // the release's own `since` names the one before it (releases may have gaps); without it, the one numbered before
   const since = m?.release.since.number
-  const prev = since === 0 || (since === undefined && cur <= 1) || (since === null && cur <= 1) ? 'vs the start' : `vs release ${since ?? cur - 1}`
-  return { title: `Release ${cur} · ${pageDate(m) || '…'} · ${prev}`, marker: '' }
+  const prev = since === 0 || (since === undefined && cur <= 1) || (since === null && cur <= 1) ? 'vs the start' : `vs issue ${since ?? cur - 1}`
+  return { title: `Issue ${cur} · ${pageDate(m) || '…'} · ${prev}`, marker: '' }
 }
 
 /** ⇤ | ◂ | ☰ | ▸ | ⇥ as one group (a dot after ☰ and ⇥ when a release came that the reader has not seen), and the Release button on the draft only. */
@@ -3642,28 +3642,28 @@ const releaseNav = (ui: any, $: any, job: MwJobsJob, entry: NewsEntry, view: New
     if (p !== undefined) void goPage($, job.id, p)
   }
   const nav = group(ui, 'nav-group', [
-    tipped(ui, 'nav-first', <Button key="nav-first" plain label="⇤" dimColor={idx <= 0} onPress={go(pages[0])} />, 'First release'),
-    tipped(ui, 'nav-prev', <Button key="nav-prev" plain label="◂" dimColor={prev === undefined} onPress={go(prev)} />, 'Previous release'),
-    tipped(ui, 'nav-list', <Button key="nav-list" plain label={dot ? '☰●' : '☰'} onPress={() => void (async () => { await setNewsView($, job.id, { list: !view.list, listPage: 0, confirm: false, ...(view.list ? {} : { seen: entry.latest }) }) })()} />, dot ? 'All releases (a new one)' : 'All releases'),
-    tipped(ui, 'nav-next', <Button key="nav-next" plain label="▸" dimColor={next === undefined} onPress={go(next)} />, 'Next release'),
-    tipped(ui, 'nav-last', <Button key="nav-last" plain label={dot ? '⇥●' : '⇥'} dimColor={idx === pages.length - 1 && !dot} onPress={go(pages[pages.length - 1])} />, dot ? 'Latest (a new release)' : 'Latest'),
+    tipped(ui, 'nav-first', <Button key="nav-first" plain label="⇤" dimColor={idx <= 0} onPress={go(pages[0])} />, 'First issue'),
+    tipped(ui, 'nav-prev', <Button key="nav-prev" plain label="◂" dimColor={prev === undefined} onPress={go(prev)} />, 'Previous issue'),
+    tipped(ui, 'nav-list', <Button key="nav-list" plain label={dot ? '☰●' : '☰'} onPress={() => void (async () => { await setNewsView($, job.id, { list: !view.list, listPage: 0, confirm: false, ...(view.list ? {} : { seen: entry.latest }) }) })()} />, dot ? 'All issues (a new one)' : 'All issues'),
+    tipped(ui, 'nav-next', <Button key="nav-next" plain label="▸" dimColor={next === undefined} onPress={go(next)} />, 'Next issue'),
+    tipped(ui, 'nav-last', <Button key="nav-last" plain label={dot ? '⇥●' : '⇥'} dimColor={idx === pages.length - 1 && !dot} onPress={go(pages[pages.length - 1])} />, dot ? 'Latest issue (a new one)' : 'Latest issue'),
   ])
   const release =
     cur !== 0
       ? null
       : isReleasing
-        ? tipped(ui, 'release', <Button key="release" plain dimColor label="releasing…" />, 'A release is being cut')
+        ? tipped(ui, 'release', <Button key="release" plain dimColor label="publishing…" />, 'An issue is being published')
         : view.confirm === true
         ? (
             <Box key="release-confirm" gap={1} alignItems="center">
-              <Text>Release now?</Text>
-              <Button key="release-yes" plain variant="primary" label="Yes, release" onPress={() => void doRelease($, job)} />
+              <Text>{`Publish issue ${entry.latest + 1}?`}</Text>
+              <Button key="release-yes" plain variant="primary" label="Yes, publish" onPress={() => void doRelease($, job)} />
               <Button key="release-no" plain dimColor label="Cancel" onPress={() => { releaseArmed.delete(job.id); void setNewsView($, job.id, { confirm: false }) }} />
             </Box>
           )
         : entry.draft !== undefined && changeCount(entry.draft) === 0
-          ? tipped(ui, 'release', <Button key="release" plain dimColor label="Release" onPress={() => $.ui.toast(`Jobs: nothing new since release ${entry.latest}`, { timeoutMs: 6000 })} />, `Nothing new since release ${entry.latest}`)
-          : tipped(ui, 'release', <Button key="release" plain variant="primary" label="Release" onPress={() => void setNewsView($, job.id, { confirm: true })} />, 'Cut a release from the draft (asks first)')
+          ? tipped(ui, 'release', <Button key="release" plain dimColor label="Publish" onPress={() => $.ui.toast(`Jobs: nothing new since issue ${entry.latest}`, { timeoutMs: 6000 })} />, `Nothing new since issue ${entry.latest}`)
+          : tipped(ui, 'release', <Button key="release" plain variant="primary" label="Publish" onPress={() => void setNewsView($, job.id, { confirm: true })} />, `Publish issue ${entry.latest + 1} from the draft; asks first`)
   return (
     <Box key="release-nav" alignItems="center" gap={2} flexWrap="wrap">
       {nav}
@@ -3693,7 +3693,7 @@ const releaseList = (ui: any, $: any, job: MwJobsJob, entry: NewsEntry, view: Ne
   return (
     <Box key="release-list" flexDirection="column" gap={0}>
       <Box gap={2} alignItems="center">
-        <Text bold>Releases, newest first</Text>
+        <Text bold>Issues, newest first</Text>
         <Text dimColor>{`page ${lp + 1}/${pages}`}</Text>
         {lp > 0 && <Button key="list-newer" plain dimColor label="◂ newer" onPress={() => void setNewsView($, job.id, { listPage: lp - 1 })} />}
         {lp < pages - 1 && <Button key="list-older" plain dimColor label="older ▸" onPress={() => void setNewsView($, job.id, { listPage: lp + 1 })} />}
@@ -3776,7 +3776,7 @@ const boardNotes = (ui: any, $: any, job: MwJobsJob, m: Model, labels: Record<st
   const hp = m.happened
   return (
     <Box key="board-notes" flexDirection="column" gap={1}>
-      <Text bold wrap="truncate-end">{`${job.title} · ${draft ? 'draft' : `release ${m.release.number}`}`}</Text>
+      <Text bold wrap="truncate-end">{`${job.title} · ${draft ? 'draft' : `issue ${m.release.number}`}`}</Text>
       <Text dimColor>{shortLines(m).join(' · ')}</Text>
       {mileSection('b-closed', 'Milestones closed', hp.closed_milestones, 10, true)}
       {itemSection('b-done', 'Done', 'done', hp.done, 10, hp.counts.done)}
@@ -3813,7 +3813,7 @@ const modelNewsNodes = async (
   const cur = currentPage(entry, view)
   const nodes: any[] = [releaseNav(ui, $, job, entry, view, cur, ((await read($, releasing)) as string[]).includes(job.id))]
   // a release the reader was on that is no longer there; the draft that could not be read (E5), or is out of date (E6)
-  if (view.page !== undefined && view.page > 0 && !pagesOf(entry).includes(view.page)) nodes.push(<Text key="page-gone" color="warning">{`release ${view.page} gone`}</Text>)
+  if (view.page !== undefined && view.page > 0 && !pagesOf(entry).includes(view.page)) nodes.push(<Text key="page-gone" color="warning">{`issue ${view.page} gone`}</Text>)
   if (entry.draftError !== undefined && entry.draft !== undefined) nodes.push(<Text key="draft-note" color="warning">{`draft out of date: ${entry.draftError} (showing the last poll)`}</Text>)
   else if (entry.draftError !== undefined && entry.draft === undefined) nodes.push(<Text key="draft-note" color="warning">{`draft unavailable: ${entry.draftError}`}</Text>)
   const loadKey = `${job.id}|${cur}|${view.list ? view.listPage ?? 0 : 'p'}`
@@ -3837,7 +3837,7 @@ const modelNewsNodes = async (
   )
   const m = cur === 0 ? entry.draft : entry.releases[cur]
   if (m === undefined) {
-    nodes.push(<Text key="page-wait" dimColor={!(cur > 0 && entry.bad[cur])} color={cur > 0 && entry.bad[cur] ? 'warning' : undefined}>{cur > 0 && entry.bad[cur] ? `release ${cur} ${entry.bad[cur]}` : cur === 0 && entry.draftError ? `draft unavailable: ${entry.draftError}` : 'Loading…'}</Text>)
+    nodes.push(<Text key="page-wait" dimColor={!(cur > 0 && entry.bad[cur])} color={cur > 0 && entry.bad[cur] ? 'warning' : undefined}>{cur > 0 && entry.bad[cur] ? `issue ${cur} ${entry.bad[cur]}` : cur === 0 && entry.draftError ? `draft unavailable: ${entry.draftError}` : 'Loading…'}</Text>)
     return nodes
   }
   const labels = m.only !== undefined ? tenantLabels([m.only]) : tenantLabels(job.tenants)
@@ -5163,13 +5163,13 @@ const runMw = async ($: any, args: string) => {
       if (armed !== undefined && now - armed < 60_000) {
         releaseArmed.delete(j.id)
         await doRelease($, j)
-        return { text: `Release asked for ${j.id}.` }
+        return { text: `Publishing the next issue of ${j.id} asked for.` }
       }
       releaseArmed.set(j.id, now)
       await openNews($, j.id)
       await setNewsView($, j.id, { page: 0, list: false, confirm: true })
-      $.ui.toast(`Jobs: release ${j.id}? Run /mw-jobs release ${j.id} again within a minute, or press Release.`, { timeoutMs: 8000 })
-      return { text: `Release of ${j.id} is armed: run /mw-jobs release ${j.id} again to confirm.` }
+      $.ui.toast(`Jobs: publish the next issue of ${j.id}? Run /mw-jobs release ${j.id} again within a minute, or press Publish.`, { timeoutMs: 8000 })
+      return { text: `Publishing the next issue of ${j.id} is armed: run /mw-jobs release ${j.id} again to confirm.` }
     }
     case 'ask':
     case 'review': {
@@ -5255,10 +5255,10 @@ export const planAlerts = (
 // MANY JOBS, MANY TENANTS: the top bars, the summary pages (⌂), the pickers (☰), favorites
 // =====================================================================================
 
-/** The news tail of a job's summary line: `release 7 (2026-10-22) · draft: 3 changes`. */
+/** The news tail of a job's summary line: `issue 7 (2026-10-22) · draft: 3 changes`. */
 const newsTail = (n: NewsEntry | undefined): string => {
   if (n === undefined) return ''
-  const rel = n.latest > 0 ? `release ${n.latest}${n.releases[n.latest] ? ` (${releaseDate(n.releases[n.latest]!)})` : ''}` : 'no release'
+  const rel = n.latest > 0 ? `issue ${n.latest}${n.releases[n.latest] ? ` (${releaseDate(n.releases[n.latest]!)})` : ''}` : 'no issue'
   return n.draft ? `${rel} · draft: ${changeCount(n.draft)} changes` : rel
 }
 
