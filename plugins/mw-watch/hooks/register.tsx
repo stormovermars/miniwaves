@@ -16,8 +16,8 @@ import type {
   TidewatchWave,
 } from '../types'
 
-const PANE = 'tidewatch'
-const NEWS_PANE = 'tidewatch-news'
+const PANE = 'mw-watch'
+const NEWS_PANE = 'mw-watch-news'
 /** The Markdown element refuses text over 10,000 characters, so a news page is cut well under that. */
 export const NEWS_MAX = 9500
 const DEFAULT_NEWS = 'docs/news/status.md'
@@ -26,23 +26,23 @@ const newsTitle = (id: string) => `mw news · ${id}`
 const EVERY = ['off', '30s', '1m', '5m'] as const
 const EVERY_MS: Record<string, number> = { '30s': 30_000, '1m': 60_000, '5m': 300_000 }
 
-const registry = atom({ plugin: 'tidewatch', key: 'registry' } as const, { jobs: [], error: null })
-const snapshots = atom({ plugin: 'tidewatch', key: 'snapshots' } as const, {})
-const previous = atom({ plugin: 'tidewatch', key: 'previous' } as const, {})
-const staleSince = atom({ plugin: 'tidewatch', key: 'staleSince' } as const, {})
-const selected = atom({ plugin: 'tidewatch', key: 'selected' } as const, '')
-const muted = atom({ plugin: 'tidewatch', key: 'muted' } as const, false)
-const refreshEvery = atom({ plugin: 'tidewatch', key: 'refreshEvery' } as const, '1m')
-const seen = atom({ plugin: 'tidewatch', key: 'seen' } as const, {})
-const fontStep = atom({ plugin: 'tidewatch', key: 'fontStep' } as const, 0)
-const styleName = atom({ plugin: 'tidewatch', key: 'style' } as const, 'normal')
-const styles = atom({ plugin: 'tidewatch', key: 'styles' } as const, {})
-const styleIssues = atom({ plugin: 'tidewatch', key: 'styleIssues' } as const, {})
-const styleNames = atom({ plugin: 'tidewatch', key: 'styleNames' } as const, ['normal', 'blocks'])
-const stalledMin = atom({ plugin: 'tidewatch', key: 'stalledMin' } as const, 45)
-const newsAtom = atom({ plugin: 'tidewatch', key: 'news' } as const, {})
-const busy = atom({ plugin: 'tidewatch', key: 'busy' } as const, [])
-const fanfareAtom = atom({ plugin: 'tidewatch', key: 'fanfare' } as const, {})
+const registry = atom({ plugin: 'mw-watch', key: 'registry' } as const, { jobs: [], error: null })
+const snapshots = atom({ plugin: 'mw-watch', key: 'snapshots' } as const, {})
+const previous = atom({ plugin: 'mw-watch', key: 'previous' } as const, {})
+const staleSince = atom({ plugin: 'mw-watch', key: 'staleSince' } as const, {})
+const selected = atom({ plugin: 'mw-watch', key: 'selected' } as const, '')
+const muted = atom({ plugin: 'mw-watch', key: 'muted' } as const, false)
+const refreshEvery = atom({ plugin: 'mw-watch', key: 'refreshEvery' } as const, '1m')
+const seen = atom({ plugin: 'mw-watch', key: 'seen' } as const, {})
+const fontStep = atom({ plugin: 'mw-watch', key: 'fontStep' } as const, 0)
+const styleName = atom({ plugin: 'mw-watch', key: 'style' } as const, 'normal')
+const styles = atom({ plugin: 'mw-watch', key: 'styles' } as const, {})
+const styleIssues = atom({ plugin: 'mw-watch', key: 'styleIssues' } as const, {})
+const styleNames = atom({ plugin: 'mw-watch', key: 'styleNames' } as const, ['normal', 'blocks'])
+const stalledMin = atom({ plugin: 'mw-watch', key: 'stalledMin' } as const, 45)
+const newsAtom = atom({ plugin: 'mw-watch', key: 'news' } as const, {})
+const busy = atom({ plugin: 'mw-watch', key: 'busy' } as const, [])
+const fanfareAtom = atom({ plugin: 'mw-watch', key: 'fanfare' } as const, {})
 
 const two = (n: number) => (n < 10 ? `0${n}` : `${n}`)
 const hhmm = (ms: number) => {
@@ -818,7 +818,7 @@ const reportStyle = async ($: any, name: string, issues: string[]) => {
   await update($, styleIssues, (m: Record<string, string>) => ({ ...m, [name]: key }))
   const shown = issues.slice(0, 3)
   if (issues.length > 3) shown.push(`+${issues.length - 3} more`)
-  $.ui.toast(`Tidewatch style "${name}": ${shown.join('; ')}. Those values are ignored.`, { timeoutMs: 10000 })
+  $.ui.toast(`mw-watch style "${name}": ${shown.join('; ')}. Those values are ignored.`, { timeoutMs: 10000 })
 }
 
 /** Resolves a style by name into the `styles` state (a missing one counts as normal). */
@@ -865,14 +865,14 @@ const openJobs = async ($: any) => {
 
 const openNews = async ($: any, wanted: string) => {
   const reg = await loadRegistry($)
-  if (reg.jobs.length === 0) return { text: 'Tidewatch: no boards yet. Add one with /tidewatch add PATH.' }
+  if (reg.jobs.length === 0) return { text: 'mw-watch: no boards yet. Add one with /mw-watch add PATH.' }
   const id = wanted !== '' ? wanted : await read($, selected)
   const job = findJob(reg.jobs, id)
-  if (job === undefined) return { text: `Tidewatch: unknown job "${id}" (${reg.jobs.map(j => j.id).join(', ')}).` }
+  if (job === undefined) return { text: `mw-watch: unknown job "${id}" (${reg.jobs.map(j => j.id).join(', ')}).` }
   await select($, job.id)
   await loadNews($, job)
   await $.ui.open({ id: NEWS_PANE, title: newsTitle(job.name || job.id), focus: true })
-  return { text: `Tidewatch: news pane opened for ${job.id}.` }
+  return { text: `mw-watch: news pane opened for ${job.id}.` }
 }
 
 const renderStatus = async ($: any) => {
@@ -1223,7 +1223,7 @@ const fanfareCycle = async ($: any, board: string) => {
 const fanfareTest = async ($: any, board: string) => {
   // mw fanfare test detaches the player, so it returns at once; keep well inside the 30 s process timeout
   const r = await runMw($, board, ['fanfare', 'test', 'milestone'], 25_000)
-  if (r === undefined || r.exitCode !== 0) $.ui.toast('Tidewatch: fanfare test failed.', { timeoutMs: 5000 })
+  if (r === undefined || r.exitCode !== 0) $.ui.toast('mw-watch: fanfare test failed.', { timeoutMs: 5000 })
   return r !== undefined && r.exitCode === 0
 }
 
@@ -1231,45 +1231,45 @@ const fanfareCommand = async ($: any, rest: string) => {
   const reg = await loadRegistry($)
   const id: string = await read($, selected)
   const job = reg.jobs.find(j => j.id === id) ?? reg.jobs[0]
-  if (job === undefined) return { text: 'Tidewatch: no boards yet. Add one with /tidewatch add PATH.' }
+  if (job === undefined) return { text: 'mw-watch: no boards yet. Add one with /mw-watch add PATH.' }
   const cur = await loadFanfare($, job.board)
-  if (cur === undefined) return { text: 'Tidewatch: this mw has no fanfare sets or per-user config (needs mw 0.3).' }
+  if (cur === undefined) return { text: 'mw-watch: this mw has no fanfare sets or per-user config (needs mw 0.3).' }
   const w = rest.trim()
   if (w === 'on' || w === 'off') {
     const done = await fanfareToggle($, job.board, w === 'on')
-    return { text: done ? `Tidewatch: fanfare ${w}.` : 'Tidewatch: could not change fanfare.' }
+    return { text: done ? `mw-watch: fanfare ${w}.` : 'mw-watch: could not change fanfare.' }
   }
   if (w === 'next') {
     const done = await fanfareCycle($, job.board)
     const now = ((await read($, fanfareAtom)) as Record<string, TidewatchFanfare>)[job.board]
-    return { text: done && now ? `Tidewatch: fanfare ${fanfareLabel(now)}.` : 'Tidewatch: could not change fanfare.' }
+    return { text: done && now ? `mw-watch: fanfare ${fanfareLabel(now)}.` : 'mw-watch: could not change fanfare.' }
   }
   if (w === 'test') {
-    return { text: (await fanfareTest($, job.board)) ? 'Tidewatch: fanfare test started.' : 'Tidewatch: fanfare test failed.' }
+    return { text: (await fanfareTest($, job.board)) ? 'mw-watch: fanfare test started.' : 'mw-watch: fanfare test failed.' }
   }
   const u = /^use\s+(\S+)$/.exec(w)
   if (u) {
-    if (u[1] !== 'all' && !cur.sets.includes(u[1]!)) return { text: `Tidewatch: unknown set "${u[1]}" (all, ${cur.sets.join(', ')}).` }
+    if (u[1] !== 'all' && !cur.sets.includes(u[1]!)) return { text: `mw-watch: unknown set "${u[1]}" (all, ${cur.sets.join(', ')}).` }
     const done = await fanfareSet($, job.board, [`fanfare.use=${u[1]}`])
-    return { text: done ? `Tidewatch: fanfare set ${u[1]}.` : 'Tidewatch: could not change the fanfare set.' }
+    return { text: done ? `mw-watch: fanfare set ${u[1]}.` : 'mw-watch: could not change the fanfare set.' }
   }
-  return { text: `Tidewatch: fanfare ${cur.enabled ? 'on' : 'off'}, set ${cur.use}. Usage: /tidewatch fanfare on|off|next|use NAME|test` }
+  return { text: `mw-watch: fanfare ${cur.enabled ? 'on' : 'off'}, set ${cur.use}. Usage: /mw-watch fanfare on|off|next|use NAME|test` }
 }
 
 const toggleMute = async ($: any) => {
   const now: boolean = !(await read($, muted))
   await update($, muted, () => now)
-  return { text: now ? 'Tidewatch: sound and notifications muted.' : 'Tidewatch: sound and notifications on.' }
+  return { text: now ? 'mw-watch: sound and notifications muted.' : 'mw-watch: sound and notifications on.' }
 }
 
 const addBoard = async ($: any, raw: string) => {
-  if (raw.trim() === '') return { text: 'Tidewatch: usage /tidewatch add PATH (a folder holding an mw board).' }
+  if (raw.trim() === '') return { text: 'mw-watch: usage /mw-watch add PATH (a folder holding an mw board).' }
   const bin = await resolveMw($)
-  if (bin === undefined) return { text: `Tidewatch: ${MW_HOWTO}` }
+  if (bin === undefined) return { text: `mw-watch: ${MW_HOWTO}` }
   const board = absPath(raw)
-  if (!isAbsolute(board)) return { text: 'Tidewatch: the path must be absolute (the session folder is unknown).' }
+  if (!isAbsolute(board)) return { text: 'mw-watch: the path must be absolute (the session folder is unknown).' }
   const id = baseName(board)
-  if (id === '') return { text: `Tidewatch: no folder name in "${raw.trim()}".` }
+  if (id === '') return { text: `mw-watch: no folder name in "${raw.trim()}".` }
   let items: TidewatchItem[] | undefined
   try {
     const r = await $.process.run([bin, 'list', '-A', '-j'], { cwd: board, timeoutMs: 20_000 })
@@ -1277,10 +1277,10 @@ const addBoard = async ($: any, raw: string) => {
   } catch {
     items = undefined
   }
-  if (items === undefined) return { text: `Tidewatch: ${board} is not an mw board (mw list failed there).` }
+  if (items === undefined) return { text: `mw-watch: ${board} is not an mw board (mw list failed there).` }
   const reg = await readRegistry($)
   const clash = reg.jobs.find(j => j.id === id && j.board !== board)
-  if (clash !== undefined) return { text: `Tidewatch: id "${id}" is already used by ${clash.board}; remove it first.` }
+  if (clash !== undefined) return { text: `mw-watch: id "${id}" is already used by ${clash.board}; remove it first.` }
   const tenants = [...new Set(items.map(i => i.tenant).filter(t => t !== ''))].sort()
   const prev = reg.jobs.find(j => j.id === id)
   const job: TidewatchJob = { id, title: prev?.title ?? id, board, tenants, news: prev?.news ?? '', newsFile: prev?.newsFile ?? '', summary: prev?.summary ?? '' }
@@ -1289,13 +1289,13 @@ const addBoard = async ($: any, raw: string) => {
   await select($, loaded.jobs.find(j => j.boardId === id)?.id ?? id)
   await openJobs($)
   await refreshAll($)
-  return { text: `Tidewatch: ${prev ? 'updated' : 'added'} ${id} (${tenants.length} tenant${tenants.length === 1 ? '' : 's'}).` }
+  return { text: `mw-watch: ${prev ? 'updated' : 'added'} ${id} (${tenants.length} tenant${tenants.length === 1 ? '' : 's'}).` }
 }
 
 const removeBoard = async ($: any, id: string) => {
   const reg = await readRegistry($)
   if (!reg.jobs.some(j => j.id === id)) {
-    return { text: `Tidewatch: unknown job "${id}"${reg.jobs.length > 0 ? ` (${reg.jobs.map(j => j.id).join(', ')})` : ''}.` }
+    return { text: `mw-watch: unknown job "${id}"${reg.jobs.length > 0 ? ` (${reg.jobs.map(j => j.id).join(', ')})` : ''}.` }
   }
   await writeRegistry($, reg.jobs.filter(j => j.id !== id))
   const drop = <T,>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== id && !k.startsWith(`${id}/`)))
@@ -1306,63 +1306,63 @@ const removeBoard = async ($: any, id: string) => {
   await saveSeen($)
   await loadRegistry($)
   await renderStatus($)
-  return { text: `Tidewatch: removed ${id}.` }
+  return { text: `mw-watch: removed ${id}.` }
 }
 
 const styleCommand = async ($: any, rest: string) => {
   const [verb = '', a = '', b = ''] = rest.split(/\s+/)
   const names = await refreshStyleNames($)
   if (verb === 'list' || verb === '') {
-    return { text: `Tidewatch styles: ${names.join(', ')} (current ${await read($, styleName)}).` }
+    return { text: `mw-watch styles: ${names.join(', ')} (current ${await read($, styleName)}).` }
   }
   if (verb === 'new') {
-    if (!isStyleName(a)) return { text: 'Tidewatch: usage /tidewatch style new NAME (lowercase letters, digits, hyphens; up to 32).' }
-    if (names.includes(a)) return { text: `Tidewatch: style "${a}" already exists.` }
+    if (!isStyleName(a)) return { text: 'mw-watch: usage /mw-watch style new NAME (lowercase letters, digits, hyphens; up to 32).' }
+    if (names.includes(a)) return { text: `mw-watch: style "${a}" already exists.` }
     await $.store.set('userStyles', { ...(await readUserStyles($)), [a]: JSON.parse(JSON.stringify(NORMAL)) })
     await refreshStyleNames($)
-    return { text: `Tidewatch: style "${a}" stored as a copy of normal. Edit it with /tidewatch style export ${a} PATH, then /tidewatch style import PATH.` }
+    return { text: `mw-watch: style "${a}" stored as a copy of normal. Edit it with /mw-watch style export ${a} PATH, then /mw-watch style import PATH.` }
   }
   if (verb === 'import') {
     const path = rest.slice('import'.length).trim()
-    if (path === '') return { text: 'Tidewatch: usage /tidewatch style import PATH (a JSON file named <style-name>.json).' }
-    if (path.startsWith('~')) return { text: 'Tidewatch: use an absolute path (~ is not expanded).' }
+    if (path === '') return { text: 'mw-watch: usage /mw-watch style import PATH (a JSON file named <style-name>.json).' }
+    if (path.startsWith('~')) return { text: 'mw-watch: use an absolute path (~ is not expanded).' }
     const file = absPath(path)
     const name = baseName(file).replace(/\.json$/i, '')
     if (!isStyleName(name) || BUILTIN_NAMES.includes(name)) {
-      return { text: `Tidewatch: "${name}" is not a usable style name (lowercase letters, digits, hyphens; not normal or blocks). Rename the file.` }
+      return { text: `mw-watch: "${name}" is not a usable style name (lowercase letters, digits, hyphens; not normal or blocks). Rename the file.` }
     }
     let parsed: unknown
     try {
       parsed = JSON.parse(await $.fs.read(file))
     } catch {
-      return { text: `Tidewatch: could not read ${file} as JSON.` }
+      return { text: `mw-watch: could not read ${file} as JSON.` }
     }
     const { issues } = mergeStyle(NORMAL, parsed)
     await $.store.set('userStyles', { ...(await readUserStyles($)), [name]: parsed })
     await refreshStyleNames($)
     await resolveStyle($, name)
-    return { text: `Tidewatch: imported style "${name}"${issues.length > 0 ? ` (${issues.length} problem${issues.length === 1 ? '' : 's'} ignored)` : ''}. Use /tidewatch style ${name}.` }
+    return { text: `mw-watch: imported style "${name}"${issues.length > 0 ? ` (${issues.length} problem${issues.length === 1 ? '' : 's'} ignored)` : ''}. Use /mw-watch style ${name}.` }
   }
   if (verb === 'export') {
     const path = rest.replace(/^export\s+\S+\s*/, '').trim()
-    if (!names.includes(a) || path === '') return { text: 'Tidewatch: usage /tidewatch style export NAME PATH.' }
-    if (path.startsWith('~')) return { text: 'Tidewatch: use an absolute path (~ is not expanded).' }
+    if (!names.includes(a) || path === '') return { text: 'mw-watch: usage /mw-watch style export NAME PATH.' }
+    if (path.startsWith('~')) return { text: 'mw-watch: use an absolute path (~ is not expanded).' }
     const body = BUILTIN[a] ?? (await readUserStyles($))[a]
     const file = absPath(path)
     try {
       await $.fs.write(file, `${JSON.stringify(body, null, 2)}\n`)
     } catch {
-      return { text: `Tidewatch: could not write ${file}.` }
+      return { text: `mw-watch: could not write ${file}.` }
     }
     void b
-    return { text: `Tidewatch: style "${a}" written to ${file}.` }
+    return { text: `mw-watch: style "${a}" written to ${file}.` }
   }
-  if (!names.includes(verb)) return { text: `Tidewatch: unknown style "${verb}" (${names.join(', ')}).` }
+  if (!names.includes(verb)) return { text: `mw-watch: unknown style "${verb}" (${names.join(', ')}).` }
   await setStyle($, verb)
-  return { text: `Tidewatch: style ${verb}.` }
+  return { text: `mw-watch: style ${verb}.` }
 }
 
-/** One command line: `/tidewatch [job | mute | every X | bigger|smaller|reset | style ... | add PATH | remove ID]`. */
+/** One command line: `/mw-watch [job | mute | every X | bigger|smaller|reset | style ... | add PATH | remove ID]`. */
 const runCommand = async ($: any, args: string) => {
   const word = args.trim()
   if (word === 'mute') return toggleMute($)
@@ -1375,34 +1375,59 @@ const runCommand = async ($: any, args: string) => {
   if (rm) return removeBoard($, (rm[1] ?? '').trim())
   if (word === 'bigger' || word === 'smaller' || word === 'reset') {
     await stepBy($, word === 'bigger' ? 1 : word === 'smaller' ? -1 : 0)
-    return { text: `Tidewatch: size ${word === 'reset' ? 'default' : word}.` }
+    return { text: `mw-watch: size ${word === 'reset' ? 'default' : word}.` }
   }
   const m = /^every\s+(off|30s|1m|5m)$/.exec(word)
   if (m) {
     await setEvery($, m[1]!)
-    return { text: `Tidewatch: auto-refresh ${m[1]}.` }
+    return { text: `mw-watch: auto-refresh ${m[1]}.` }
   }
   const st = /^stalled\s+(\d+)$/.exec(word)
   if (st) {
     await update($, stalledMin, () => Number(st[1]))
     await persist($, 'stalledMin', Number(st[1]))
-    return { text: `Tidewatch: stalled after ${st[1]} min.` }
+    return { text: `mw-watch: stalled after ${st[1]} min.` }
   }
   const reg = await loadRegistry($)
   if (word !== '') {
     const hit = findJob(reg.jobs, word)
     if (hit !== undefined) await select($, hit.id)
-    else return { text: `Tidewatch: unknown job "${word}"${reg.jobs.length > 0 ? ` (${reg.jobs.map(j => j.id).join(', ')})` : ''}. Add a board with /tidewatch add PATH.` }
+    else return { text: `mw-watch: unknown job "${word}"${reg.jobs.length > 0 ? ` (${reg.jobs.map(j => j.id).join(', ')})` : ''}. Add a board with /mw-watch add PATH.` }
   }
   await openJobs($)
   void refreshAll($)
-  return { text: reg.jobs.length === 0 ? 'Tidewatch: no boards yet. Add one with /tidewatch add PATH.' : 'Tidewatch pane opened.' }
+  return { text: reg.jobs.length === 0 ? 'mw-watch: no boards yet. Add one with /mw-watch add PATH.' : 'mw-watch pane opened.' }
+}
+
+const ALIAS_HINT = '`/tidewatch` is now `/mw-watch` (the old name goes in the next release).'
+const IMPORT_KEYS = ['registry', 'refreshEvery', 'seen', 'fontStep', 'style', 'stalledMin', 'selectedJob', 'userStyles', 'notified']
+
+/** Renamed from tidewatch: on the first start with an empty registry, copy the old plugin's per-user store (best effort; the store file name carries a hash, so the shell finds it). */
+const importOldStore = async ($: any) => {
+  try {
+    const cur = (await $.store.get('registry')) as { jobs?: unknown } | undefined
+    if (cur?.jobs !== undefined && cur.jobs !== null && Object.keys(cur.jobs as object).length > 0) return
+    const isWin = (await $.env.get('OS').catch(() => undefined)) === 'Windows_NT'
+    const argv = isWin
+      ? ['powershell.exe', '-NoProfile', '-Command', "$f = Get-ChildItem \"$env:USERPROFILE\\.claude\\plugins\\store\\tidewatch_*.json\" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if ($f) { Get-Content -Raw $f.FullName }"]
+      : ['/bin/sh', '-c', 'f=$(ls -t "$HOME"/.claude/plugins/store/tidewatch_*.json 2>/dev/null | head -n 1); [ -n "$f" ] && cat "$f"']
+    const r = await $.process.run(argv, { timeoutMs: 5000 })
+    if (r.exitCode !== 0 || String(r.stdout ?? '').trim() === '') return
+    const old = JSON.parse(String(r.stdout)) as Record<string, unknown>
+    for (const k of IMPORT_KEYS) {
+      if (old[k] !== undefined && (await $.store.get(k)) === undefined) await $.store.set(k, old[k])
+    }
+  } catch {
+    // no old store, or unreadable: start empty
+  }
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'tidewatch', description: 'Live mw boards: /tidewatch [job | mute | every off|30s|1m|5m | bigger|smaller|reset | style NAME|list|new NAME|import PATH|export NAME PATH | add PATH | remove ID | fanfare on|off|next|use NAME|test]' })
+    await $.command.register({ name: 'mw-watch', description: 'Live mw boards: /mw-watch [job | mute | every off|30s|1m|5m | bigger|smaller|reset | style NAME|list|new NAME|import PATH|export NAME PATH | add PATH | remove ID | fanfare on|off|next|use NAME|test]' })
+    await $.command.register({ name: 'tidewatch', description: 'Deprecated alias of /mw-watch (same subcommands); the old name goes in the next release.' })
     sessionCwd = String((e as { cwd?: string }).cwd ?? '')
+    await importOldStore($)
     try {
       const saved = await $.store.get('refreshEvery')
       if (typeof saved === 'string' && (EVERY as readonly string[]).includes(saved)) {
@@ -1430,7 +1455,11 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'tidewatch' }, async ($, e) => runCommand($, String((e as { args?: string }).args ?? '')))
+  on('command.run', { command: 'mw-watch' }, async ($, e) => runCommand($, String((e as { args?: string }).args ?? '')))
+  on('command.run', { command: 'tidewatch' }, async ($, e) => {
+    const r = await runCommand($, String((e as { args?: string }).args ?? ''))
+    return { ...r, text: `${ALIAS_HINT}\n${r.text}` }
+  })
 
   on('ui.render', { component: 'Pane', requestId: NEWS_PANE }, async ($, e) => {
     const { Box, Text, Link, Button, Markdown } = $.ui.resolve(e) as any
@@ -1440,7 +1469,7 @@ export const register: Register = on => {
     if (job === undefined) {
       return (
         <Box flexDirection="column">
-          <Text dimColor>No boards yet. Add one with /tidewatch add PATH.</Text>
+          <Text dimColor>No boards yet. Add one with /mw-watch add PATH.</Text>
         </Box>
       )
     }
@@ -1457,7 +1486,7 @@ export const register: Register = on => {
         {entry?.isMissing === true && (
           <Box flexDirection="column">
             <Text>No news page yet.</Text>
-            <Text dimColor>{`Tidewatch reads ${entry.path} and never runs anything to make it.`}</Text>
+            <Text dimColor>{`mw-watch reads ${entry.path} and never runs anything to make it.`}</Text>
             <Text dimColor>Have mw write it there (mw news --format md -o PATH), or set newsFile for this job in the registry.</Text>
           </Box>
         )}
@@ -1481,12 +1510,12 @@ export const register: Register = on => {
       const hasMw = (await resolveMw($)) !== undefined
       return (
         <Box flexDirection="column">
-          <Text {...wt}>Tidewatch</Text>
+          <Text {...wt}>mw-watch</Text>
           {reg.error !== null && <Text color="warning">{reg.error}</Text>}
           {!hasMw && <Text color="warning">{MW_HOWTO}</Text>}
-          <Text dimColor>Tidewatch shows the state of your miniwaves boards.</Text>
-          <Text>Add a board: /tidewatch add PATH</Text>
-          <Text dimColor>PATH is a folder that holds an mw board. Add as many as you like, then open this pane with /tidewatch.</Text>
+          <Text dimColor>mw-watch shows the state of your miniwaves boards.</Text>
+          <Text>Add a board: /mw-watch add PATH</Text>
+          <Text dimColor>PATH is a folder that holds an mw board. Add as many as you like, then open this pane with /mw-watch.</Text>
         </Box>
       )
     }

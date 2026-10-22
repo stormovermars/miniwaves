@@ -447,6 +447,10 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 
 ## Changelog
 
+### 0.3.4
+
+- The `tidewatch` plugin is now `mw-watch` (`/mw-watch`, same subcommands), matching `/mw-next` and `/mw-board`. `/tidewatch` stays as a deprecated alias for one release and prints a hint. Your boards and settings carry over automatically. `install.sh`, `install.ps1` and `mw update` uninstall the old `tidewatch` plugin and install `mw-watch`.
+
 ### 0.3.3
 
 - Installing or upgrading mw also installs or updates the Claude Code plugins `mw` and `tidewatch` when `claude` is on PATH: `install.sh`, `install.ps1` and `mw update` (after a real update) do it, best effort; a failed plugin step never fails the install or changes the exit status. `MW_NO_PLUGINS=1` skips it. `mw update --plugins` runs only that step.

@@ -54,7 +54,12 @@ else
     echo "plugins: failed: marketplace update: $(printf '%s' "$mo" | tail -n 1)"
   else
     listing="$(claude plugin list 2>/dev/null || true)"
-    for p in mw tidewatch; do
+    if printf '%s\n' "$listing" | grep -q "[[:space:]]tidewatch@miniwaves\$"; then
+      if claude plugin uninstall tidewatch@miniwaves >/dev/null 2>&1; then
+        echo "plugin tidewatch: removed (renamed to mw-watch)"
+      fi
+    fi
+    for p in mw mw-watch; do
       if printf '%s\n' "$listing" | grep -q "[[:space:]]$p@miniwaves\$"; then
         verb=updated; cmd=update
       else

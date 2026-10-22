@@ -191,13 +191,13 @@ func TestUpdateRunsPluginStep(t *testing.T) {
 	calls := fakeClaude(t, true, "", "mw@miniwaves")
 	t.Setenv("MW_NO_PLUGINS", "")
 	s := out(t, "update")
-	for _, want := range []string{"plugin mw: updated", "plugin tidewatch: installed"} {
+	for _, want := range []string{"plugin mw: updated", "plugin mw-watch: installed"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("missing %q in %q", want, s)
 		}
 	}
 	all := strings.Join(*calls, "|")
-	for _, want := range []string{"plugin marketplace add stormovermars/miniwaves", "plugin marketplace update miniwaves", "plugin update mw@miniwaves", "plugin install tidewatch@miniwaves"} {
+	for _, want := range []string{"plugin marketplace add stormovermars/miniwaves", "plugin marketplace update miniwaves", "plugin update mw@miniwaves", "plugin install mw-watch@miniwaves"} {
 		if !strings.Contains(all, want) {
 			t.Fatalf("missing call %q in %q", want, all)
 		}
@@ -225,7 +225,7 @@ func TestUpdatePluginsNoClaudeHint(t *testing.T) {
 func TestUpdatePluginFailureKeepsExit(t *testing.T) {
 	fakeRelease(t, "v9.9.9", []byte("new binary"), false)
 	exe := fakeExe(t)
-	fakeClaude(t, true, "install tidewatch", "")
+	fakeClaude(t, true, "install mw-watch", "")
 	t.Setenv("MW_NO_PLUGINS", "")
 	if err := run([]string{"update"}); err != nil {
 		t.Fatalf("exit changed: %v", err)
@@ -241,9 +241,26 @@ func TestUpdatePluginFailureKeepsExit(t *testing.T) {
 
 func TestUpdatePluginsAlone(t *testing.T) {
 	t.Setenv("MW_NO_PLUGINS", "")
+	calls := fakeClaude(t, true, "", "mw-watch@miniwaves")
+	s := out(t, "update", "--plugins")
+	if !strings.Contains(s, "plugin mw: installed") || !strings.Contains(s, "plugin mw-watch: updated") || len(*calls) == 0 {
+		t.Fatalf("out %q", s)
+	}
+}
+
+func TestUpdateRemovesOldTidewatch(t *testing.T) {
+	t.Setenv("MW_NO_PLUGINS", "")
 	calls := fakeClaude(t, true, "", "tidewatch@miniwaves")
 	s := out(t, "update", "--plugins")
-	if !strings.Contains(s, "plugin mw: installed") || !strings.Contains(s, "plugin tidewatch: updated") || len(*calls) == 0 {
+	if !strings.Contains(s, "plugin tidewatch: removed (renamed to mw-watch)") || !strings.Contains(s, "plugin mw-watch: installed") {
 		t.Fatalf("out %q", s)
+	}
+	if !strings.Contains(strings.Join(*calls, "|"), "plugin uninstall tidewatch@miniwaves") {
+		t.Fatalf("calls %v", *calls)
+	}
+	calls = fakeClaude(t, true, "", "mw@miniwaves")
+	out(t, "update", "--plugins")
+	if strings.Contains(strings.Join(*calls, "|"), "uninstall") {
+		t.Fatalf("uninstall without tidewatch: %v", *calls)
 	}
 }

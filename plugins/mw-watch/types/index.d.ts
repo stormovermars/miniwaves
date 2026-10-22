@@ -73,7 +73,7 @@ export type TidewatchStyle = {
 
 declare module 'claude-code' {
   interface PluginState {
-    tidewatch: {
+    'mw-watch': {
       /** The registry as last read. */
       registry: TidewatchRegistry
       /** Last good snapshot per job id. */

@@ -171,7 +171,7 @@ func updateCommand(args []string) error {
 
 // Claude Code plugins: best effort, never changes the exit status.
 var (
-	pluginNames = []string{"mw", "tidewatch"}
+	pluginNames = []string{"mw", "mw-watch"}
 	claudeFound = func() bool { _, err := exec.LookPath("claude"); return err == nil }
 	// claudeRun runs `claude args...` with a timeout and returns its combined output.
 	claudeRun = func(args ...string) (string, error) {
@@ -196,7 +196,7 @@ func lastLine(s string, err error) string {
 	return s
 }
 
-// installPlugins installs or updates the mw and tidewatch plugins from the miniwaves marketplace.
+// installPlugins installs or updates the mw and mw-watch plugins from the miniwaves marketplace.
 func installPlugins(w io.Writer) {
 	if os.Getenv("MW_NO_PLUGINS") == "1" {
 		fmt.Fprintln(w, "plugins: skipped (MW_NO_PLUGINS=1)")
@@ -213,6 +213,15 @@ func installPlugins(w io.Writer) {
 		return
 	}
 	listing, _ := claudeRun("plugin", "list")
+	// tidewatch was renamed to mw-watch: remove the old plugin when it is installed (best effort).
+	for _, l := range strings.Split(listing, "\n") {
+		if t := strings.TrimSpace(l); t == "tidewatch@"+repoName || strings.HasSuffix(t, " tidewatch@"+repoName) {
+			if _, err := claudeRun("plugin", "uninstall", "tidewatch@"+repoName); err == nil {
+				fmt.Fprintln(w, "plugin tidewatch: removed (renamed to mw-watch)")
+			}
+			break
+		}
+	}
 	for _, p := range pluginNames {
 		id := p + "@" + repoName
 		verb, args := "installed", []string{"plugin", "install", id}

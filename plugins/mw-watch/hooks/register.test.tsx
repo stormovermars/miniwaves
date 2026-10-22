@@ -1,11 +1,11 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 const PANE = {
-  plugin: 'tidewatch',
+  plugin: 'mw-watch',
   component: 'Pane',
-  requestId: 'tidewatch',
+  requestId: 'mw-watch',
   props: {
-    title: 'Tidewatch',
+    title: 'mw-watch',
     isFocused: false,
     bodyColumns: 80,
     placement: 'dock',
@@ -29,10 +29,10 @@ const item = (tenant: string, id: string, state: string, note = '', updated = is
 const ok = (out: unknown) => ({ value: { exitCode: 0, stdout: JSON.stringify(out), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
 const raw = (stdout: string, exitCode = 0) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
 
-type RigOptions = { registry?: unknown; hasMw?: boolean; files?: Record<string, string>; store?: Record<string, unknown>; extra?: (argv: string[], cwd: string) => unknown }
+type RigOptions = { registry?: unknown; hasMw?: boolean; files?: Record<string, string>; store?: Record<string, unknown>; oldStore?: unknown; extra?: (argv: string[], cwd: string) => unknown }
 
 const rig = ($: any, on: any, opts: RigOptions = {}) => {
-  const { registry = REG, hasMw = true, files = {}, store = {}, extra } = opts
+  const { registry = REG, hasMw = true, files = {}, store = {}, oldStore, extra } = opts
   const state = {
     round: 0,
     alphaCalls: 0,
@@ -61,6 +61,7 @@ const rig = ($: any, on: any, opts: RigOptions = {}) => {
   on('audio.play', (_: any, e: any) => { state.sounds.push(JSON.stringify(e)); return { value: undefined } })
   on('process.run', (_: any, e: any) => {
     const cmd = e.argv.join(' ')
+    if (e.argv[0] === '/bin/sh' && String(e.argv[2]).includes('tidewatch_')) return oldStore === undefined ? raw('', 1) : raw(JSON.stringify(oldStore))
     if (e.argv[0] === '/bin/sh') return hasMw ? raw(`${MW}\n`) : raw('', 1)
     state.argv0.add(String(e.argv[0]))
     state.runs.push([...e.argv, `@${String(e.init?.cwd)}`])
@@ -106,7 +107,7 @@ const rig = ($: any, on: any, opts: RigOptions = {}) => {
   return { state, clock }
 }
 
-const cmd = ($: any, args: string) => $.command.run({ command: 'tidewatch', args, origin: { kind: 'user' }, presentation: {} } as never)
+const cmd = ($: any, args: string) => $.command.run({ command: 'mw-watch', args, origin: { kind: 'user' }, presentation: {} } as never)
 const start = ($: any) => $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
 const svgOf = async (u: any) => String((await u.find({ type: 'Svg' }))?.props.source ?? '')
 
@@ -215,7 +216,7 @@ test('two jobs: status, switching, alerts once, refresh, timer', async ($, on) =
   expect(await svgOf(ui)).not.toContain('since')
   await ui.unmount()
 
-  // /tidewatch demo selects demo, a bare /tidewatch opens the pane
+  // /mw-watch demo selects demo, a bare /mw-watch opens the pane
   await cmd($, 'demo')
   const ui2 = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await svgOf(ui2)).toContain('✓ 1 closed')
@@ -240,7 +241,7 @@ test('an empty registry shows the how-to, no toast', async ($, on) => {
   await start($)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
-    expect(await ui.find({ type: 'Text', text: /Add a board: \/tidewatch add PATH/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Add a board: \/mw-watch add PATH/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /mw command was not found/ })).toBeUndefined()
     expect(await ui.find({ type: 'Svg' })).toBeUndefined()
     await ui.unmount()
@@ -565,7 +566,7 @@ test('a bad token is ignored with one toast', async ($, on) => {
   }
   await cmd($, 'bigger')
   await cmd($, 'reset')
-  const toasts = state.toasts.filter(t => t.includes('Tidewatch style "mine"'))
+  const toasts = state.toasts.filter(t => t.includes('mw-watch style "mine"'))
   expect(toasts.length).toBe(1)
   expect(toasts[0]).toContain('font')
   expect(toasts[0]).toContain('more')
@@ -575,7 +576,7 @@ test('a bad token is ignored with one toast', async ($, on) => {
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'refresh' })
   await ui.unmount()
-  expect(state.toasts.filter(t => t.includes('Tidewatch style')).length).toBe(1)
+  expect(state.toasts.filter(t => t.includes('mw-watch style')).length).toBe(1)
 })
 
 test('style names, new, import, export and list', async ($, on) => {
@@ -593,7 +594,7 @@ test('style names, new, import, export and list', async ($, on) => {
   expect((await cmd($, 'style import /styles/missing.json')).text).toContain('could not read')
   expect((await cmd($, 'style import ~/loud.json')).text).toContain('absolute')
   expect((await cmd($, 'style list')).text).toContain('normal, blocks, loud, quiet')
-  expect((await cmd($, 'style loud')).text).toBe('Tidewatch: style loud.')
+  expect((await cmd($, 'style loud')).text).toBe('mw-watch: style loud.')
   expect(state.store.get('style')).toBe('loud')
   expect((await cmd($, 'style nonesuch')).text).toContain('unknown style')
   expect((await cmd($, 'style export blocks /out/blocks.json')).text).toContain('/out/blocks.json')
@@ -615,7 +616,7 @@ test('add and remove boards in the registry', async ($, on) => {
   expect(Object.keys(jobs())).toEqual([])
 
   // the id is the folder name, the tenants come from the board's items
-  expect((await cmd($, 'add /boards/fresh/')).text).toBe('Tidewatch: added fresh (2 tenants).')
+  expect((await cmd($, 'add /boards/fresh/')).text).toBe('mw-watch: added fresh (2 tenants).')
   expect(jobs().fresh).toEqual({ title: 'fresh', board: '/boards/fresh', tenants: ['alpha-web', 'other'], news: '', newsFile: '', summary: '' })
   // a relative path is taken from the session folder, stored absolute
   expect((await cmd($, 'add rel/demo')).text).toContain('added demo')
@@ -633,9 +634,9 @@ test('add and remove boards in the registry', async ($, on) => {
   expect(String(state.statuses.at(-1))).toContain('demo')
 
   expect((await cmd($, 'remove ghost')).text).toContain('unknown job "ghost"')
-  expect((await cmd($, 'remove demo')).text).toBe('Tidewatch: removed demo.')
+  expect((await cmd($, 'remove demo')).text).toBe('mw-watch: removed demo.')
   expect(Object.keys(jobs())).toEqual(['fresh'])
-  expect((await cmd($, 'remove fresh')).text).toBe('Tidewatch: removed fresh.')
+  expect((await cmd($, 'remove fresh')).text).toBe('mw-watch: removed fresh.')
   const empty = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await empty.find({ type: 'Text', text: /Add a board/ })).toBeDefined()
   await empty.unmount()
@@ -644,7 +645,7 @@ test('add and remove boards in the registry', async ($, on) => {
 
 // ---- the news pane ----
 
-const NEWS_PANE = { ...PANE, requestId: 'tidewatch-news' } as const
+const NEWS_PANE = { ...PANE, requestId: 'mw-watch-news' } as const
 const NEWS_FILE = '/boards/alpha/docs/news/status.md'
 
 test('the news pane renders the news Markdown, capped, with the news link', async ($, on) => {
@@ -652,14 +653,14 @@ test('the news pane renders the news Markdown, capped, with the news link', asyn
   const { state } = rig($, on, { files: { [NEWS_FILE]: '# Status\n\nAll *good*.' } })
   await start($)
   // the jobs pane is titled for the job it shows
-  expect(state.opened.at(0)).toBe('tidewatch|mw jobs · alpha')
+  expect(state.opened.at(0)).toBe('mw-watch|mw jobs · alpha')
 
   // opens on request only: nothing opened a news pane yet; the command does, for the named job
-  expect(state.opened.some(o => o.startsWith('tidewatch-news'))).toBe(false)
+  expect(state.opened.some(o => o.startsWith('mw-watch-news'))).toBe(false)
   expect((await cmd($, 'news')).text).toContain('news pane opened for alpha')
-  expect(state.opened.at(-1)).toBe('tidewatch-news|mw news · alpha')
+  expect(state.opened.at(-1)).toBe('mw-watch-news|mw news · alpha')
   expect((await cmd($, 'news demo')).text).toContain('opened for demo')
-  expect(state.opened.at(-1)).toBe('tidewatch-news|mw news · demo')
+  expect(state.opened.at(-1)).toBe('mw-watch-news|mw news · demo')
   expect((await cmd($, 'news ghost')).text).toContain('unknown job "ghost"')
   await cmd($, 'alpha')
 
@@ -688,7 +689,7 @@ test('the news pane renders the news Markdown, capped, with the news link', asyn
   await jobs.press({ key: 'news' })
   await jobs.unmount()
   expect(state.opened.length).toBe(before + 1)
-  expect(state.opened.at(-1)).toBe('tidewatch-news|mw news · alpha')
+  expect(state.opened.at(-1)).toBe('mw-watch-news|mw news · alpha')
   // it only reads a file: no process beyond mw's board calls ran for it
   expect([...state.argv0]).toEqual([MW])
 })
@@ -735,15 +736,15 @@ test('jobs: one tab per job with pane on, a board with no jobs stays one job', a
   await ui.unmount()
   // news pane: titled by the job id, read from news.out/status.md, brought to the front
   await cmd($, 'news alpha-job')
-  expect(state.opened.at(-1)).toBe('tidewatch-news|mw news · alpha-job')
+  expect(state.opened.at(-1)).toBe('mw-watch-news|mw news · alpha-job')
   expect(state.focused.at(-1)).toBe(true)
-  expect(state.opened.some(o => o === 'tidewatch|mw jobs · alpha-job' || o === 'tidewatch|mw jobs · alpha')).toBe(true)
-  const news = await $.ui.mount({ ...PANE, requestId: 'tidewatch-news', surface: 'terminal' })
+  expect(state.opened.some(o => o === 'mw-watch|mw jobs · alpha-job' || o === 'mw-watch|mw jobs · alpha')).toBe(true)
+  const news = await $.ui.mount({ ...PANE, requestId: 'mw-watch-news', surface: 'terminal' })
   expect(await news.find({ type: 'Markdown' })).toBeDefined()
   expect(String((await news.find({ type: 'Markdown' }))?.props.text)).toBe('# alpha news')
   await news.unmount()
   await cmd($, 'news web')
-  const web = await $.ui.mount({ ...PANE, requestId: 'tidewatch-news', surface: 'terminal' })
+  const web = await $.ui.mount({ ...PANE, requestId: 'mw-watch-news', surface: 'terminal' })
   expect(String((await web.find({ type: 'Markdown' }))?.props.text)).toBe('# web news')
   await web.unmount()
 })
@@ -792,7 +793,7 @@ test('fanfare cycle with sets [calm, loud]: off, all, calm, loud, off', async ($
   await ui.unmount()
 })
 
-test('fanfare cycle with no sets: off, all, off; /tidewatch fanfare next does the same', async ($, on) => {
+test('fanfare cycle with no sets: off, all, off; /mw-watch fanfare next does the same', async ($, on) => {
   const { state } = rig($, on, { extra: fanExtra(undefined, { config: { enabled: false }, enabled: false, use: 'all', sets: {} }) })
   await start($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
@@ -842,4 +843,28 @@ test('needs come from review -j asks when present, else the blocked-note heurist
   expect(await ui.find({ type: 'Text', text: /needs a decision/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /^! 1 need you/ })).toBeDefined()
   await ui.unmount()
+})
+
+// ---- the rename from tidewatch ----
+
+test('/tidewatch still works as an alias and says it is deprecated', async ($, on) => {
+  rig($, on)
+  await start($)
+  const r = await $.command.run({ command: 'tidewatch', args: 'demo', origin: { kind: 'user' }, presentation: {} } as never)
+  expect(r.text).toContain('`/tidewatch` is now `/mw-watch` (the old name goes in the next release).')
+  expect((await cmd($, 'demo')).text).not.toContain('/tidewatch')
+})
+
+test('the old tidewatch store is imported once when the registry is empty', async ($, on) => {
+  const { state } = rig($, on, { registry: null, oldStore: { registry: REG, style: 'blocks', fontStep: 1 } })
+  await start($)
+  expect(Object.keys((state.store.get('registry') as { jobs: object }).jobs)).toEqual(['alpha', 'demo'])
+  expect(state.store.get('style')).toBe('blocks')
+  expect(state.store.get('fontStep')).toBe(1)
+})
+
+test('a non-empty registry is never overwritten by the old store', async ($, on) => {
+  const { state } = rig($, on, { oldStore: { registry: { jobs: { old: { board: '/boards/old', tenants: [] } } } } })
+  await start($)
+  expect(Object.keys((state.store.get('registry') as { jobs: object }).jobs)).toEqual(['alpha', 'demo'])
 })

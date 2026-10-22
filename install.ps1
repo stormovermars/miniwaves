@@ -52,7 +52,11 @@ try {
                 Write-Output ("plugins: failed: marketplace update: " + ($mo -split "`n" | Select-Object -Last 1))
             } else {
                 $listing = (& claude plugin list 2>&1 | Out-String)
-                foreach ($p in "mw", "tidewatch") {
+                if ($listing -match "(?m)\stidewatch@miniwaves\s*$") {
+                    & claude plugin uninstall tidewatch@miniwaves 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) { Write-Output "plugin tidewatch: removed (renamed to mw-watch)" }
+                }
+                foreach ($p in "mw", "mw-watch") {
                     $id = "$p@miniwaves"
                     $cmd = if ($listing -match "(?m)\s$([regex]::Escape($id))\s*$") { "update" } else { "install" }
                     $po = (& claude plugin $cmd $id 2>&1 | Out-String).Trim()
