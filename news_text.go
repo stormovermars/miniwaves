@@ -284,7 +284,7 @@ func renderNewsText(p newsPart, d newsData, width int) string {
 	}
 
 	ev := func(e newsEvent) string {
-		return shortTS(e.row.At) + " " + newsEventText(newsEvent{newsCleanRow(e.row), c(e.title)})
+		return c(shortTS(e.row.At)) + " " + newsEventText(newsEvent{newsCleanRow(e.row), c(e.title)})
 	}
 	b.WriteString("\n" + newsRule("DECISIONS", width) + "\n")
 	if len(d.decisions) == 0 {

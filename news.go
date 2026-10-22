@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -54,6 +55,17 @@ func newsMD(s string) string {
 		}
 	}
 	return b.String()
+}
+
+var newsURLOK = regexp.MustCompile(`^https?://[^\s()\[\]<>\\\x00-\x1f\x7f]+$`)
+
+// newsMDLink renders a validated http(s) URL (no spaces, parentheses, brackets, angle brackets, backslashes or
+// control characters) as an escaped Markdown link [url](url); anything else as plain escaped text.
+func newsMDLink(u string) string {
+	if !newsURLOK.MatchString(u) {
+		return newsMD(u)
+	}
+	return "[" + newsMD(u) + "](" + strings.ReplaceAll(u, "&", "&amp;") + ")"
 }
 
 type newsPart struct {
@@ -302,7 +314,7 @@ func renderNewsMD(p newsPart, d newsData, events, summaryMax int) string {
 	}
 	fmt.Fprintf(&b, "Updated %s\n", newsStampMarker)
 	if p.url != "" {
-		fmt.Fprintf(&b, "Page: %s\n", newsMD(p.url))
+		fmt.Fprintf(&b, "Page: %s\n", newsMDLink(p.url))
 	}
 	fmt.Fprintf(&b, "\n## Headline\n%s.\n", newsMD(strings.TrimSuffix(newsHeadline(d), newsMovedMarker))+newsMovedMarker)
 	list := func(head string, rows []newsLine) {
@@ -339,7 +351,7 @@ func renderNewsMD(p newsPart, d newsData, events, summaryMax int) string {
 		b.WriteString("- None.\n")
 	}
 	for _, e := range d.decisions {
-		fmt.Fprintf(&b, "- %s %s\n", shortTS(e.row.At), newsMD(newsEventText(e)))
+		fmt.Fprintf(&b, "- %s %s\n", newsMD(shortTS(e.row.At)), newsMD(newsEventText(e)))
 	}
 	if events > 0 {
 		b.WriteString("\n## Last events\n")
@@ -347,11 +359,11 @@ func renderNewsMD(p newsPart, d newsData, events, summaryMax int) string {
 			if i == events {
 				break
 			}
-			fmt.Fprintf(&b, "- %s %s\n", shortTS(e.row.At), newsMD(newsEventText(e)))
+			fmt.Fprintf(&b, "- %s %s\n", newsMD(shortTS(e.row.At)), newsMD(newsEventText(e)))
 		}
 	}
 	if summaryMax > 0 && p.summary != "" {
-		s := p.summary
+		s := newsClean(p.summary, true)
 		if len(s) > summaryMax {
 			s = strings.ToValidUTF8(s[:summaryMax], "") + "\n[trimmed]"
 		}
