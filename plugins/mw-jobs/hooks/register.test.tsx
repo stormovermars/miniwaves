@@ -464,7 +464,9 @@ test('styles: normal and blocks; blocks is cell-counted on the terminal and a sh
   expect(uq('name-', 'width').size).toBe(1)
   expect(uq('status-', 'width').size).toBe(1)
   expect(uq('right-', 'width').size).toBe(1)
-  const barLens = bb.filter(b => b.key?.startsWith('bar-')).map(b => (flat(b).match(/[█░]/g) ?? []).length)
+  // a proportional font: no glyph runs (a full block is wider than a light shade); bars are Boxes of exact widths
+  expect(bb.filter(b => b.key?.startsWith('bar-')).some(b => /[█░]/.test(flat(b)))).toBe(false)
+  const barLens = bb.filter(b => b.key?.startsWith('bar-') && !b.key.includes('-p') && !b.key.includes('-track')).map(b => Number(b.props.width))
   expect(barLens.length).toBeGreaterThan(1)
   expect(new Set(barLens).size).toBe(1)
   expect(barLens[0]).toBe(40)
@@ -1925,9 +1927,10 @@ test('metrics: all three kinds in both styles and the terminal; no section witho
       expect((await ui.findAll({ type: 'Text' })).some((t: any) => t.props.color === 'warning' && /99\.2 %/.test(flat(t)))).toBe(true) // short of the 99.5 target
       expect((await ui.findAll({ type: 'Text' })).some((t: any) => t.props.color === 'success' && /^180/.test(flat(t)))).toBe(true) // lower is better and within 200
     } else {
-      expect(src).toContain('█')
-      expect((await ui.findAll({ type: 'Text' })).some((t: any) => t.props.color === 'warning' && /█/.test(flat(t)))).toBe(true)
-      expect((await ui.findAll({ type: 'Text' })).some((t: any) => t.props.color === 'error' && /█/.test(flat(t)))).toBe(true)
+      expect(src).not.toContain('█') // Boxes with a background, not glyph runs
+      const boxes = await ui.findAll({ type: 'Box' })
+      expect(boxes.some((b: any) => String(b.key ?? '').startsWith('mbar-') && b.props.backgroundColor === 'warning')).toBe(true)
+      expect(boxes.some((b: any) => String(b.key ?? '').startsWith('mbar-') && b.props.backgroundColor === 'error')).toBe(true)
     }
     await ui.unmount()
   }
@@ -2161,11 +2164,35 @@ test('ids in titles and notes: an existing id is a Button that opens its detail,
     expect(texts.some((t: string) => t.includes('BUG-404')), surface).toBe(true)
     expect(texts.some((t: string) => t.includes('TSK-9999')), surface).toBe(true)
     const b = (await ui.findAll({ type: 'Button' })).find((x: any) => x.props?.label === 'A-3')
-    await ui.press({ key: b.props.key })
+    await ui.press({ key: (b as any).props.key })
     expect(state.opens.at(-1)).toMatchObject({ id: DETAIL_PANE, focus: true })
     expect(state.runs).toContain('mw show A-3 -t zetasheet -j')
     await ui.unmount()
   }
+})
+
+test('blocks bars: 5/6 fills 5/6 of the box (± one column), the track is present, the fill is the accent, a full bar is green; the terminal keeps glyphs', async ($, on) => {
+  const { state } = rig($, on, true)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await cmd($, 'style blocks')
+  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 80 }, surface: 'desktop' } as never)
+  const boxes = await ui.findAll({ type: 'Box' })
+  const bar = boxes.find((b: any) => String(b.key) === 'bar-zeta-corpus:WAV-002') as any
+  expect(bar).toBeDefined()
+  const total = Number(bar.props.width)
+  const parts = boxes.filter((b: any) => String(b.key ?? '').startsWith('bar-zeta-corpus:WAV-002-'))
+  const fill = parts.find((b: any) => !String(b.key).endsWith('-track')) as any
+  const track = parts.find((b: any) => String(b.key).endsWith('-track')) as any
+  expect(track).toBeDefined()
+  expect(Math.abs(Number(fill.props.width) / total - 5 / 6)).toBeLessThanOrEqual(1 / total + 1e-9)
+  expect(fill.props.backgroundColor).toBe('suggestion')
+  expect(Number(fill.props.width) + Number(track.props.width)).toBe(total)
+  await ui.unmount()
+  const term = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 80 }, surface: 'terminal' } as never)
+  const tb = (await term.findAll({ type: 'Box' })).find((b: any) => String(b.key) === 'bar-zeta-corpus:WAV-002') as any
+  expect(flat(tb)).toMatch(/█+░+/)
+  expect((tb.children as any[])[0].props.color).toBe('suggestion')
+  await term.unmount()
 })
 
 test('an invalid or newer metrics file shows a one-line dim notice instead of the section', async ($, on) => {

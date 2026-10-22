@@ -4098,6 +4098,29 @@ const loadDetail = async ($: any, r: MwJobsDetailRef) => {
 const detailTitle = (r: MwJobsDetailRef) => `mw ${r.kind === 'wave' ? 'milestone' : 'item'} · ${r.tenant}/${r.id}`
 
 /** A click on an item or a milestone: show it in the detail pane (from a pane: a fresh trail; from the detail pane itself: remember where to go back). */
+/**
+ * A bar of `total` cells: coloured parts (n cells each) then the track. On a monospace terminal it is block glyphs; anywhere else (a proportional
+ * font, where a full block is wider than a light shade) it is Boxes with exact widths and a background colour, so the parts always add up to the box.
+ */
+const meterBar = (ui: any, key: string, parts: Array<{ n: number; color?: string }>, total: number, glyphs: boolean) => {
+  const { Box, Text } = ui
+  const used = Math.min(total, parts.reduce((n, p) => n + p.n, 0))
+  if (glyphs) {
+    return (
+      <Box key={key} flexShrink={0}>
+        {parts.filter(p => p.n > 0).map((p, i) => <Text key={`${key}-p${i}`} color={p.color}>{'\u2588'.repeat(p.n)}</Text>)}
+        <Text dimColor>{'\u2591'.repeat(Math.max(0, total - used))}</Text>
+      </Box>
+    )
+  }
+  return (
+    <Box key={key} width={total} flexShrink={0} height={1}>
+      {parts.filter(p => p.n > 0).map((p, i) => <Box key={`${key}-p${i}`} width={p.n} height={1} flexShrink={0} backgroundColor={p.color ?? 'text'}><Text> </Text></Box>)}
+      <Box key={`${key}-track`} width={Math.max(0, total - used)} height={1} flexShrink={0} backgroundColor="subtle"><Text> </Text></Box>
+    </Box>
+  )
+}
+
 /** The ids that exist on a job's board (items and milestones of its snapshot), cached per snapshot. */
 const idIndexCache = new WeakMap<object, IdIndex>()
 const idIndexOf = (snap: MwJobsSnapshot): IdIndex => {
@@ -6348,17 +6371,9 @@ export const register: Register = (on, options) => {
     }
     const noteLine = (text: string, key = text) => (density === 'compact' || text === '' ? null : <Box key={`note-${key}`}><Text dimColor>{'  '}</Text>{lt(text, `nl-${key}`, true)}</Box>)
     const barCell = (w: MwJobsWave, isNew: boolean): Cell => {
-      const glyphs = ['█', '░']
       if (isMono) {
         const filled = Math.round((Math.max(0, Math.min(100, w.percent)) / 100) * barLen)
-        return {
-          node: (
-            <Box key={`bar-${w.id}`} flexShrink={0}>
-              <Text color={isNew ? 'success' : undefined}>{glyphs[0]!.repeat(filled)}</Text>
-              <Text dimColor>{glyphs[1]!.repeat(barLen - filled)}</Text>
-            </Box>
-          ),
-        }
+        return { node: meterBar({ Box, Text }, `bar-${w.id}`, [{ n: filled, color: isNew || w.percent >= 100 ? 'success' : 'suggestion' }], barLen, e.surface === 'terminal') }
       }
       if (canSvg) {
         const eb = epicBarSvg(w.percent, 96)
@@ -6580,12 +6595,7 @@ export const register: Register = (on, options) => {
                     segs.push({ n, tone: pt.tone })
                   }
                 }
-                const barNode = r.showBar ? (
-                  <Box key={`mbar-${sec.title}-${r.name}`} flexShrink={0}>
-                    {segs.map((sg, si) => <Text key={`ms${si}`} color={tcol(sg.tone)} dimColor={tcol(sg.tone) === undefined}>{'█'.repeat(sg.n)}</Text>)}
-                    <Text dimColor>{'░'.repeat(Math.max(0, blen - used))}</Text>
-                  </Box>
-                ) : undefined
+                const barNode = r.showBar ? meterBar({ Box, Text }, `mbar-${sec.title}-${r.name}`, segs.map(sg => ({ n: sg.n, color: tcol(sg.tone) ?? 'suggestion' })), blen, e.surface === 'terminal') : undefined
                 const dim = r.barNote
                 const countStr = metricCount(r)
                 const used0 = countStr.length + r.delta.reduce((n, d) => n + d.text.length + 1, 0)
