@@ -2728,6 +2728,8 @@ const setFill = async ($: any, pane: 'jobs' | 'news', on: boolean) => {
 // ---- gopher + fill: every row (`mw news --full`); an older mw keeps the caps and says so ----
 export const FULL_HINT = 'Full lists need mw 0.3.4+ (mw news --full); showing the capped lists.'
 const fullUnsupported = new Set<string>()
+/** mw's complaint about a flag it does not have (an older mw): the only failure that marks --full unsupported. */
+export const unknownOption = (stderr: string): boolean => /unknown (flag|option)|unrecognized (flag|option)|flag provided but not defined|bad flag/i.test(stderr)
 /** Whether either pane wants the job's lists uncapped: gopher with its fill (↔) on. */
 const wantsFull = async ($: any): Promise<boolean> => {
   const f = (await read($, blocksFill)) as { jobs: boolean; news: boolean }
@@ -3417,6 +3419,10 @@ export const noModelNotice = (style: string, why: string | undefined): string | 
 
 const modelInFlight = new Set<string>()
 let lastJobShow: Record<string, Record<string, unknown> | undefined> = {}
+/** Forgets the jobs-show answers (a new session start does; tests call it between sessions). */
+export const lastJobShowReset = () => {
+  lastJobShow = {}
+}
 
 /**
  * Loads the news model: the releases folder (`latest`, `N.json`) first, then the draft from
@@ -3452,8 +3458,8 @@ const loadModels = async ($: any, job: MwJobsJob, js?: Record<string, unknown>):
     try {
       const full = (await wantsFull($)) && !fullUnsupported.has(job.id)
       let r = await proc($, ['mw', 'news', '--job', job.id, '--format', 'json', ...(full ? ['--full'] : [])], { cwd, timeoutMs: 30_000 })
-      if (full && r.exitCode !== 0) {
-        // an mw before --full: the capped lists, and the pane says why
+      if (full && r.exitCode !== 0 && unknownOption(String(r.stderr ?? ''))) {
+        // an mw before --full says so (the option is unknown): the capped lists, and the pane says why. Any other failure is not that.
         fullUnsupported.add(job.id)
         r = await proc($, ['mw', 'news', '--job', job.id, '--format', 'json'], { cwd, timeoutMs: 30_000 })
       }
@@ -3472,8 +3478,8 @@ const loadModels = async ($: any, job: MwJobsJob, js?: Record<string, unknown>):
     const chosenTenant = (((await read($, tenantSel)) as Record<string, string>)[job.id] ?? '') as string
     if (chosenTenant !== '' && entry.draft !== undefined) {
       try {
-        const r = await proc($, ['mw', 'news', '--job', job.id, '--format', 'json', '--tenant', chosenTenant], { cwd, timeoutMs: 30_000 })
-        const res = r.exitCode === 0 ? parseModel(String(r.stdout), metricsOfModel) : {}
+        const r = await proc($, ['mw', 'news', '--job', job.id, '--format', 'json', ...(entry.full === true ? ['--full'] : []), '--tenant', chosenTenant], { cwd, timeoutMs: 30_000 })
+        const res = r.exitCode === 0 ? parseModel(String(r.stdout), metricsOfModel, { full: entry.full === true }) : {}
         if (res.model) entry.tdraft = { slug: chosenTenant, model: { ...res.model, only: chosenTenant } }
       } catch {
         // filtered here
@@ -3979,24 +3985,81 @@ const openMain = async ($: any, focus = false, first?: string) => {
   if (first === 'news' && job) await $.ui.open({ id: NEWS_PANE, title: await newsTitleOf($, job.id), focus: true })
 }
 
-/** A file: Link is refused on every surface, so the panel button asks the OS to open status.md (no script of the repo runs). */
-const openPanel = async ($: any, job: MwJobsJob) => {
-  const home: string = (await homeOf($))
-  const path = `${expand(job.board, home)}/docs/news/status.md`
-  // a repo could commit status.md as a link to an .app or .command: only a plain .md file is ever opened, and only in the text editor
-  let why = ''
+/** The news page a job's panel button opens: the job's `news_out` from `mw jobs show -j` (a folder holds status.md; a file is itself), else docs/news/status.md. */
+export const newsStatusPath = (js: Record<string, unknown> | undefined, board: string, home: string): string => {
+  const out = js && (js['news.out'] ?? js.news_out)
+  const base = expand(board, home)
+  if (typeof out !== 'string' || out === '') return `${base}/docs/news/status.md`
+  const full = expand(out, home, base)
+  const last = full.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ''
+  return /[\\/]$/.test(out) || !/\.[A-Za-z0-9]+$/.test(last) ? `${full.replace(/[\\/]+$/, '')}/status.md` : full
+}
+
+/** What a stat output (macOS `%HT`, Linux `%F`) says about a file: 'file', 'link' or 'other'. */
+export const kindFromStat = (out: string): 'file' | 'link' | 'other' => {
+  const t = out.trim().toLowerCase()
+  return t === 'regular file' || t === 'regular empty file' ? 'file' : t === 'symbolic link' ? 'link' : 'other'
+}
+
+/**
+ * Whether a path is a plain file that may be opened: not a symbolic link, a regular file, and (mdOnly) a .md file.
+ * $.fs.stat can refuse a path outside the session's folder; then the OS says (argv only, no shell): `/usr/bin/stat -f %HT` on macOS,
+ * `stat -c %F` on Linux; on Windows the kind is not checked. `why` is '' when it may be opened, 'missing' when there is no such file,
+ * else one line with the real reason.
+ */
+export const checkPlainFile = async ($: any, path: string, mdOnly: boolean): Promise<string> => {
+  let kind: 'file' | 'link' | 'other' | undefined
+  let real = path
+  let err = ''
   try {
     const st = await $.fs.stat(path, { resolve: true })
-    const real: string = st.realPath ?? path
-    if (st.isLink) why = 'it is a symbolic link'
-    else if (st.kind !== 'file') why = 'it is not a file'
-    else if (!path.endsWith('.md') || !real.endsWith('.md')) why = 'it is not a .md file'
-  } catch {
-    why = 'it cannot be checked'
+    real = st.realPath ?? path
+    kind = st.isLink ? 'link' : st.kind === 'file' ? 'file' : 'other'
+  } catch (e) {
+    err = String((e as Error)?.message ?? e).split('\n')[0]!.slice(0, 160)
+    if (/ENOENT|no such file/i.test(err)) return 'missing'
+    const os = await osKind($)
+    if (os === 'windows') {
+      kind = 'file'
+    } else {
+      try {
+        const r = await proc($, os === 'mac' ? ['/usr/bin/stat', '-f', '%HT', path] : ['stat', '-c', '%F', path], { timeoutMs: 5000 })
+        if (r.exitCode === 0) kind = kindFromStat(String(r.stdout))
+        else if (/no such file/i.test(String(r.stderr))) return 'missing'
+        else err = `${err}; stat: ${String(r.stderr).trim().split('\n')[0]!.slice(0, 100)}`
+      } catch (e2) {
+        err = `${err}; stat: ${String((e2 as Error)?.message ?? e2).slice(0, 100)}`
+      }
+    }
   }
+  if (kind === undefined) return `it cannot be checked (${err || 'no answer'})`
+  if (kind === 'link') return 'it is a symbolic link'
+  if (kind !== 'file') return 'it is not a file'
+  if (mdOnly && (!path.toLowerCase().endsWith('.md') || !real.toLowerCase().endsWith('.md'))) return 'it is not a .md file'
+  return ''
+}
+
+/** A file: Link is refused on every surface, so the panel button asks the OS to open the job's news page (no script of the repo runs). */
+const openPanel = async ($: any, job: MwJobsJob) => {
+  const home: string = (await homeOf($))
+  let js = lastJobShow[job.id]
+  if (js === undefined) {
+    try {
+      const r = await proc($, ['mw', 'jobs', 'show', job.id, '-j'], { cwd: expand(job.board, home), timeoutMs: 20_000 })
+      const v = r.exitCode === 0 ? parseJson(String(r.stdout)) : undefined
+      if (v !== null && typeof v === 'object' && !Array.isArray(v)) js = v as Record<string, unknown>
+    } catch {
+      js = undefined
+    }
+  }
+  const path = newsStatusPath(js, job.board, home)
+  const name = path.split(/[\\/]/).pop() ?? 'status.md'
+  // a repo could commit the page as a link to an .app or .command: only a plain .md file is ever opened, and only in the text editor
+  const why = await checkPlainFile($, path, true)
   if (why !== '') {
-    await logFail($, job.id, 'status.md not opened', why)
-    $.ui.toast(`Jobs: not opening status.md, ${why}.`, { timeoutMs: 6000 })
+    const shown = why === 'missing' ? `${name} does not exist yet (${path})` : why
+    await logFail($, job.id, `${name} not opened`, shown)
+    $.ui.toast(`Jobs: not opening ${name}, ${shown}.`, { timeoutMs: 6000 })
     return
   }
   try {
@@ -4168,7 +4231,7 @@ const readTheme = async ($: any) => {
 const refreshAll = async ($: any) => {
   await readTheme($)
   // a key changed in a terminal (mw configure) reaches the panes with the next refresh
-  if (cfgOk === true) await loadSettings($)
+  await loadSettings($)
   const reg = await loadRegistry($)
   await cleanFavs($, reg)
   await renderStatus($)
@@ -4980,14 +5043,7 @@ const openLogFile = async ($: any, job: MwJobsJob, which: string) => {
   const home: string = (await homeOf($))
   const file = LOG_FILES[which]!
   const path = `${logRoot(home)}/${job.id}/${file}`
-  let why = ''
-  try {
-    const st = await $.fs.stat(path, { resolve: true })
-    if (st.isLink) why = 'it is a symbolic link'
-    else if (st.kind !== 'file') why = 'it is not a file'
-  } catch {
-    why = 'missing'
-  }
+  const why = await checkPlainFile($, path, false)
   if (why === 'missing') {
     $.ui.toast(`Jobs: no ${file} for ${job.id} yet (${logRoot(home)}/${job.id}/${file})`, { timeoutMs: 6000 })
     return `No ${file} for ${job.id} yet.`

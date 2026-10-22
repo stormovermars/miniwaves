@@ -6,7 +6,7 @@ import { REAL_BOARDS, REAL_BOARD_JOBS } from '../tests/fixtures/boards'
 import { SHOW_TSK001, SHOW_STR002, WAVE_002, WAVE_004 } from '../tests/fixtures/detail'
 import { parseItemDetail, parseWaveDetail } from './detail'
 import { REAL_DRAFT, SMALL_DRAFT, SMALL_RELEASE, STRESS_DRAFT, releases30, tenantsDraft, tenantSlug, manyJobs, jobDraft } from '../tests/fixtures/model'
-import { alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, groupToast, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
+import { unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, groupToast, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
 import { REAL_USER_KEYS } from '../tests/fixtures/userkeys'
 
 declare const console: { log: (...a: unknown[]) => void }
@@ -88,6 +88,8 @@ const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, cho
   })
   on('fs.stat', (_: any, e: any) => {
     const path = String(e.path)
+    // a host that refuses paths outside the session folder (not a missing file)
+    if ((state as any).statRefuse === true) return { deny: 'path is outside the session folder' }
     if ((path.endsWith('metrics.json') || path.includes('/.mw/logs/')) && !state.files.has(path)) return { deny: 'ENOENT' }
     return { value: { kind: state.kind, size: state.files.has(path) ? state.files.get(path)!.length : 1, mtimeMs: 0, isLink: state.linked && !path.endsWith('metrics.json'), realPath: path } }
   })
@@ -98,6 +100,7 @@ const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, cho
   on('process.run', (_: any, e: any) => {
     const cmd = e.argv.join(' ')
     // the OS probe and the mw lookup are plumbing: the test machine is macOS and mw is found by name
+    if (cmd.startsWith('/usr/bin/stat -f %HT ')) return { value: { exitCode: 0, stdout: `${(state as any).osKind ?? 'Regular File'}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
     if (cmd === 'uname -s') return { value: { exitCode: 0, stdout: 'Darwin\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
     if (cmd === '/bin/sh -c command -v mw' && (state as any).mwPath !== undefined) return { value: { exitCode: 0, stdout: `${(state as any).mwPath}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
     if (cmd === '/bin/sh -c command -v mw') return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
@@ -2086,6 +2089,60 @@ test('mw is run by its absolute path when found, and the opener is per OS', asyn
   expect(isAbs('C:\\x')).toBe(true)
   expect(isAbs('C:/x')).toBe(true)
   expect(isAbs('x/y')).toBe(false)
+})
+
+test('--full is unsupported only when mw says the option is unknown', () => {
+  expect(unknownOption('mw: unknown option --full')).toBe(true)
+  expect(unknownOption('flag provided but not defined: -full')).toBe(true)
+  expect(unknownOption('mw: board locked')).toBe(false)
+  expect(unknownOption('')).toBe(false)
+})
+
+test('the panel button: news_out as a folder or a file; when $.fs.stat refuses, the OS says; guards hold; the real reason is toasted and logged', async ($, on) => {
+  const reg = { jobs: [{ ...REG.jobs[0] }] }
+  const { state } = rig($, on, true, reg)
+  state.newsFiles.zeta = '# S'
+  state.jobShow = { 'news.out': 'out/pages' }
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const main = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const opened = () => state.runs.filter(r => r.startsWith('open '))
+  // a folder: status.md inside it
+  await main.press({ key: 'panel' })
+  expect(opened().at(-1)).toBe('open -t /home/apps/zeta-corpus/out/pages/status.md')
+  // a file: itself
+  state.jobShow = { 'news.out': 'out/news.md' }
+  lastJobShowReset()
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await main.press({ key: 'panel' })
+  expect(opened().at(-1)).toBe('open -t /home/apps/zeta-corpus/out/news.md')
+  // a file that is not .md is refused
+  state.jobShow = { 'news.out': 'out/news.txt' }
+  lastJobShowReset()
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const n = opened().length
+  await main.press({ key: 'panel' })
+  expect(opened().length).toBe(n)
+  expect(state.toasts.at(-1)).toContain('not a .md file')
+  // $.fs.stat refuses: the OS check opens a regular file, refuses a link, and a failing OS check says why
+  state.jobShow = { 'news.out': 'out/news.md' }
+  lastJobShowReset()
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  ;(state as any).statRefuse = true
+  await main.press({ key: 'panel' })
+  expect(opened().at(-1)).toBe('open -t /home/apps/zeta-corpus/out/news.md')
+  const m = opened().length
+  ;(state as any).osKind = 'Symbolic Link'
+  await main.press({ key: 'panel' })
+  expect(opened().length).toBe(m)
+  expect(state.toasts.at(-1)).toContain('symbolic link')
+  ;(state as any).osKind = 'Directory'
+  await main.press({ key: 'panel' })
+  expect(state.toasts.at(-1)).toContain('not a file')
+  expect(kindFromStat('Regular File')).toBe('file')
+  expect(kindFromStat('Symbolic Link')).toBe('link')
+  expect(newsStatusPath(undefined, '~/b', '/h')).toBe('/h/b/docs/news/status.md')
+  expect(newsStatusPath({ 'news.out': 'x/' }, '~/b', '/h')).toBe('/h/b/x/status.md')
+  await main.unmount()
 })
 
 test('an invalid or newer metrics file shows a one-line dim notice instead of the section', async ($, on) => {
