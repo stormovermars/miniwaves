@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -103,13 +105,34 @@ func TestFanfareSetFallbackNote(t *testing.T) {
 	}
 }
 
-func TestFanfareStatusJSONExact(t *testing.T) {
+func TestFanfareStatusJSONSuperset(t *testing.T) {
 	t.Setenv("MW_FANFARE_PLAYER", "/stub")
 	dir := setsWorkspace(t)
 	runAll(t, []string{"fanfare", "sets", "add", "mine", "a", "c"}, []string{"fanfare", "use", "mine"}, []string{"fanfare", "set", "volume=0.5"})
 	out := captureOutput(t, func() { runAll(t, []string{"fanfare", "-j"}) })
-	want := `{"enabled":true,"use":"mine","sets":{"mine":["a","c"]},"dir":"` + dir + `","pairs":[{"name":"a","playable":true},{"name":"b","playable":true},{"name":"c","playable":true},{"name":"half","playable":false},{"name":"star-wars","playable":false}],"milestone_seconds":15,"finale_seconds":60,"volume":0.5}` + "\n"
-	if out != want {
-		t.Fatalf("got  %s\nwant %s", out, want)
+	if !strings.HasPrefix(out, "{\n  \"") {
+		t.Fatalf("not indented: %s", out)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(out), &m); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"dir": `"` + dir + `"`, "ready": "3", "unplayable": "0", "incomplete": "1", "empty": "1", "manifest": "false",
+		"enabled": "true", "use": `"mine"`, "sets": `{"mine":["a","c"]}`, "milestone_seconds": "15", "finale_seconds": "60", "volume": "0.5",
+		"pairs": `[{"name":"a","playable":true},{"name":"b","playable":true},{"name":"c","playable":true},{"name":"half","playable":false},{"name":"star-wars","playable":false}]`,
+	}
+	for k, v := range want {
+		var got bytes.Buffer
+		if err := json.Compact(&got, m[k]); err != nil || got.String() != v {
+			t.Fatalf("%s: got %s want %s", k, got.String(), v)
+		}
+	}
+	var cfg FanfareConfig
+	if err := json.Unmarshal(m["config"], &cfg); err != nil || !cfg.Enabled || cfg.Use != "mine" {
+		t.Fatalf("config: %s %v", m["config"], err)
+	}
+	if txt := captureOutput(t, func() { runAll(t, []string{"fanfare"}) }); !strings.Contains(txt, "\nuse: mine\n") {
+		t.Fatalf("%s", txt)
 	}
 }

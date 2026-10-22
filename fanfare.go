@@ -768,13 +768,14 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		}
 		_, merr := os.Stat(filepath.Join(dir, manifestName))
 		if o["json"] == "true" {
-			return fanfareStatusJSON(c, dir, pairs)
+			return fanfareStatusJSON(map[string]any{"config": c, "dir": dir, "ready": ready, "unplayable": unplayable, "incomplete": incomplete, "empty": empty, "manifest": merr == nil}, c, pairs)
 		}
 		state := "disabled"
 		if c.Enabled {
 			state = "enabled"
 		}
 		fmt.Printf("fanfare: %s\ndir: %s\nmilestone_seconds: %d\nfinale_seconds: %d\nvolume: %g\nstop_dialog: %v\n", state, c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume, *c.StopDialog)
+		fmt.Printf("use: %s\n", activeSet(c))
 		man := "manifest present"
 		if merr != nil {
 			man = "no manifest (mw fanfare fetch)"

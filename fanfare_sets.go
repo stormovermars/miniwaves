@@ -77,8 +77,8 @@ func sortedSetNames(c FanfareConfig) []string {
 	return ns
 }
 
-// fanfareStatusJSON is `mw fanfare -j`: compact, for a UI.
-func fanfareStatusJSON(c FanfareConfig, dir string, pairs []pairInfo) error {
+// fanfareStatusJSON is `mw fanfare -j`: the long-standing keys in base plus the set and UI keys (a superset).
+func fanfareStatusJSON(base map[string]any, c FanfareConfig, pairs []pairInfo) error {
 	type pj struct {
 		Name     string `json:"name"`
 		Playable bool   `json:"playable"`
@@ -91,21 +91,9 @@ func fanfareStatusJSON(c FanfareConfig, dir string, pairs []pairInfo) error {
 	for n, v := range c.Sets {
 		sets[n] = append([]string{}, v...)
 	}
-	b, err := json.Marshal(struct {
-		Enabled          bool                `json:"enabled"`
-		Use              string              `json:"use"`
-		Sets             map[string][]string `json:"sets"`
-		Dir              string              `json:"dir"`
-		Pairs            []pj                `json:"pairs"`
-		MilestoneSeconds int                 `json:"milestone_seconds"`
-		FinaleSeconds    int                 `json:"finale_seconds"`
-		Volume           float64             `json:"volume"`
-	}{c.Enabled, activeSet(c), sets, dir, ps, c.MilestoneSeconds, c.FinaleSeconds, c.Volume})
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(b))
-	return nil
+	base["enabled"], base["use"], base["sets"], base["pairs"] = c.Enabled, activeSet(c), sets, ps
+	base["milestone_seconds"], base["finale_seconds"], base["volume"] = c.MilestoneSeconds, c.FinaleSeconds, c.Volume
+	return printJSON(base)
 }
 
 func fanfareSetsCommand(path string, w *Workspace, o map[string]string, pos []string, dir string) error {
