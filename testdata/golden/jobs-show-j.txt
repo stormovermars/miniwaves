@@ -15,7 +15,8 @@
     "metrics": "",
     "summary": "",
     "pane": "on",
-    "pane_style": ""
+    "pane_style": "",
+    "news_path": "<root>/docs/news/status.md"
   },
   {
     "id": "tiny",
@@ -34,6 +35,7 @@
     "metrics": "",
     "summary": "",
     "pane": "on",
-    "pane_style": ""
+    "pane_style": "",
+    "news_path": "<root>/docs/news/status.md"
   }
 ]

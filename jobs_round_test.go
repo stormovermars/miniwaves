@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -52,13 +53,20 @@ func TestJobsRoundTripAndOldReader(t *testing.T) {
 }
 
 func TestGoldenJobsShow(t *testing.T) {
-	jobsBoard(t)
+	gpath := jobsBoard(t)
+	realRoot, _ := filepath.EvalSymlinks(filepath.Dir(gpath))
+	esc, _ := json.Marshal(realRoot)
+	norm := func(s string) string { // news_path is absolute: pin the temp root and the separator
+		s = strings.ReplaceAll(s, strings.Trim(string(esc), `"`), "<root>")
+		s = strings.ReplaceAll(s, realRoot, "<root>")
+		return strings.ReplaceAll(strings.ReplaceAll(s, `\\`, "/"), `\`, "/")
+	}
 	runAll(t,
 		[]string{"jobs", "enable", "tiny", "-t", "sheet,doc"},
 		[]string{"jobs", "set", "tiny", "title=Tiny corpus", "max_workers=2", "news.url=https://example.com/news"},
 		[]string{"jobs", "enable", "other", "-t", "jobs-app"},
 	)
 	got := captureOutput(t, func() { runAll(t, []string{"jobs", "show", "-j"}) })
-	checkGolden(t, "jobs-show-j", got)
-	checkGolden(t, "jobs-show-toon", captureOutput(t, func() { runAll(t, []string{"jobs", "show", "tiny"}) }))
+	checkGolden(t, "jobs-show-j", norm(got))
+	checkGolden(t, "jobs-show-toon", norm(captureOutput(t, func() { runAll(t, []string{"jobs", "show", "tiny"}) })))
 }
