@@ -67,14 +67,15 @@ func goldenOutputs(t *testing.T, migrated bool) map[string]string {
 		return norm(captureOutput(t, func() { runAll(t, args) }))
 	}
 	return map[string]string{
-		"board":          cap("board"),
-		"board-v":        cap("board", "-v"),
-		"board-all":      cap("board", "-A"),
-		"context":        cap("context", "-s", "golden"),
-		"next":           cap("next"),
-		"prompt-session": cap("get-prompt", "session", "golden2", "-a", "builder"),
-		"prompt-disp":    cap("get-prompt", "dispatcher"),
-		"prompt-coach":   cap("get-prompt", "coach"),
+		"board":           cap("board"),
+		"board-v":         cap("board", "-v"),
+		"board-all":       cap("board", "-A"),
+		"context":         cap("context", "-s", "golden"),
+		"next":            cap("next"),
+		"prompt-session":  cap("get-prompt", "session", "golden2", "-a", "builder"),
+		"prompt-disp":     cap("get-prompt", "dispatcher"),
+		"prompt-coach":    cap("get-prompt", "coach"),
+		"prompt-newsdesk": cap("get-prompt", "newsdesk"),
 	}
 }
 

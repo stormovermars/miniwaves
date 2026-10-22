@@ -366,10 +366,10 @@ func TestDispatcherBootstrapPrompt(t *testing.T) {
 			t.Fatalf("dispatcher prompt missing %q:\n%s", want, prompt)
 		}
 	}
-	if n := len(strings.Split(prompt, "\n")); n > 24 {
+	if n := len(strings.Split(prompt, "\n")); n > 40 {
 		t.Fatalf("dispatcher prompt has %d lines", n)
 	}
-	if n := len(strings.Fields(prompt)); n > 245 {
+	if n := len(strings.Fields(prompt)); n > 480 {
 		t.Fatalf("dispatcher prompt too long: %d words", n)
 	}
 	if err := run([]string{"get-prompt", "dispatcher", "bad name"}); err == nil {

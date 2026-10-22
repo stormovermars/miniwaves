@@ -29,6 +29,12 @@ type promptData struct {
 	GateEvidence, GateAcceptance, GateJudge bool
 	EvidenceDir                             string
 	GatesRule                               string
+	// Coordinated-job variables (neutral defaults without --job; jobs.<id> with it).
+	Job, Title, Lock, Worktrees, NewsOut, NewsURL string
+	MaxWorkers                                    int
+	// Ceremonies is the template hook for docs/specs/ceremonies.md (not built yet): when set, its text is
+	// rendered at the end of the dispatcher and newsdesk prompts. Always empty today.
+	Ceremonies string
 }
 
 func (d promptData) render(name string) string {
@@ -66,13 +72,27 @@ func sessionSetup(goos, dir, id, tenant, role string) string {
 		shellQuote(dir), shellQuote(id), shellQuote(tenant))
 }
 
+// jobPromptData fills the job variables: neutral defaults, or jobs.<id> when job is set.
+func jobPromptData(w *Workspace, job string) (promptData, error) {
+	d := promptData{MaxWorkers: 4, Worktrees: "on", NewsOut: "docs/news/"}
+	if job == "" {
+		return d, nil
+	}
+	if _, ok := w.Jobs[job]; !ok {
+		return d, fmt.Errorf("job %s not found (mw jobs show; mw jobs enable %s -t SLUG)", job, job)
+	}
+	v := jobView(w, job)
+	d.Job, d.Title, d.Lock, d.Worktrees, d.MaxWorkers, d.NewsOut, d.NewsURL = job, v.Title, v.Lock, v.Worktrees, v.MaxWorkers, v.NewsOut, v.NewsURL
+	return d, nil
+}
+
 func getPromptCommand(path string, w *Workspace, args []string) error {
 	o, pos, err := options(args)
 	if err != nil {
 		return err
 	}
 	if len(pos) == 0 {
-		return errors.New("usage: mw get-prompt session NAME | dispatcher|coach [NAME]")
+		return errors.New("usage: mw get-prompt session NAME | dispatcher|coach|newsdesk [NAME] [--job ID]")
 	}
 	kind, name := pos[0], ""
 	var prompt string
@@ -107,18 +127,32 @@ func getPromptCommand(path string, w *Workspace, args []string) error {
 		}
 		prompt = buildSessionPrompt(path, w, t, name, role, o["headless"] == "true")
 		result["tenant"], result["agent"] = t.Slug, role
-	case "dispatcher":
-		if err := allowOptions(o, "json"); err != nil {
+	case "dispatcher", "newsdesk":
+		if err := allowOptions(o, "json", "job"); err != nil {
 			return err
 		}
 		if len(pos) > 2 {
-			return errors.New("usage: mw get-prompt dispatcher [NAME] [-j]")
+			return errors.New("usage: mw get-prompt " + kind + " [NAME] [--job ID] [-j]")
 		}
-		name = "dispatcher"
+		name = kind
 		if len(pos) == 2 {
 			name = pos[1]
 		}
-		prompt = buildDispatcherPrompt(path, w, name)
+		if !validID(name) {
+			return errors.New("prompt name must be at most 64 lowercase letters, numbers, and single dashes")
+		}
+		jd, err := jobPromptData(w, o["job"])
+		if err != nil {
+			return err
+		}
+		if kind == "dispatcher" {
+			prompt = buildDispatcherPromptJob(path, w, name, jd)
+		} else {
+			prompt = buildNewsdeskPrompt(path, w, name, jd)
+		}
+		if o["job"] != "" {
+			result["job"] = o["job"]
+		}
 	case "coach":
 		if err := allowOptions(o, "json"); err != nil {
 			return err
@@ -132,7 +166,7 @@ func getPromptCommand(path string, w *Workspace, args []string) error {
 		}
 		prompt = buildCoachPrompt(path, w, name)
 	default:
-		return errors.New("usage: mw get-prompt session NAME | dispatcher|coach [NAME]")
+		return errors.New("usage: mw get-prompt session NAME | dispatcher|coach|newsdesk [NAME] [--job ID]")
 	}
 	if !validID(name) {
 		return errors.New("prompt name must be at most 64 lowercase letters, numbers, and single dashes")
@@ -146,9 +180,21 @@ func getPromptCommand(path string, w *Workspace, args []string) error {
 }
 
 func buildDispatcherPrompt(path string, w *Workspace, name string) string {
-	return promptWith(w, "dispatcher", promptData{Name: name, Workspace: compactText(w.Name, 72),
-		ChangeDir: changeDir(runtime.GOOS, filepath.Dir(path)), Tenants: len(w.Tenants), Sessions: len(w.Sessions),
-		GatesRule: workspaceGatesRule(w, "Gates are per tenant (mw gate -t SLUG): "), GateJudge: workspaceGatesOn(w)["judge"]})
+	d, _ := jobPromptData(w, "")
+	return buildDispatcherPromptJob(path, w, name, d)
+}
+
+func buildDispatcherPromptJob(path string, w *Workspace, name string, d promptData) string {
+	d.Name, d.Workspace, d.ChangeDir = name, compactText(w.Name, 72), changeDir(runtime.GOOS, filepath.Dir(path))
+	d.Tenants, d.Sessions = len(w.Tenants), len(w.Sessions)
+	d.GatesRule, d.GateJudge = workspaceGatesRule(w, "Gates are per tenant (mw gate -t SLUG): "), workspaceGatesOn(w)["judge"]
+	return promptWith(w, "dispatcher", d)
+}
+
+func buildNewsdeskPrompt(path string, w *Workspace, name string, d promptData) string {
+	d.Name, d.Workspace, d.ChangeDir = name, compactText(w.Name, 72), changeDir(runtime.GOOS, filepath.Dir(path))
+	d.Title = compactText(d.Title, 72)
+	return promptWith(w, "newsdesk", d)
 }
 
 func buildCoachPrompt(path string, w *Workspace, name string) string {
