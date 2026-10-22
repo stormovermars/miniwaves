@@ -447,6 +447,10 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 
 ## Changelog
 
+### 0.3.2
+
+- The tidewatch pane plugin ships in the miniwaves marketplace (`claude plugin install tidewatch@miniwaves`, then `/tidewatch`); 0.3.0 documented it but the install failed.
+
 ### 0.3.1
 
 - `mw migrate` reads boards from 0.2.x with archived tenants (0.3.0 failed with `cannot unmarshal bool into ... Tenant.tenants.archived`); archived tenants stay archived.
