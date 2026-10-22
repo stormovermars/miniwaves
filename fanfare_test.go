@@ -823,8 +823,52 @@ func TestStopDialogConfig(t *testing.T) {
 	}
 }
 
+// fakeCacheDir points os.UserCacheDir at a temp folder and returns it.
+func fakeCacheDir(t *testing.T) string {
+	t.Helper()
+	d := t.TempDir()
+	t.Setenv("HOME", d)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(d, "xdg"))
+	t.Setenv("LocalAppData", filepath.Join(d, "local"))
+	c, err := os.UserCacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestBuiltinFanfareCachedByHash(t *testing.T) {
+	cache := fakeCacheDir(t)
+	f, err := builtinFanfareFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(defaultFanfareWAV)
+	want := filepath.Join(cache, "miniwaves", "fanfare-default-"+hex.EncodeToString(sum[:])[:12]+".wav")
+	if f != want {
+		t.Fatalf("path %s, want %s", f, want)
+	}
+	if b, _ := os.ReadFile(f); !bytes.Equal(b, defaultFanfareWAV) {
+		t.Fatal("content differs")
+	}
+	// a damaged cache file is rewritten; no temp files are left behind
+	if err := os.WriteFile(f, []byte("junk"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if f2, err := builtinFanfareFile(); err != nil || f2 != f {
+		t.Fatalf("%v %s", err, f2)
+	}
+	if b, _ := os.ReadFile(f); !bytes.Equal(b, defaultFanfareWAV) {
+		t.Fatal("damaged cache not repaired")
+	}
+	if m, _ := filepath.Glob(filepath.Join(filepath.Dir(f), "*.tmp")); len(m) != 0 {
+		t.Fatalf("temp left: %v", m)
+	}
+}
+
 func TestBuiltinFanfareWhenNoPairs(t *testing.T) {
-	if len(defaultFanfareWAV) < 1000 || len(defaultFanfareWAV) > 100<<10 || string(defaultFanfareWAV[:4]) != "RIFF" {
+	fakeCacheDir(t)
+	if len(defaultFanfareWAV) < 100<<10 || len(defaultFanfareWAV) > 200<<10 || string(defaultFanfareWAV[:4]) != "RIFF" {
 		t.Fatalf("embedded wav: %d bytes", len(defaultFanfareWAV))
 	}
 	old := lookPath

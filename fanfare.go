@@ -673,16 +673,40 @@ func pickPairOrBuiltin(c FanfareConfig, dir string, pick func(int) int) (*pairIn
 	if err == nil {
 		return p, nil
 	}
-	file := filepath.Join(os.TempDir(), fmt.Sprintf("mw-fanfare-default-%d.wav", len(defaultFanfareWAV)))
-	if st, serr := os.Stat(file); serr != nil || st.Size() != int64(len(defaultFanfareWAV)) {
-		if werr := writeFileAtomic(file, defaultFanfareWAV); werr != nil {
-			return nil, err
-		}
+	file, werr := builtinFanfareFile()
+	if werr != nil {
+		return nil, err
 	}
 	if !canPlay(file) {
 		return nil, fmt.Errorf("%v; the built-in sound cannot play either (no audio player found)", err)
 	}
 	return &pairInfo{Name: "built-in", Fanfare: file, Finale: file, State: "ready"}, nil
+}
+
+// builtinFanfareFile extracts the embedded WAV to os.UserCacheDir()/miniwaves/fanfare-default-<sha256[:12]>.wav
+// (os.TempDir only when there is no cache dir) and returns its path. A file with the right size is reused;
+// the write is a temp file plus rename.
+func builtinFanfareFile() (string, error) {
+	sum := sha256.Sum256(defaultFanfareWAV)
+	name := "fanfare-default-" + hex.EncodeToString(sum[:])[:12] + ".wav"
+	dir, err := os.UserCacheDir()
+	if err != nil || dir == "" {
+		dir = os.TempDir()
+	}
+	dir = filepath.Join(dir, "miniwaves")
+	if os.MkdirAll(dir, 0o700) != nil {
+		dir = os.TempDir()
+	}
+	file := filepath.Join(dir, name)
+	if st, serr := os.Stat(file); serr == nil && st.Size() == int64(len(defaultFanfareWAV)) {
+		if b, rerr := os.ReadFile(file); rerr == nil && sha256.Sum256(b) == sum {
+			return file, nil
+		}
+	}
+	if err := writeFileAtomic(file, defaultFanfareWAV); err != nil {
+		return "", err
+	}
+	return file, nil
 }
 
 func playClip(w *Workspace, kind, reason string) error {
