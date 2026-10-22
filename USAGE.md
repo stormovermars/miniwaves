@@ -117,7 +117,8 @@ mw version [-j]   # {version, schema, board_schema, board}: nearest workspace an
 mw ask ID QUESTION... [-t SLUG] [-s NAME]   # a question for a human, as an event (see "Needs you and decisions")
 mw answer ID TEXT... --by NAME [-t SLUG]   # human only; closes the item's open ask
 mw decide TEXT... [--by NAME] [-s SESSION] [-b WHY] [-p ID] [-t SLUG]   # a decision event on ID, else on the tenant's "Decisions" chore
-mw user show [-j] | mw user set KEY=VALUE...   # per-user config (see "Per-user config")
+mw user show [-j] | get [KEY] [-j] | set KEY=VALUE...   # per-user config (see "Per-user config")
+mw configure [--show [-j]] | KEY=VALUE...   # walk the per-user settings, then Save or Discard (see "Per-user config")
 mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]   # coordinated-job config (see "Coordinated jobs")
 mw news [--job ID] [--format md|html|text|json] [--release [--force]] [-o PATH] [-j]   # news bulletin from board data (see "News")
 mw review [-t SLUG] [-j]
@@ -305,8 +306,34 @@ Personal choices live outside the committed board, in `mw-user.json` under `os.U
 
 ```text
 mw user show [-j]            # the values and the file's path
+mw user get [KEY] [-j]       # every settings key (or one) with its effective value and source (default or user)
 mw user set KEY=VALUE...     # validates every key and value, then writes the file (mode 0600); an empty VALUE unsets a key
+mw configure                 # walk the settings in a terminal; Enter keeps, a number picks, d resets, t test-plays a fanfare; nothing is written before Save
+mw configure --show [-j]     # the same as user get
+mw configure KEY=VALUE...    # validate and save without prompting
 ```
+
+`mw configure` without a terminal on stdin prints the settings plus a hint and exits 0; it never reads stdin then. It uses plain stdin and stdout, so it works on Windows too. `user get -j` prints `{"keys":[{"key","value","default","source","group","choices"}]}`: `value` is the effective value, `source` is `default` or `user`, `group` is one of pane, alerts, fanfare, status (the chat bar), discover, and `choices` lists the allowed values (empty for free text). These keys are per user and never stored on a board; an invalid value is refused with a non-zero exit.
+
+| Key | Allowed | Default | Meaning |
+|---|---|---|---|
+| `pane.refresh` | `15s`, `30s`, `1m`, `5m`, `off` | `30s` | how often the live pane refreshes |
+| `pane.style` | `normal`, `blocks`, `gopher`, `agile`, `kanban` | `normal` | look of the pane |
+| `pane.zoom` | `-2`..`2` | `0` | pane text size step |
+| `pane.fit` | `80`, `fill` | `80` | pane width |
+| `pane.open` | `jobs`, `news` | `jobs` | the view the pane opens on |
+| `alerts.enabled` | `true`, `false` | `true` | raise alerts for board events |
+| `alerts.kinds` | comma list of `blocked`, `ask`, `review`, `done`, `release`, `metrics`; or `all` | all six | which events alert |
+| `alerts.message` | `true`, `false` | `true` | show a message with an alert |
+| `alerts.sound` | `true`, `false` | `true` | play a sound with an alert |
+| `fanfare.enabled` | `true`, `false` | `false` (the board's `fanfare.enabled` applies until set) | the user's choice wins over the board |
+| `fanfare.use` | a set name or `all` | `all` | the fanfare set to play |
+| `status.show` | `true`, `false` | `true` | show the mw line in the chat status bar |
+| `status.detail` | `compact`, `full` | `compact` | how much the status line says |
+| `discover.home` | `true`, `false` | `true` | also look for boards under your home folder |
+| `discover.depth` | `1`..`6` | `4` | folder levels to search |
+
+The older keys below are still set the same way; `alerts.on` and `alerts.exec` are not part of `user get`.
 
 | Key | Value |
 |---|---|

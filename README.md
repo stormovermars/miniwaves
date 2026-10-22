@@ -54,6 +54,7 @@ All off until you turn them on. Details in [USAGE.md](USAGE.md).
 | Coordinator kit (plan, news desk, build lock) | `mw init --kit coordinated --job ID` | delete the files it wrote |
 | Fanfare, per board (mw-watch: the `Fanfare:` button) | `mw fanfare set enabled=true` | `mw fanfare set enabled=false` |
 | Fanfare, just for you | `mw user set fanfare.enabled=true` | `mw user set fanfare.enabled=false` |
+| Personal settings (pane, alerts, fanfare, chat bar, discovery) | `mw configure` (or `mw configure KEY=VALUE...`) | `mw user set KEY=` resets a key |
 | Fanfare set (mw-watch: the `Fanfare:` button cycles off, all, each set; or `/mw-watch fanfare next`) | `mw fanfare use NAME` | `mw fanfare use all` |
 | mw-watch pane (Claude Code) | installed by `install.sh`, `install.ps1` and `mw update` when Claude Code is present; or `mw update --plugins` (`MW_NO_PLUGINS=1` skips) | `claude plugin uninstall mw-watch` |
 

@@ -227,3 +227,130 @@ func TestUserFanfareDefaultsOptOut(t *testing.T) {
 		}
 	}
 }
+
+func configureScript(t *testing.T, script string, fn func()) string {
+	t.Helper()
+	oldTTY, oldIn := stdinIsTerminal, configureIn
+	stdinIsTerminal = func() bool { return true }
+	configureIn = strings.NewReader(script)
+	t.Cleanup(func() { stdinIsTerminal, configureIn = oldTTY, oldIn })
+	return captureOutput(t, fn)
+}
+
+func TestConfigureInteractiveSaves(t *testing.T) {
+	p := userCfgPath(t)
+	// 17 prompts: pane(5) alerts(4) fanfare(2) status(2) discover(2); pane.style -> 5) kanban, zoom 2, fanfare.enabled 1) true, depth 6
+	script := "\n5\n2\n\n\n" + // pane
+		"\n\n\n\n" + // alerts
+		"1\n\n" + // fanfare
+		"\n\n" + // status
+		"\n6\n" + // discover
+		"s\n"
+	out := configureScript(t, script, func() { runAll(t, []string{"configure"}) })
+	if !strings.Contains(out, "pane.style: normal -> kanban") || !strings.Contains(out, "Save or Discard") {
+		t.Fatalf("%s", out)
+	}
+	var c UserConfig
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Settings["pane.style"] != "kanban" || c.Settings["pane.zoom"] != "2" || c.Settings["discover.depth"] != "6" || c.Fanfare.Enabled == nil || !*c.Fanfare.Enabled {
+		t.Fatalf("%s", b)
+	}
+	if len(c.Settings) != 3 {
+		t.Fatalf("only changed keys are stored: %s", b)
+	}
+}
+
+func TestConfigureDiscardKeepsFileIdentical(t *testing.T) {
+	p := userCfgPath(t)
+	runAll(t, []string{"user", "set", "pane.style=blocks", "alerts.on=ask"})
+	before, _ := os.ReadFile(p)
+	out := configureScript(t, "3\nbogus\n1\n"+strings.Repeat("\n", 20)+"d\n", func() { runAll(t, []string{"configure"}) })
+	after, _ := os.ReadFile(p)
+	if string(before) != string(after) || !strings.Contains(out, "discarded") {
+		t.Fatalf("file changed or no discard:\n%s\n%s", after, out)
+	}
+	// EOF mid-walk also writes nothing
+	configureScript(t, "2\n", func() { runAll(t, []string{"configure"}) })
+	if again, _ := os.ReadFile(p); string(again) != string(before) {
+		t.Fatal("EOF wrote")
+	}
+}
+
+type failReader struct{ t *testing.T }
+
+func (f failReader) Read([]byte) (int, error) { f.t.Fatal("stdin was read"); return 0, nil }
+
+func TestConfigureNoTTYPrintsSettings(t *testing.T) {
+	userCfgPath(t)
+	oldTTY, oldIn := stdinIsTerminal, configureIn
+	stdinIsTerminal, configureIn = func() bool { return false }, failReader{t}
+	t.Cleanup(func() { stdinIsTerminal, configureIn = oldTTY, oldIn })
+	out := captureOutput(t, func() { runAll(t, []string{"configure"}) })
+	if !strings.Contains(out, "pane.refresh") || !strings.Contains(out, "(default)") || !strings.Contains(out, "hint:") {
+		t.Fatalf("%s", out)
+	}
+}
+
+func TestConfigureKeyValue(t *testing.T) {
+	p := userCfgPath(t)
+	for _, bad := range []string{"pane.style=fancy", "pane.zoom=3", "pane.refresh=2m", "alerts.kinds=ask,nope", "alerts.enabled=yes", "discover.depth=0", "status.detail=x", "pane.fit=90", "nokey=1"} {
+		if err := run([]string{"configure", bad}); err == nil {
+			t.Errorf("%s: expected an error", bad)
+		}
+	}
+	if err := run([]string{"configure", "pane.style=blocks", "pane.zoom=9"}); err == nil {
+		t.Fatal("one bad value must refuse all")
+	}
+	if _, err := os.Stat(p); err == nil {
+		t.Fatal("a refused configure wrote the file")
+	}
+	runAll(t, []string{"configure", "pane.style=Blocks", "pane.zoom=+1", "alerts.kinds=done, ask,done", "fanfare.use=all"})
+	out := captureOutput(t, func() { runAll(t, []string{"configure", "--show"}) })
+	for _, want := range []string{"pane.style", "blocks  (user)", "pane.zoom", "1  (user)", "ask,done  (user)"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestUserGetJSONSource(t *testing.T) {
+	userCfgPath(t)
+	runAll(t, []string{"user", "set", "pane.fit=fill", "fanfare.enabled=true"})
+	var v struct {
+		Keys []userGetKey `json:"keys"`
+	}
+	out := captureOutput(t, func() { runAll(t, []string{"user", "get", "-j"}) })
+	if err := json.Unmarshal([]byte(out), &v); err != nil || len(v.Keys) != len(userKeys) {
+		t.Fatalf("%v: %s", err, out)
+	}
+	by := map[string]userGetKey{}
+	for _, k := range v.Keys {
+		by[k.Key] = k
+	}
+	if k := by["pane.fit"]; k.Value != "fill" || k.Source != "user" || k.Default != "80" || k.Group != "pane" || len(k.Choices) != 2 {
+		t.Fatalf("%+v", k)
+	}
+	if k := by["fanfare.enabled"]; k.Value != "true" || k.Source != "user" {
+		t.Fatalf("%+v", k)
+	}
+	if k := by["pane.style"]; k.Value != "normal" || k.Source != "default" {
+		t.Fatalf("%+v", k)
+	}
+	if !strings.Contains(out, `"choices":[]`) && !strings.Contains(out, `"choices": []`) {
+		t.Fatalf("free-text choices must be an empty array: %s", out)
+	}
+	one := captureOutput(t, func() { runAll(t, []string{"user", "get", "pane.zoom", "-j"}) })
+	if strings.Count(one, `"key"`) != 1 {
+		t.Fatalf("%s", one)
+	}
+	wantErr(t, "unknown user key", "user", "get", "nope")
+	if txt := captureOutput(t, func() { runAll(t, []string{"user", "get", "pane.fit"}) }); strings.TrimSpace(txt) != "pane.fit  fill  (user)" {
+		t.Fatalf("%q", txt)
+	}
+}
