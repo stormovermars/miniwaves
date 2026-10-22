@@ -1,6 +1,6 @@
 # Coordinated jobs in mw: plan
 
-Draft 4, 2026-10-22. Draft 3 had a second Opus audit, with 20 findings; all are resolved below, and the audit is at the end. Owner: Sir.
+Draft 4.1, 2026-10-22 (adds the mw news pane). Draft 3 had a second Opus audit, with 20 findings; all are resolved below, and the audit is at the end. Owner: Sir.
 
 ## Why
 
@@ -88,6 +88,12 @@ ask/answer/decide work on any board, with no enable gate (audit #20).
 ## tidewatch (pane plugin)
 
 - **Install and use.** Install with `/plugin install tidewatch@miniwaves`. `/tidewatch` opens the pane, and `/tidewatch add PATH` / `remove ID` manage boards. It shows every job with `pane=on` on the registered boards.
+- **Two panes.** Their titles use a lowercase `mw` and the short job id.
+  - **mw jobs · &lt;job&gt;** is the board view.
+  - **mw news · &lt;job&gt;** renders the job's news Markdown (`news.out`/status.md, from `mw news --format md`) with the Markdown element.
+    - It reads the file only and never runs repo scripts. It is capped at 64 KB.
+    - A small ↗ Link opens `news.url` in the browser.
+    - It opens on request only: the News button in mw jobs, or `/tidewatch news [job]`.
 - **What it shows.** Urgency colors (needs you, waiting, progress, new), plus milestones, harness `summary`, last events, the news link, the status line and toasts. It has Refresh, an Auto timer (off/30s/1m/5m) and −/#/+ size.
 - **Storage** (audit #7). The registry, user styles, the seen-set and the chosen style live in `$.store`. Board paths are stored absolute, and nothing reads HOME.
 - **Running mw** (audit #6). An absolute mw path is resolved once (`command -v` / `where`, or the ensure-mw install path) and is always used as argv[0]. A bare `mw` is never run with a repo as cwd. If mw can't be found, the pane shows a how-to.
