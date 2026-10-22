@@ -414,7 +414,7 @@ PATH.hash), otherwise it prints "unchanged". text and json print to stdout (a fi
 (job key news_releases, default <news.out dir>/releases). Release N compares with release N-1 (release 1 with the start).
 Nothing new since the last release is refused with exit 0 ("nothing new since release N") unless --force.
 The job's metrics file (key metrics, see USAGE.md) and summary file (key summary, at most 20 KB) are read as data.
---full lists every row (no per-list caps, every more is 0; the 200-character item text and the 1 MB guard stay; a guard trim prints the line "trimmed: N rows", json trimmed_rows); refused with --release. --tenant SLUG (json only) filters the model to one tenant; the window stays job-wide. --width (text only) is accepted and ignored: bulletins are 70 columns. No network. Example: mw news --job tiny --release`,
+--full lists every row (no per-list caps, every more is 0; the 200-character item text and the 1 MB guard stay; a guard trim prints the line "trimmed: N rows", json trimmed_rows); refused with --release, and refused unless the output goes to stdout (-o -, or --format text|json without -o) or a file (-o FILE): it never rewrites the desk's status.md draft. --tenant SLUG (json only) filters the model to one tenant; the window stays job-wide. --width (text only) is accepted and ignored: bulletins are 70 columns. No network. Example: mw news --job tiny --release`,
 		"jobs": `mw jobs enable ID -t SLUG...
 mw jobs disable ID [-t SLUG]
 mw jobs set ID KEY=VALUE...

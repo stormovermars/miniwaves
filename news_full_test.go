@@ -155,3 +155,30 @@ func TestNewsFullRefusedWithRelease(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestNewsFullNeverRewritesDraft(t *testing.T) {
+	newsOverCaps(t)
+	for _, f := range []string{"md", "html"} {
+		err := run([]string{"news", "--job", "big", "--full", "--format", f})
+		if err == nil || !strings.Contains(err.Error(), "--full would rewrite") {
+			t.Fatalf("--full --format %s with the default target: %v", f, err)
+		}
+	}
+	if err := run([]string{"news", "--job", "big", "--full"}); err == nil {
+		t.Fatal("--full with the default format must be refused")
+	}
+	if m, _ := filepath.Glob(filepath.Join("docs", "news", "*", "status.*")); len(m) != 0 {
+		t.Fatalf("draft written: %v", m)
+	}
+	// allowed: stdout, a file, json and text
+	for _, args := range [][]string{
+		{"news", "--job", "big", "--full", "-o", "-"},
+		{"news", "--job", "big", "--full", "--format", "json"},
+		{"news", "--job", "big", "--full", "--format", "text"},
+		{"news", "--job", "big", "--full", "-o", filepath.Join(t.TempDir(), "x.md")},
+	} {
+		if err := run(args); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+}

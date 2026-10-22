@@ -279,6 +279,10 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	}
 	stdout := o["out"] == "-"
 	plain := format == "text" || format == "json" // stdout unless -o PATH, no news.out, no sidecar
+	if o["full"] == "true" && o["out"] == "" && !plain {
+		// the default target is the desk's status.md/status.html draft: --full must never rewrite it
+		return fmt.Errorf("--full would rewrite the desk's status.%s draft: send it to stdout (-o -), a file (-o FILE) or use --format text or json", format)
+	}
 	if o["json"] == "true" && !release && (stdout || plain && o["out"] == "") {
 		return errors.New("-j needs a file target (-o PATH or news.out)")
 	}
