@@ -32,12 +32,14 @@ const (
 
 // FanfareConfig is the "fanfare" object of .miniwaves.json. Missing or zero fields take the defaults.
 type FanfareConfig struct {
-	Enabled          bool    `json:"enabled"`
-	Dir              string  `json:"dir"`
-	MilestoneSeconds int     `json:"milestone_seconds"`
-	FinaleSeconds    int     `json:"finale_seconds"`
-	Volume           float64 `json:"volume"`
-	StopDialog       *bool   `json:"stop_dialog,omitempty"` // finale Stop dialog; nil = true
+	Enabled          bool                `json:"enabled"`
+	Dir              string              `json:"dir"`
+	MilestoneSeconds int                 `json:"milestone_seconds"`
+	FinaleSeconds    int                 `json:"finale_seconds"`
+	Volume           float64             `json:"volume"`
+	StopDialog       *bool               `json:"stop_dialog,omitempty"` // finale Stop dialog; nil = true
+	Sets             map[string][]string `json:"sets,omitempty"`        // named sets of pair folders (fanfare_sets.go)
+	Use              string              `json:"use,omitempty"`         // active set; "" or "all" = every playable pair
 }
 
 func fanfareCfg(w *Workspace) FanfareConfig {
@@ -530,7 +532,7 @@ func playPendingFanfare(w *Workspace) {
 
 func playClip(w *Workspace, kind string) error {
 	c := fanfareCfg(w)
-	p, err := pickPair(expandHome(c.Dir), rand.Intn)
+	p, err := pickPairFor(c, expandHome(c.Dir), rand.Intn)
 	if err != nil {
 		return err
 	}
@@ -748,7 +750,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 	switch sub {
 	case "":
 		if len(pos) != 0 {
-			return errors.New("usage: mw fanfare [set K=V... | test [milestone|finale] | fetch | list | stop]")
+			return errors.New("usage: mw fanfare [set K=V... | sets | use NAME|all | test [milestone|finale] | fetch | list | stop]")
 		}
 		pairs := scanPairs(dir)
 		ready, unplayable, incomplete, empty := 0, 0, 0, 0
@@ -766,7 +768,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		}
 		_, merr := os.Stat(filepath.Join(dir, manifestName))
 		if o["json"] == "true" {
-			return printJSON(map[string]any{"config": c, "dir": dir, "ready": ready, "unplayable": unplayable, "incomplete": incomplete, "empty": empty, "manifest": merr == nil})
+			return fanfareStatusJSON(c, dir, pairs)
 		}
 		state := "disabled"
 		if c.Enabled {
@@ -779,6 +781,10 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		}
 		fmt.Printf("collection: %d ready, %d unplayable here, %d incomplete, %d empty (bring your own); %s\n", ready, unplayable, incomplete, empty, man)
 		return nil
+	case "sets":
+		return fanfareSetsCommand(path, w, o, pos, dir)
+	case "use":
+		return fanfareUseCommand(path, w, pos)
 	case "list":
 		return printData(append([]pairInfo{}, scanPairs(dir)...), o)
 	case "set":
@@ -849,7 +855,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		if len(pos) == 1 {
 			kind = pos[0]
 		}
-		p, err := pickPair(dir, rand.Intn)
+		p, err := pickPairFor(c, dir, rand.Intn)
 		if err != nil {
 			return err
 		}
@@ -881,7 +887,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("unknown fanfare command %q (set, test, fetch, list, stop)", sub)
+	return fmt.Errorf("unknown fanfare command %q (set, sets, use, test, fetch, list, stop)", sub)
 }
 
 func licenseLine(l string) string {
