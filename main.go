@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "ticket": true, "format": true, "width": true,
+	"since": true, "since-file": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "ticket": true, "format": true, "width": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -403,7 +403,7 @@ mw fanfare stop
 Play a short clip when a wave closes and a longer finale when a tenant is finished (items exist, none inbox/ready/doing/blocked, no open wave; once per transition).
 Playback is a detached player (afplay, ffplay, mpv, paplay, Windows .wav) and never fails a board command. "fetch" downloads public-domain, CC0 and CC-BY pairs; the
 bring-your-own pair folders stay empty until you add fanfare.<ext> and finale.<ext>. Example: mw fanfare set enabled=true`,
-		"news": `mw news [--job ID] [--format md|html|text|json] [--tenant SLUG] [-o PATH|-] [-j]
+		"news": `mw news [--job ID] [--full] [--format md|html|text|json] [--tenant SLUG] [-o PATH|-] [-j]
 mw news --job ID --release [--force] [--format ...] [-j]
 The news bulletin of a job: one model (version 1: job, release, now, happened, next, metrics, summary) drawn as a
 70-column gopher-style bulletin (md = one fenced text block, html = <pre>, text) or printed as json. Without --release it
@@ -414,7 +414,7 @@ PATH.hash), otherwise it prints "unchanged". text and json print to stdout (a fi
 (job key news_releases, default <news.out dir>/releases). Release N compares with release N-1 (release 1 with the start).
 Nothing new since the last release is refused with exit 0 ("nothing new since release N") unless --force.
 The job's metrics file (key metrics, see USAGE.md) and summary file (key summary, at most 20 KB) are read as data.
---tenant SLUG (json only) filters the model to one tenant; the window stays job-wide. --width (text only) is accepted and ignored: bulletins are 70 columns. No network. Example: mw news --job tiny --release`,
+--full lists every row (no per-list caps, every more is 0; the 200-character item text and the 1 MB guard stay; a guard trim prints the line "trimmed: N rows", json trimmed_rows); refused with --release. --tenant SLUG (json only) filters the model to one tenant; the window stays job-wide. --width (text only) is accepted and ignored: bulletins are 70 columns. No network. Example: mw news --job tiny --release`,
 		"jobs": `mw jobs enable ID -t SLUG...
 mw jobs disable ID [-t SLUG]
 mw jobs set ID KEY=VALUE...
@@ -597,7 +597,7 @@ Usage:
   mw user show [-j] | get [KEY] [-j] | set KEY=VALUE...
   mw configure [--show [-j]] | KEY=VALUE...
   mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]
-  mw news [--job ID] [--format md|html|text|json] [--release [--force]] [-o PATH] [-j]
+  mw news [--job ID] [--full] [--format md|html|text|json] [--release [--force]] [-o PATH] [-j]
   mw ask ID QUESTION... [-s NAME] | mw answer ID TEXT... --by NAME | mw decide TEXT... [--by NAME] [-b WHY] [-p ID]
   mw gate [-t SLUG] [-j] | gate level trust|proof|spec|judged | gate evidence|acceptance|judge on|off|auto [--by NAME]
   mw review [-t SLUG] [-j]
@@ -872,7 +872,7 @@ func options(args []string) (map[string]string, []string, error) {
 		if key == "" || !validOptions[key] {
 			return nil, nil, fmt.Errorf("unknown option %s", a)
 		}
-		if key == "json" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "archived" {
+		if key == "json" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "archived" {
 			o[key] = "true"
 			continue
 		}

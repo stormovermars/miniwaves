@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"html"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -344,6 +345,9 @@ func bulletinFooterParts(releases []int) (shown []int, label string) {
 // link, when set, renders one footer number (html).
 func bulletinLines(m *newsModel, releases []int) []string {
 	var out []string
+	if m.Full { // --full: every row, no fitting to the pane limit
+		return bulletinDraw(m, releases, bulletinLimits{math.MaxInt, math.MaxInt, math.MaxInt, math.MaxInt, math.MaxInt})
+	}
 	for i, lim := range bulletinLevels {
 		out = bulletinDraw(m, releases, lim)
 		n := 0
@@ -452,6 +456,9 @@ func bulletinDraw(m *newsModel, releases []int, lim bulletinLimits) []string {
 		mt = append(mt[:lim.metrics], "  "+bulletinMore(len(mt)-lim.metrics))
 	}
 	out = append(out, mt...)
+	if m.TrimmedRows > 0 { // --full only: the 1 MB guard still dropped rows
+		out = append(out, "", fmt.Sprintf("trimmed: %d rows", m.TrimmedRows))
+	}
 
 	out = append(out, "", strings.Repeat("-", bulletinWidth), bulletinFooter(releases, nil, nil), rule)
 	return out

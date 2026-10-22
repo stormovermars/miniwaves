@@ -222,7 +222,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "job", "format", "out", "json", "width", "release", "force", "tenant"); err != nil {
+	if err := allowOptions(o, "job", "format", "out", "json", "width", "release", "force", "tenant", "full"); err != nil {
 		return err
 	}
 	format := value(o, "format", "md")
@@ -232,6 +232,9 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	release := o["release"] == "true"
 	if release && o["out"] != "" {
 		return errors.New("--release writes into the releases folder and takes no -o (use news --format ... -o PATH for a draft)")
+	}
+	if o["full"] == "true" && release {
+		return errors.New("--full cannot be combined with --release (a release keeps the caps)")
 	}
 	if o["force"] == "true" && !release {
 		return errors.New("--force is only for --release")
@@ -352,7 +355,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 			}
 			seen[j.target] = id
 		}
-		win := newsWindow{prev: j.prev, prevNum: j.prevNum}
+		win := newsWindow{prev: j.prev, prevNum: j.prevNum, full: o["full"] == "true"}
 		if release {
 			n := newsMaxReleaseNumber(j.relDir) + 1 // above every N.* file and the latest pointer, readable or not
 			j.nextNum = n
