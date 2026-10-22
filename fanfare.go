@@ -34,7 +34,7 @@ const (
 
 // FanfareConfig is the "fanfare" object of .miniwaves.json. Missing or zero fields take the defaults.
 type FanfareConfig struct {
-	Enabled          bool                `json:"enabled"`
+	Enabled          *bool               `json:"enabled,omitempty"` // nil = the board does not decide (reads as off; the user layer may switch it)
 	Dir              string              `json:"dir"`
 	MilestoneSeconds int                 `json:"milestone_seconds"`
 	FinaleSeconds    int                 `json:"finale_seconds"`
@@ -629,7 +629,7 @@ func tenantFinished(t *Tenant) bool {
 // on the first finished transition and queues the clip to play once the command succeeded.
 // A close that also finishes the tenant plays the finale only.
 func fanfareAfterChange(w *Workspace, t *Tenant, waveClosed bool, now string) {
-	if !fanfareEffective(w).Enabled { // the per-user fanfare.enabled wins over the board
+	if !fanfareOn(fanfareEffective(w)) { // the per-user fanfare.enabled wins over the board
 		return
 	}
 	if tenantFinished(t) && t.FanfareFinaleAt == "" {
@@ -951,9 +951,13 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 			return fanfareStatusJSON(map[string]any{"config": c, "dir": dir, "ready": ready, "unplayable": unplayable, "incomplete": incomplete, "empty": empty, "manifest": merr == nil, "source": src}, eff, pairs)
 		}
 		onOff := func(b bool) string { return map[bool]string{true: "enabled", false: "disabled"}[b] }
-		state := onOff(eff.Enabled)
+		state := onOff(fanfareOn(eff))
+		boardState := "unset"
+		if c.Enabled != nil {
+			boardState = onOff(*c.Enabled)
+		}
 		if src["enabled"] == "user" {
-			state += " (user; board: " + onOff(c.Enabled) + ")"
+			state += " (user; board: " + boardState + ")"
 		}
 		fmt.Printf("fanfare: %s\ndir: %s\nmilestone_seconds: %d\nfinale_seconds: %d\nvolume: %g\nstop_dialog: %v\n", state, c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume, *c.StopDialog)
 		if src["use"] == "user" {
@@ -988,7 +992,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 				if e != nil {
 					return fmt.Errorf("enabled: want true or false, got %q", v)
 				}
-				c.Enabled = b
+				c.Enabled = &b
 			case "dir":
 				if strings.TrimSpace(v) == "" {
 					return errors.New("dir: empty")
@@ -1031,7 +1035,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		if err := save(path, w); err != nil {
 			return err
 		}
-		fmt.Printf("fanfare saved: enabled=%v dir=%s milestone_seconds=%d finale_seconds=%d volume=%g stop_dialog=%v\n", c.Enabled, c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume, *c.StopDialog)
+		fmt.Printf("fanfare saved: enabled=%v dir=%s milestone_seconds=%d finale_seconds=%d volume=%g stop_dialog=%v\n", fanfareOn(c), c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume, *c.StopDialog)
 		return nil
 	case "test":
 		kind := "milestone"

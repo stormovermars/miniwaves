@@ -94,7 +94,7 @@ func TestFanfareConfigRoundTrip(t *testing.T) {
 		t.Fatalf("not stored: %s", b)
 	}
 	w, _ := load(path)
-	if c := fanfareCfg(w); !c.Enabled || c.Dir != songs || c.MilestoneSeconds != 20 || c.FinaleSeconds != 240 || c.Volume != 0.5 {
+	if c := fanfareCfg(w); !fanfareOn(c) || c.Dir != songs || c.MilestoneSeconds != 20 || c.FinaleSeconds != 240 || c.Volume != 0.5 {
 		t.Fatalf("%+v", c)
 	}
 	for _, bad := range []string{"enabled=maybe", "milestone_seconds=0", "volume=0", "nope=1", "dir"} {

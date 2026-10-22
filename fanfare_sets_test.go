@@ -130,7 +130,7 @@ func TestFanfareStatusJSONSuperset(t *testing.T) {
 		}
 	}
 	var cfg FanfareConfig
-	if err := json.Unmarshal(m["config"], &cfg); err != nil || !cfg.Enabled || cfg.Use != "mine" {
+	if err := json.Unmarshal(m["config"], &cfg); err != nil || !fanfareOn(cfg) || cfg.Use != "mine" {
 		t.Fatalf("config: %s %v", m["config"], err)
 	}
 	if txt := captureOutput(t, func() { runAll(t, []string{"fanfare"}) }); !strings.Contains(txt, "\nuse: mine\n") {

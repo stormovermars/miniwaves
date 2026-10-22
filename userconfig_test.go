@@ -170,7 +170,7 @@ func TestUserFanfareOverridesBoard(t *testing.T) {
 		[]string{"add", "task", "A", "--status", "ready"}, []string{"add", "task", "B", "--status", "ready"},
 		[]string{"add", "task", "C", "--status", "ready"}, []string{"add", "task", "D", "--status", "ready"})
 	// board off, no user choice: silence
-	runAll(t, []string{"fanfare", "set", "dir=" + dir}, []string{"start", "TSK-001"}, []string{"done", "TSK-001", "ok"})
+	runAll(t, []string{"fanfare", "set", "dir=" + dir, "enabled=false"}, []string{"start", "TSK-001"}, []string{"done", "TSK-001", "ok"})
 	plays(t, log, 0)
 	// board off (an explicit enabled=false), user on: the board's off wins
 	runAll(t, []string{"user", "set", "fanfare.enabled=true"}, []string{"done", "TSK-002", "ok"})
@@ -390,20 +390,20 @@ func TestUserGetFanfareSourceBoardOffWins(t *testing.T) {
 		t.Fatalf("board unset, user on: %+v", k)
 	}
 	w := boardWorkspace()
-	if c, src := fanfareEffectiveSrc(w); !c.Enabled || src["enabled"] != "user" {
-		t.Fatalf("board unset effective: %v %v", c.Enabled, src)
+	if c, src := fanfareEffectiveSrc(w); !fanfareOn(c) || src["enabled"] != "user" {
+		t.Fatalf("board unset effective: %v %v", fanfareOn(c), src)
 	}
 	// board false + user true: off, source board
 	runAll(t, []string{"fanfare", "set", "enabled=false"})
 	if k := getKey(t, "fanfare.enabled"); k.Source != "board" || k.Value != "false" {
 		t.Fatalf("board off, user on: %+v", k)
 	}
-	if c, src := fanfareEffectiveSrc(boardWorkspace()); c.Enabled || src["enabled"] != "board" {
-		t.Fatalf("board off effective: %v %v", c.Enabled, src)
+	if c, src := fanfareEffectiveSrc(boardWorkspace()); fanfareOn(c) || src["enabled"] != "board" {
+		t.Fatalf("board off effective: %v %v", fanfareOn(c), src)
 	}
 	// board true + user true: on
 	runAll(t, []string{"fanfare", "set", "enabled=true"})
-	if c, _ := fanfareEffectiveSrc(boardWorkspace()); !c.Enabled {
+	if c, _ := fanfareEffectiveSrc(boardWorkspace()); !fanfareOn(c) {
 		t.Fatal("board on, user on must be on")
 	}
 }
@@ -473,5 +473,34 @@ func TestConfigureSaveKeepsConcurrentChange(t *testing.T) {
 	c, _, _, _ := readUserConfig()
 	if c.Settings["pane.zoom"] != "1" || c.Settings["pane.style"] != "kanban" {
 		t.Fatalf("settings %v", c.Settings)
+	}
+}
+
+func TestFanfareBoardEnabledTriState(t *testing.T) {
+	inTempDir(t)
+	t.Setenv("MW_USER_CONFIG", filepath.Join(t.TempDir(), "mw-user.json"))
+	runAll(t, []string{"init", "Ws"})
+	runAll(t, []string{"user", "set", "fanfare.enabled=true"})
+	// `fanfare use all` / `fanfare set <other key>` on a fresh board must not decide enabled
+	runAll(t, []string{"fanfare", "use", "all"})
+	runAll(t, []string{"fanfare", "set", "volume=2"})
+	if w := boardWorkspace(); w.Fanfare == nil || w.Fanfare.Enabled != nil {
+		t.Fatalf("board enabled must stay unset: %+v", w.Fanfare)
+	}
+	if c, src := fanfareEffectiveSrc(boardWorkspace()); !fanfareOn(c) || src["enabled"] != "user" {
+		t.Fatalf("fresh fanfare block, user on: %v %v", fanfareOn(c), src)
+	}
+	if k := getKey(t, "fanfare.enabled"); k.Source != "user" || k.Value != "true" {
+		t.Fatalf("fresh fanfare block, user on: %+v", k)
+	}
+	// explicit board off beats user on
+	runAll(t, []string{"fanfare", "set", "enabled=false"})
+	if c, src := fanfareEffectiveSrc(boardWorkspace()); fanfareOn(c) || src["enabled"] != "board" {
+		t.Fatalf("board off, user on: %v %v", fanfareOn(c), src)
+	}
+	// explicit board true, user false: off, source user
+	runAll(t, []string{"fanfare", "set", "enabled=true"}, []string{"user", "set", "fanfare.enabled=false"})
+	if c, src := fanfareEffectiveSrc(boardWorkspace()); fanfareOn(c) || src["enabled"] != "user" {
+		t.Fatalf("board on, user off: %v %v", fanfareOn(c), src)
 	}
 }

@@ -323,9 +323,14 @@ func userCommand(args []string) error {
 
 var userConfigWarned bool
 
-// boardFanfareOff: a board that carries a fanfare block with enabled=false decides, and stays off whatever
+// fanfareOn reads the tri-state board value: nil (the board does not decide) is off.
+func fanfareOn(c FanfareConfig) bool { return c.Enabled != nil && *c.Enabled }
+
+// boardFanfareOff: a board that carries an explicit fanfare enabled=false decides, and stays off whatever
 // the user layer says. A board with no fanfare setting, or enabled=true, may be switched by the user.
-func boardFanfareOff(w *Workspace) bool { return w != nil && w.Fanfare != nil && !w.Fanfare.Enabled }
+func boardFanfareOff(w *Workspace) bool {
+	return w != nil && w.Fanfare != nil && w.Fanfare.Enabled != nil && !*w.Fanfare.Enabled
+}
 
 // fanfareEffective is the board's fanfare config with the per-user fanfare.enabled applied on top
 // (the user's choice wins unless the board is explicitly off). A broken user file is ignored with one stderr note.
@@ -347,7 +352,8 @@ func fanfareEffectiveSrc(w *Workspace) (FanfareConfig, map[string]string) {
 		return c, src
 	}
 	if u.Fanfare.Enabled != nil && !boardFanfareOff(w) {
-		c.Enabled, src["enabled"] = *u.Fanfare.Enabled, "user"
+		v := *u.Fanfare.Enabled
+		c.Enabled, src["enabled"] = &v, "user"
 	}
 	if u.Fanfare.Use != "" {
 		c.Use, src["use"] = u.Fanfare.Use, "user"

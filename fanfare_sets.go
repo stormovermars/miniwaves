@@ -91,7 +91,7 @@ func fanfareStatusJSON(base map[string]any, c FanfareConfig, pairs []pairInfo) e
 	for n, v := range c.Sets {
 		sets[n] = append([]string{}, v...)
 	}
-	base["enabled"], base["use"], base["sets"], base["pairs"] = c.Enabled, activeSet(c), sets, ps
+	base["enabled"], base["use"], base["sets"], base["pairs"] = fanfareOn(c), activeSet(c), sets, ps
 	base["milestone_seconds"], base["finale_seconds"], base["volume"] = c.MilestoneSeconds, c.FinaleSeconds, c.Volume
 	return printJSON(base)
 }
