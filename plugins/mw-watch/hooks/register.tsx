@@ -1397,8 +1397,11 @@ export const dirsOfToolUse = (tool: string, input: Record<string, unknown>, cwd:
   if (tool === 'Bash' && typeof input.command === 'string' && MW_WORD.test(input.command)) {
     const cmd = input.command
     const cd = /(?:^|[;&|]\s*|&&\s*)cd\s+("[^"]+"|'[^']+'|\S+)/.exec(cmd)
-    out.push(cd ? cd[1]!.replace(/^["']|["']$/g, '') : cwd)
-    for (const m of cmd.matchAll(/(?:^|\s)-C\s+("[^"]+"|'[^']+'|\S+)/g)) out.push(m[1]!.replace(/^["']|["']$/g, ''))
+    const dashC = [...cmd.matchAll(/(?:^|\s)-C\s+("[^"]+"|'[^']+'|\S+)/g)]
+    // mw runs in the cd target, else in the session folder; an explicit -C names the board instead
+    if (cd) out.push(cd[1]!.replace(/^["']|["']$/g, ''))
+    else if (dashC.length === 0) out.push(cwd)
+    for (const m of dashC) out.push(m[1]!.replace(/^["']|["']$/g, ''))
     for (const m of cmd.matchAll(/(?:^|\s)(\/[^\s"';&|]+)/g)) out.push(m[1]!)
   }
   if (tool === 'Read' || tool === 'Edit' || tool === 'Write' || tool === 'MultiEdit') {
@@ -1444,13 +1447,18 @@ export const findSessionBoards = async ($: any): Promise<{ unsupported: boolean;
     }
   }
   // tier 1
+  // the transcript is older than the live hook calls, so its folders come first
+  const dirs = new Set<string>()
   try {
     const msgs = (await $.session.messages()) as { toolUses?: { tool: string; input: Record<string, unknown> }[] }[]
-    for (const m of msgs) for (const u of m.toolUses ?? []) noteUse(u.tool, u.input ?? {})
+    if (Array.isArray(msgs)) {
+      for (const m of msgs) for (const u of m.toolUses ?? []) for (const d of dirsOfToolUse(u.tool, u.input ?? {}, sessionCwd)) dirs.add(d)
+    }
   } catch {
     // no transcript to read: only live calls count
   }
-  for (const d of [...usedDirs]) {
+  for (const d of usedDirs) dirs.add(d)
+  for (const d of dirs) {
     const r = await discover($, d, ['--up', '--depth', '0'])
     await take(r.found, true)
   }

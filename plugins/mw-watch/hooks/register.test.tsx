@@ -53,8 +53,12 @@ const rig = ($: any, on: any, opts: RigOptions = {}) => {
   on('ui.open', (_: any, e: any) => { state.opened.push(`${e.id}|${e.title}`); state.focused.push(e.focus); return { value: { isPlaced: true } } })
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
   on('session.messages', () => ({ value: messages }))
+  on('session.root', () => ({ value: '/work' }))
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false }, text: '' }))
+  on('tool.call', { tool: 'Read' }, () => ({ result: { type: 'text' }, text: '' }))
+  on('tool.call', { tool: 'Write' }, () => ({ result: { type: 'text' }, text: '' }))
   on('fs.stat', (_: any, e: any) => ({ value: { realPath: String(e.path).replace('/link/', '/real/') } }))
-  on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' || e.key === 'HOME' ? '/home/me' : undefined }))
+  on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }))
   on('fs.exists', (_: any, e: any) => ({ value: (hasMw && e.path === MW) || (String(e.path).endsWith('/.miniwaves.json') && !String(e.path).includes('/nope/') && !String(e.path).includes('/scanroot/')) }))
   on('fs.read', (_: any, e: any) => (state.files[e.path] !== undefined ? { value: state.files[e.path] } : { deny: 'ENOENT' }))
   on('fs.write', (_: any, e: any) => { state.files[e.path] = e.text; return { value: undefined } })
@@ -239,18 +243,18 @@ test('two jobs: status, switching, alerts once, refresh, timer', async ($, on) =
 })
 
 test('an empty registry shows the how-to, no toast', async ($, on) => {
-  const { state } = rig($, on, { registry: null })
+  const { state } = rig($, on, { registry: null, extra: argv => (argv[0] === 'boards' ? ok({ root: argv[1], boards: [], truncated: false, reason: '' }) : undefined) })
   await start($)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
-    expect(await ui.find({ type: 'Text', text: /Add a board: \/mw-watch add PATH/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /No boards yet\. Run \/mw-watch to look for them/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /mw command was not found/ })).toBeUndefined()
     expect(await ui.find({ type: 'Svg' })).toBeUndefined()
     await ui.unmount()
   }
   expect(state.toasts.length).toBe(0)
   expect(String(state.statuses.at(-1))).toBe('undefined')
-  expect((await cmd($, '')).text).toContain('no boards yet')
+  expect((await cmd($, '')).text).toContain('no boards found')
 })
 
 test('without an mw binary the pane says how to get it and nothing runs', async ($, on) => {
@@ -614,7 +618,8 @@ test('add and remove boards in the registry', async ($, on) => {
   const jobs = () => (state.store.get('registry') as { jobs: Record<string, { board: string; tenants: string[]; title: string }> } | undefined)?.jobs ?? {}
 
   expect((await cmd($, 'add')).text).toContain('usage')
-  expect((await cmd($, 'add /boards/nope')).text).toContain('not an mw board')
+  // a folder with no .miniwaves.json is scanned instead; the fake mw has no `boards` there
+  expect((await cmd($, 'add /boards/nope')).text).toContain('update mw for auto-discovery')
   expect(Object.keys(jobs())).toEqual([])
 
   // the id is the folder name, the tenants come from the board's items
@@ -640,7 +645,7 @@ test('add and remove boards in the registry', async ($, on) => {
   expect(Object.keys(jobs())).toEqual(['fresh'])
   expect((await cmd($, 'remove fresh')).text).toBe('mw-watch: removed fresh.')
   const empty = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await empty.find({ type: 'Text', text: /Add a board/ })).toBeDefined()
+  expect(await empty.find({ type: 'Text', text: /No boards yet/ })).toBeDefined()
   await empty.unmount()
   expect(String(state.statuses.at(-1))).toBe('undefined')
 })
@@ -752,12 +757,23 @@ test('jobs: one tab per job with pane on, a board with no jobs stays one job', a
 })
 
 const FAN = { config: { enabled: false }, enabled: false, use: 'all', sets: { calm: ['rocky'], loud: ['die-hard'] } }
-const fanExtra = (user: Record<string, unknown> = { 'fanfare.enabled': null, 'fanfare.use': '' }, fan: unknown = FAN) => (argv: string[]) => {
-  const c = argv.join(' ')
-  if (c === 'fanfare -j') return ok(fan)
-  if (c === 'user show -j') return ok(user)
-  if (c.startsWith('user set ') || c.startsWith('fanfare test')) return raw('')
-  return undefined
+const fanExtra = (user0: Record<string, unknown> = { 'fanfare.enabled': null, 'fanfare.use': '' }, fan: unknown = FAN) => {
+  // `mw user set` persists, like the real mw: the next `user show -j` reads what was set
+  const user = { ...user0 }
+  return (argv: string[]) => {
+    const c = argv.join(' ')
+    if (c === 'fanfare -j') return ok(fan)
+    if (c === 'user show -j') return ok(user)
+    if (c.startsWith('user set ')) {
+      for (const kv of argv.slice(2)) {
+        const [k = '', v = ''] = kv.split('=')
+        user[k] = v === 'true' ? true : v === 'false' ? false : v
+      }
+      return raw('')
+    }
+    if (c.startsWith('fanfare test')) return raw('')
+    return undefined
+  }
 }
 const fanRuns = (state: { runs: string[][] }) => state.runs.filter(r => r[1] === 'user' || r[1] === 'fanfare').map(r => r.slice(1, -1).join(' ')).filter(r => /^user set|^fanfare test/.test(r))
 
@@ -803,6 +819,22 @@ test('fanfare cycle with no sets: off, all, off; /mw-watch fanfare next does the
   await ui.press({ key: 'fanfare' })
   await cmd($, 'fanfare next')
   expect(fanRuns(state)).toEqual(['user set fanfare.enabled=true fanfare.use=all', 'user set fanfare.enabled=false', 'user set fanfare.enabled=true fanfare.use=all'])
+  await ui.unmount()
+})
+
+test('/mw-fanfare with no arguments shows the state and opens the pane; `next` cycles', async ($, on) => {
+  const { state } = rig($, on, { extra: fanExtra() })
+  await start($)
+  const bare = await $.command.run({ command: 'mw-fanfare', args: '', origin: { kind: 'user' }, presentation: {} } as never)
+  expect(bare.text).toContain('mw-fanfare: off, set all; sets: all, calm, loud')
+  expect(state.opened.some(o => o.startsWith('mw-fanfare|'))).toBe(true)
+  const ui = await $.ui.mount({ ...PANE, requestId: 'mw-fanfare', surface: 'terminal' })
+  expect(await ui.find({ key: 'fanfare' })).toBeDefined()
+  expect(await ui.find({ key: 'fanfare-test' })).toBeUndefined()
+  await ui.press({ key: 'fanfare' })
+  const next = await $.command.run({ command: 'mw-fanfare', args: 'next', origin: { kind: 'user' }, presentation: {} } as never)
+  expect(next.text).toBe('mw-watch: fanfare calm.')
+  expect(fanRuns(state)).toEqual(['user set fanfare.enabled=true fanfare.use=all', 'user set fanfare.use=calm'])
   await ui.unmount()
 })
 
@@ -884,7 +916,7 @@ test('bare /mw-watch with an empty registry discovers boards from the session fo
   })
   await start($)
   expect((await cmd($, '')).text).toBe('mw-watch: found 1 board (proj).')
-  expect(boardRuns(state)).toEqual(['boards /work --up --depth 3 -j'])
+  expect(boardRuns(state)).toEqual(['boards /work --up --depth 3 -j @/work'])
   const jobs = (state.store.get('registry') as { jobs: Record<string, { board: string; tenants: string[] }> }).jobs
   expect(jobs.proj).toMatchObject({ board: '/work/proj', tenants: ['a', 'b'] })
   expect(Object.keys(jobs)).toEqual(['proj'])
@@ -898,7 +930,7 @@ test('nothing near the session folder: the home folder is scanned', async ($, on
   })
   await start($)
   expect((await cmd($, '')).text).toContain('found 1 board (x)')
-  expect(boardRuns(state)).toEqual(['boards /work --up --depth 3 -j', 'boards /home/me --depth 4 -j'])
+  expect(boardRuns(state)).toEqual(['boards /work --up --depth 3 -j @/work', 'boards /home/me --depth 4 -j @/home/me'])
 })
 
 test('an mw without `boards` falls back with a toast', async ($, on) => {
@@ -915,7 +947,7 @@ test('scan lists boards not added yet; Add and Add all register them', async ($,
   await start($)
   const r = await cmd($, 'scan /scanroot')
   expect(r.text).toContain('found 2 boards not added yet: /scanroot/n1, /scanroot/n2')
-  expect(boardRuns(state)).toEqual(['boards /scanroot --depth 4 -j'])
+  expect(boardRuns(state)).toEqual(['boards /scanroot --depth 4 -j @/scanroot'])
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ key: 'add-all' })).toBeDefined()
   await ui.press({ key: 'add-/scanroot/n1' })
@@ -927,7 +959,7 @@ test('add PATH with no .miniwaves.json is a scan root', async ($, on) => {
   const { state } = rig($, on, { extra: argv => (argv[0] === 'boards' ? ok(report('/scanroot/x', [])) : undefined) })
   await start($)
   expect((await cmd($, 'add /scanroot/x')).text).toContain('no new boards under /scanroot/x')
-  expect(boardRuns(state)).toEqual(['boards /scanroot/x --depth 4 -j'])
+  expect(boardRuns(state)).toEqual(['boards /scanroot/x --depth 4 -j @/scanroot/x'])
 })
 
 test('hide toggles a tenant of a board, never the last one', async ($, on) => {
@@ -976,9 +1008,9 @@ test('every board the session used is found first, deduped by real path, marked 
   })
   await start($)
   // live calls, one from a subagent, one through a symlink to a board already seen
-  await $.tool.call({ tool: 'Bash', command: 'mw -C /link/c ls', agentId: 'sub1' } as never).catch(() => undefined)
-  await $.tool.call({ tool: 'Bash', command: 'mw -C /real/c ls' } as never).catch(() => undefined)
-  await $.tool.call({ tool: 'Write', file_path: '/wt/d/.miniwaves/x' } as never).catch(() => undefined)
+  await $.tool.call({ tool: 'Bash', command: 'mw -C /link/c ls', agentId: 'sub1' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'mw -C /real/c ls' } as never)
+  await $.tool.call({ tool: 'Write', file_path: '/wt/d/.miniwaves/x' } as never)
   const text = (await cmd($, '')).text
   expect(text).toBe('mw-watch: found 5 boards (a [this session], b [this session], c [this session], d [this session], cwdboard).')
   expect(Object.keys((state.store.get('registry') as { jobs: object }).jobs)).toEqual(['a', 'b', 'c', 'd', 'cwdboard'])
