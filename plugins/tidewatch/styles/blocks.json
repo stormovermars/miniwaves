@@ -1,0 +1,80 @@
+{
+  "font": "mono",
+  "sizes": {
+    "headline": 12,
+    "body": 12,
+    "note": 12,
+    "label": 12
+  },
+  "rowHeight": 19.2,
+  "columns": {
+    "name": 22,
+    "count": 6
+  },
+  "bar": {
+    "kind": "glyphs",
+    "fill": "█",
+    "rest": "░"
+  },
+  "colors": {
+    "fg": {
+      "light": "#18181B",
+      "dark": "#F4F4F5"
+    },
+    "dim": {
+      "light": "#5B5B66",
+      "dark": "#A1A1AA"
+    },
+    "track": {
+      "light": "#D4D4D8",
+      "dark": "#3F3F46"
+    },
+    "needs": {
+      "light": "#B91C1C",
+      "dark": "#F87171"
+    },
+    "waiting": {
+      "light": "#A16207",
+      "dark": "#FBBF24"
+    },
+    "progress": {
+      "light": "#18181B",
+      "dark": "#F4F4F5"
+    },
+    "new": {
+      "light": "#15803D",
+      "dark": "#4ADE80"
+    },
+    "pass": {
+      "light": "#15803D",
+      "dark": "#4ADE80"
+    },
+    "fail": {
+      "light": "#B91C1C",
+      "dark": "#F87171"
+    }
+  },
+  "sections": {
+    "order": [
+      "needs",
+      "review",
+      "progress",
+      "milestones",
+      "harness",
+      "events"
+    ],
+    "show": {
+      "needs": true,
+      "review": true,
+      "progress": true,
+      "milestones": true,
+      "harness": true,
+      "events": true
+    }
+  },
+  "scale": [
+    0.92,
+    1,
+    1.17
+  ]
+}
