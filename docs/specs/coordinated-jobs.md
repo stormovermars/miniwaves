@@ -91,7 +91,7 @@ ask/answer/decide work on any board, with no enable gate (audit #20).
 - **Two panes.** Their titles use a lowercase `mw` and the short job id.
   - **mw jobs · &lt;job&gt;** is the board view.
   - **mw news · &lt;job&gt;** renders the job's news Markdown (`news.out`/status.md, from `mw news --format md`) with the Markdown element.
-    - It reads the file only and never runs repo scripts. It is capped at 64 KB.
+    - It reads the file only and never runs repo scripts. It is cut at 9,500 characters with a note, because the Markdown element refuses more than 10,000.
     - A small ↗ Link opens `news.url` in the browser.
     - It opens on request only: the News button in mw jobs, or `/tidewatch news [job]`.
 - **What it shows.** Urgency colors (needs you, waiting, progress, new), plus milestones, harness `summary`, last events, the news link, the status line and toasts. It has Refresh, an Auto timer (off/30s/1m/5m) and −/#/+ size.
