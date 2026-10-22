@@ -447,6 +447,10 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 
 ## Changelog
 
+### 0.3.0
+
+See `releases/0.3.0.md` and MIGRATION.md (schema 9: run `mw migrate`; `mw review -j` has a new `review` list; the news pages are now a gopher-style bulletin drawn from a json model).
+
 ### 0.2.9
 
 - Fanfare sets: `mw fanfare sets add|drop`, `mw fanfare use NAME|all` picks only from that set (falls back to all when it has no playable pair); `mw fanfare -j` keeps its keys and adds `enabled`, `use`, `sets`, `pairs`; plain `mw fanfare` shows `use:`.

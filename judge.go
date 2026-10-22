@@ -149,7 +149,7 @@ type reviewItem struct {
 
 type reviewDoc struct {
 	Judge      []reviewItem `json:"judge"`
-	Review     []reviewItem `json:"review,omitempty"` // blocked items that wait for a reviewer (same rule as mw news)
+	Review     []reviewItem `json:"review"` // blocked items that wait for a reviewer (same rule as mw news); they stay in blocked too
 	Blocked    []reviewItem `json:"blocked"`
 	Acceptance []reviewItem `json:"acceptance"`
 	Waves      []waveRow    `json:"waves"`
@@ -161,7 +161,7 @@ func reviewOf(w *Workspace, t *Tenant) (reviewDoc, bool) {
 	gs := gateStates(w, t)
 	judgeOn, accOn := byName(gs, "judge").Effective, byName(gs, "acceptance").Effective
 	evOn := byName(gs, "evidence").Effective
-	d := reviewDoc{Judge: []reviewItem{}, Blocked: []reviewItem{}, Acceptance: []reviewItem{}, Waves: []waveRow{}, Stale: []reviewItem{}, Needs: needsOf(t)}
+	d := reviewDoc{Judge: []reviewItem{}, Review: []reviewItem{}, Blocked: []reviewItem{}, Acceptance: []reviewItem{}, Waves: []waveRow{}, Stale: []reviewItem{}, Needs: needsOf(t)}
 	mk := func(it Item) reviewItem {
 		return reviewItem{ID: it.ID, Type: it.Kind, State: it.Status, Title: compactText(it.Title, 72), Attempts: it.Attempts}
 	}
@@ -185,10 +185,9 @@ func reviewOf(w *Workspace, t *Tenant) (reviewDoc, bool) {
 		if it.Status == "blocked" {
 			r := mk(it)
 			r.Note = compactText(it.Note, 72)
+			d.Blocked = append(d.Blocked, r) // 0.2.7 scripts count blocked: keep these here as well
 			if awaitingReviewNote(it) {
 				d.Review = append(d.Review, r)
-			} else {
-				d.Blocked = append(d.Blocked, r)
 			}
 		}
 		if accOn && it.Status != "done" && (it.Kind == "story" || isWorkKind(it.Kind)) && strings.TrimSpace(effectiveAcceptance(t, it)) == "" {

@@ -26,7 +26,11 @@ Schema 9 changes no file layout: `mw migrate` rewrites the index with `"version"
 - `mw migrate` 8 to 9 writes only the index; tenant files are not touched.
 - `mw log --since`: the `--lookback` option is removed. Instead the cursor carries a fixed 24 hour window (there is no `--window` flag): events stamped up to 24h before the cursor time are still delivered once. Cursor keys are now 8-byte hashes; old cursors whose `seen` holds full `tenant/item/N` keys keep working and match exactly (no duplicates). New: `--since-file PATH`.
 - `mw reap` prints `spared ...` instead of `nothing to reap` when only dispatcher or news-desk sessions are due.
-- News Markdown: the line is `Updated ... +0000`, nothing "first run" is printed on stdout, and the `Page:` URL is a Markdown link `[url](url)` when it is a plain http(s) URL (no spaces, parentheses or brackets), otherwise escaped text.
+- News pages: the layout changed completely (a 70-column bulletin drawn from `mw news --format json`); see "News bulletin and releases" below.
+
+## `mw review -j` (0.3.0)
+
+`mw review -j` adds a `review` list (always present, `[]` when empty): the blocked items whose block reason starts with "awaiting review", the same rule `mw news` uses. These items also stay in `blocked`, so scripts written for 0.2.7 that count `blocked` see the same numbers; a script that wants only real blocks subtracts `review`. The plain text output gains a `review` section when there are any.
 
 ## One mw version per workspace
 

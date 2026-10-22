@@ -14,7 +14,7 @@ import (
 )
 
 // version is the mw release; schema is currentSchema.
-var version = "0.2.9"
+var version = "0.3.0"
 
 var gateNames = []string{"evidence", "acceptance", "judge"}
 
@@ -490,7 +490,10 @@ func editCommand(path string, w *Workspace, args []string) error {
 		ticket, hasT = strings.TrimSpace(v), true
 	}
 	pos = pos[:1]
-	if err := allowOptions(o, "tenant", "session", "acceptance", "body", "parent"); err != nil {
+	if v, ok := o["ticket"]; ok { // --ticket KEY works like ticket=KEY
+		ticket, hasT = strings.TrimSpace(v), true
+	}
+	if err := allowOptions(o, "tenant", "session", "acceptance", "body", "parent", "ticket"); err != nil {
 		return err
 	}
 	_, hasC := o["acceptance"]

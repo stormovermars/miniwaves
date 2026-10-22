@@ -445,7 +445,7 @@ Humans only (refused under MW_SESSION or -s); --by NAME is required when stdin i
 		"review": `mw review [-t SLUG] [-j]
 What needs a human: judge (judgeable items awaiting judgement, ×N = rejections; [] while the
 judge gate is off), blocked, acceptance (needs acceptance; only with that gate on) and waves
-ready to close. "needs you" lists open asks (mw ask, closed by mw answer). -j prints {judge, blocked, acceptance, waves, stale, needs}.`,
+ready to close. "needs you" lists open asks (mw ask, closed by mw answer). -j prints {judge, review, blocked, acceptance, waves, stale, needs}. review (new in 0.3.0, always present, [] when empty) lists the blocked items whose block reason starts "awaiting review", the same rule mw news uses; they also stay in blocked, so scripts that count blocked keep working. Text output adds a review section when there are any.`,
 		"judge": `mw judge ID [-t SLUG]
 Three lines to decide on: Outcome (title, status, verification), Evidence (the item's folder; a story
 adds each child's), Decision (the effective acceptance as a checklist). Judgeable = a story or a

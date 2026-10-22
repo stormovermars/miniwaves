@@ -534,7 +534,7 @@ func renderBulletinMD(m *newsModel, releases []int) string {
 // urlsSafe re-checks the links of a model that may have come from a file: only https URLs of the tracker charset.
 func urlsSafe(items []newsItem) bool {
 	for _, it := range items {
-		if !trackerURLRe.MatchString(it.TicketURL) && !strings.HasPrefix(it.TicketURL, "https://") {
+		if !strings.HasPrefix(it.TicketURL, "https://") || !trackerURLRe.MatchString(it.TicketURL) {
 			return false
 		}
 		if strings.ContainsAny(it.TicketURL, " <>\"'`()[]\\\x00\n\r") {

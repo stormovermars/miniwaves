@@ -207,10 +207,14 @@ func TestNewsAndReviewAgree(t *testing.T) {
 	judge, review, blocked := 0, 0, 0
 	for _, tn := range w.Tenants {
 		d, _ := reviewOf(w, &tn)
-		judge, review, blocked = judge+len(d.Judge), review+len(d.Review), blocked+len(d.Blocked)
-		for _, b := range d.Blocked {
-			if strings.HasPrefix(b.ID, "REV") {
-				t.Fatal("review item left in blocked")
+		judge, review, blocked = judge+len(d.Judge), review+len(d.Review), blocked+len(d.Blocked)-len(d.Review)
+		for _, r := range d.Review { // the review items stay in blocked too (0.2.7 scripts count blocked)
+			found := false
+			for _, b := range d.Blocked {
+				found = found || b.ID == r.ID
+			}
+			if !found {
+				t.Fatalf("%s is in review but not in blocked", r.ID)
 			}
 		}
 	}

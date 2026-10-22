@@ -1,5 +1,6 @@
 {
   "judge": [],
+  "review": [],
   "blocked": [],
   "acceptance": [],
   "waves": [],

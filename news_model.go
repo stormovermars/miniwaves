@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -295,6 +296,7 @@ func metricsNum(what string, f *float64) (*float64, error) {
 // invalid file. A higher version still parses what it can and adds a notice; if it cannot be read, only the
 // notice remains.
 func parseMetrics(b []byte) *newsMetrics {
+	b = bytes.TrimPrefix(b, []byte("\xef\xbb\xbf")) // a UTF-8 byte order mark
 	var raw rawMetrics
 	dec := json.NewDecoder(strings.NewReader(string(b)))
 	err := dec.Decode(&raw)
@@ -443,14 +445,7 @@ func newerMetrics(v float64) string {
 // newsMetricsLoad reads the job's metrics file as data: confined, a regular file, at most 256 KB. A missing
 // file is no metrics (nil); an unreadable or oversized one is an error block.
 func newsMetricsLoad(root, rel string) *newsMetrics {
-	p, err := newsConfined(root, "metrics", rel)
-	if err != nil {
-		return &newsMetrics{Error: compactText(err.Error(), 120)}
-	}
-	if fi, err := os.Stat(p); err == nil && !fi.Mode().IsRegular() {
-		return &newsMetrics{Error: "not a regular file"}
-	}
-	f, err := openNoBlock(p)
+	f, err := openConfined(root, "metrics", rel)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -458,9 +453,6 @@ func newsMetricsLoad(root, rel string) *newsMetrics {
 		return &newsMetrics{Error: compactText(err.Error(), 120)}
 	}
 	defer f.Close()
-	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		return &newsMetrics{Error: "not a regular file"}
-	}
 	b, err := io.ReadAll(io.LimitReader(f, metricsMaxBytes+1))
 	if err != nil {
 		return &newsMetrics{Error: compactText(err.Error(), 120)}
@@ -1058,6 +1050,34 @@ func newsModelJSON(m *newsModel) ([]byte, error) {
 	return append(b, '\n'), nil
 }
 
+// ---- file reads: regular files only, size capped ----
+
+// readRegular reads a regular file of at most max bytes without ever blocking: a FIFO, a device (or a symlink
+// to one) and an oversized file are refused, like the summary and metrics reads.
+func readRegular(path string, max int) ([]byte, error) {
+	if fi, err := os.Stat(path); err != nil {
+		return nil, err
+	} else if !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", path)
+	}
+	f, err := openNoBlock(path) // a swap to a FIFO after the check does not block
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", path)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, int64(max)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > max {
+		return nil, fmt.Errorf("%s is larger than %d bytes", path, max)
+	}
+	return b, nil
+}
+
 // ---- releases ----
 
 var releaseFile = regexp.MustCompile(`^([1-9][0-9]{0,17})\.json$`)
@@ -1088,7 +1108,8 @@ func newsReleaseNumbers(dir string) []int {
 	return out
 }
 
-var releaseAny = regexp.MustCompile(`^([1-9][0-9]{0,17})\.`)
+// only files mw itself writes count: N.md, N.html, N.json and their temp files
+var releaseAny = regexp.MustCompile(`^([1-9][0-9]{0,17})\.(?:md|html|json)(?:\.[^/]*\.tmp)?$`)
 
 // newsMaxReleaseNumber is the highest number any N.* file or the latest pointer claims, so a half-written or
 // hand-pruned archive never gets a number reused.
@@ -1103,7 +1124,7 @@ func newsMaxReleaseNumber(dir string) int {
 			}
 		}
 	}
-	if b, err := readFileShared(filepath.Join(dir, "latest")); err == nil {
+	if b, err := readRegular(filepath.Join(dir, "latest"), 64); err == nil {
 		if n, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && n > max {
 			max = n
 		}
@@ -1112,7 +1133,7 @@ func newsMaxReleaseNumber(dir string) int {
 }
 
 func newsReadRelease(dir string, n int) (*newsModel, error) {
-	b, err := readFileShared(filepath.Join(dir, strconv.Itoa(n)+".json"))
+	b, err := readRegular(filepath.Join(dir, strconv.Itoa(n)+".json"), newsModelMax)
 	if err != nil {
 		return nil, fmt.Errorf("release %d: %w", n, err)
 	}
@@ -1142,7 +1163,9 @@ func newsPreviousRelease(dir string, strict bool) (*newsModel, *int, []int, erro
 	return nil, nil, nums, nil
 }
 
-// writeNewFile writes content atomically and never replaces an existing file (a lost race becomes an error).
+// writeNewFile writes content durably and never replaces an existing file (a lost race becomes an error). It
+// writes a synced temp file and hard-links it into place; where the filesystem has no hard links (FAT, exFAT,
+// some network shares) it falls back to creating the file with O_EXCL, then writing and syncing it.
 func writeNewFile(path string, b []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
@@ -1154,16 +1177,44 @@ func writeNewFile(path string, b []byte) error {
 		f.Close()
 		return err
 	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
 	if err := f.Close(); err != nil {
 		return err
 	}
 	if err := os.Chmod(tmp, 0644); err != nil {
 		return err
 	}
-	if err := os.Link(tmp, path); err != nil {
+	lerr := os.Link(tmp, path)
+	if lerr == nil {
+		return nil
+	}
+	if os.IsExist(lerr) {
+		return fmt.Errorf("%s already exists (another release was cut at the same time)", filepath.Base(path))
+	}
+	return writeExclusive(path, b)
+}
+
+// writeExclusive creates path with O_EXCL (never replacing a file), writes and syncs it, and removes the partial
+// file on any failure. It is the fallback where hard links are unavailable.
+func writeExclusive(path string, b []byte) error {
+	x, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
 		if os.IsExist(err) {
 			return fmt.Errorf("%s already exists (another release was cut at the same time)", filepath.Base(path))
 		}
+		return err
+	}
+	if _, err = x.Write(b); err == nil {
+		err = x.Sync()
+	}
+	if cerr := x.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(path)
 		return err
 	}
 	return nil

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -99,30 +101,55 @@ func newsConfined(root, key, rel string) (string, error) {
 	return real, nil
 }
 
-// newsSummary reads the job's summary file as data: confined, a regular file, at most 20 KB.
-func newsSummary(root, rel string) (string, error) {
-	p, err := newsConfined(root, "summary", rel)
+// openConfined opens a workspace-relative file for reading, as data. newsConfined resolves the path (symlinks
+// included) and keeps it inside the workspace and off mw's own files; the file is then opened by that resolved
+// path and checked once more on the open descriptor: it must be a regular file and the very file the path still
+// names (not a symlink swapped in). A swap of a parent folder between the resolve and the open cannot be closed
+// portably (there is no cheap path-of-descriptor call on every OS), so that narrow race remains; the reader
+// only ever gets a regular file of capped size, which is all it could leak.
+func openConfined(root, key, rel string) (*os.File, error) {
+	p, err := newsConfined(root, key, rel)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if fi, err := os.Stat(p); err == nil && !fi.Mode().IsRegular() {
-		return "", nil // a FIFO or device would block the open under the board lock
+		return nil, fmt.Errorf("%s: %q is not a regular file", key, rel)
 	}
 	f, err := openNoBlock(p)
+	if err != nil {
+		return nil, err
+	}
+	fi, err := f.Stat()
+	li, lerr := os.Lstat(p)
+	if err != nil || lerr != nil || !fi.Mode().IsRegular() || !li.Mode().IsRegular() || !os.SameFile(fi, li) {
+		f.Close()
+		return nil, fmt.Errorf("%s: %q is not a regular file", key, rel)
+	}
+	return f, nil
+}
+
+// newsSummary reads the job's summary file as data: confined, a regular file, at most 20 KB, a UTF-8 BOM dropped.
+func newsSummary(root, rel string) (string, error) {
+	f, err := openConfined(root, "summary", rel)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
 		}
+		var pe *fs.PathError
+		if errors.As(err, &pe) {
+			return "", err
+		}
+		if strings.Contains(err.Error(), "is not a regular file") {
+			return "", nil // a FIFO or device would block the open under the board lock
+		}
 		return "", err
 	}
 	defer f.Close()
-	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		return "", nil
-	}
 	b, err := io.ReadAll(io.LimitReader(f, newsSummaryCap+1))
 	if err != nil {
 		return "", err
 	}
+	b = bytes.TrimPrefix(b, []byte("\xef\xbb\xbf"))
 	s := string(b)
 	if len(b) > newsSummaryCap {
 		s = strings.ToValidUTF8(string(b[:newsSummaryCap]), "") + "\n[truncated at 20 KB]"
@@ -135,7 +162,7 @@ func newsSummary(root, rel string) (string, error) {
 func newsWrite(out, content string, now time.Time) (bool, error) {
 	sum := sha256.Sum256([]byte(content))
 	hash := hex.EncodeToString(sum[:])
-	if b, err := readFileShared(out + ".hash"); err == nil {
+	if b, err := readRegular(out+".hash", 4096); err == nil {
 		if f := strings.Fields(string(b)); len(f) >= 2 && f[1] == hash {
 			if _, err := os.Stat(out); err == nil {
 				return false, nil
@@ -203,6 +230,9 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		return fmt.Errorf("--format %q: use md, html, text or json", format)
 	}
 	release := o["release"] == "true"
+	if release && o["out"] != "" {
+		return errors.New("--release writes into the releases folder and takes no -o (use news --format ... -o PATH for a draft)")
+	}
 	if o["force"] == "true" && !release {
 		return errors.New("--force is only for --release")
 	}
@@ -308,7 +338,9 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		switch {
 		case stdout, plain && o["out"] == "": // no file, so no news.out and no sidecar
 		case o["out"] != "":
-			j.target = htmlPath(path, o["out"])
+			if j.target, err = newsOutPath(path, root, o["out"]); err != nil {
+				return err
+			}
 		default:
 			d, err := newsConfined(root, "news.out", dir)
 			if err != nil {
@@ -338,7 +370,9 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	if plain { // stdout by default; a file only with -o PATH
 		out := ""
 		if o["out"] != "" && !stdout {
-			out = htmlPath(path, o["out"])
+			if out, err = newsOutPath(path, root, o["out"]); err != nil {
+				return err
+			}
 		}
 		docs := make([]string, len(jobs))
 		for i, j := range jobs {
@@ -503,4 +537,37 @@ func newsCutRelease(o map[string]string, format string, m *newsModel, dir string
 func boardOwnPath(rel string) bool {
 	first := strings.ToLower(strings.SplitN(strings.TrimPrefix(strings.ReplaceAll(rel, `\`, "/"), "./"), "/", 2)[0])
 	return strings.HasPrefix(first, ".miniwaves")
+}
+
+// newsOutPath resolves -o PATH. A path outside the workspace is allowed as before; one that lands inside it
+// (symlinks resolved, a not-yet-created file judged by where its parent really lives) must not be mw's own
+// board file or folder, so -o can never overwrite .miniwaves.json or a tenant file.
+func newsOutPath(boardPath, root, out string) (string, error) {
+	p := htmlPath(boardPath, out)
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return p, nil
+	}
+	probe, err := filepath.Abs(p)
+	if err != nil {
+		return p, nil
+	}
+	var tail []string
+	for {
+		if r, e := filepath.EvalSymlinks(probe); e == nil {
+			probe = r
+			break
+		}
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			return p, nil
+		}
+		tail = append([]string{filepath.Base(probe)}, tail...)
+		probe = parent
+	}
+	real := filepath.Join(append([]string{probe}, tail...)...)
+	if rel, e := filepath.Rel(realRoot, real); e == nil && rel != "." && !strings.HasPrefix(rel, "..") && boardOwnPath(filepath.ToSlash(rel)) {
+		return "", fmt.Errorf("-o %q is mw's own board file or folder (.miniwaves/, .miniwaves.json and their locks and backups)", out)
+	}
+	return p, nil
 }
