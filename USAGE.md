@@ -116,7 +116,7 @@ mw gate [-t SLUG] [-j] | mw gate level trust|proof|spec|judged [-t SLUG] [--work
 mw version [-j]   # {version, schema, board_schema, board}: nearest workspace and its schema (null if none)
 mw ask ID QUESTION... [-t SLUG] [-s NAME]   # a question for a human, as an event (see "Needs you and decisions")
 mw answer ID TEXT... --by NAME [-t SLUG]   # human only; closes the item's open ask
-mw decide TEXT... --by NAME [-b WHY] [-p ID] [-t SLUG]   # a decision event on ID, else on the tenant's "Decisions" chore
+mw decide TEXT... [--by NAME] [-s SESSION] [-b WHY] [-p ID] [-t SLUG]   # a decision event on ID, else on the tenant's "Decisions" chore
 mw user show [-j] | mw user set KEY=VALUE...   # per-user config (see "Per-user config")
 mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]   # coordinated-job config (see "Coordinated jobs")
 mw news [--job ID] [--format md|html|text] [--width N] [-o PATH] [-j]   # status page from board data (see "News")
@@ -287,8 +287,8 @@ block/done note.
 - `mw ask ID QUESTION... [-s NAME]` records a question for a human. Any session may ask.
 - `mw answer ID TEXT... --by NAME` is human only, like `accept`: it is refused under `MW_SESSION` or `-s`, and `--by` is required when stdin is not a terminal. It is refused when the item has no open ask.
 - An **open ask** is the last `ask` of an item with no later `answer` on that item (one answer closes every earlier ask).
-- `mw review` shows open asks as `needs you`, `mw review -j` gains `needs` (`[{tenant, item, question, by, at}]`, always an array), and the text `mw board` prints a `NEEDS YOU` block.
-- `mw decide TEXT... --by NAME [-b WHY] [-p ID]` appends a `decide` event to `-p ID`, else to the tenant's `Decisions` chore, created on first use (already `done`, so it never holds the tenant open). `-b WHY` is stored as `(why: WHY)` at the end of the note.
+- `mw review` shows open asks as `needs you`, `mw review -j` and `mw board -j` gain `needs` (`[{tenant, item, question, by, at}]`, always an array), and the text `mw board` prints a `NEEDS YOU` block.
+- `mw decide TEXT... [--by NAME] [-b WHY] [-p ID]` is open to humans and sessions. With `-s` (or `MW_SESSION`) the event is recorded by that session and a `--by NAME` becomes `(for NAME)` at the end of the note; without a session it is recorded by `--by NAME` (required when stdin is not a terminal), else the login name. It appends a `decide` event to `-p ID`, else to the tenant's `Decisions` chore, created on first use (already `done`, so it never holds the tenant open). `-b WHY` is stored as `(why: WHY)` at the end of the note.
 
 ## Resumable log (`log --since`)
 
@@ -319,6 +319,8 @@ On Unix mw refuses to read the file when it is group- or world-writable (`chmod 
 ## Coordinated jobs
 
 A job groups tenants under one coordinator. mw only stores the config and ships prompts and data; it never starts a session. The config lives in `.miniwaves.json` as an omitempty `jobs` object keyed by job id (a tenant carries `"job": ID`), in schema 9 (a board from 0.2.x needs `mw migrate`, which only bumps the version; a 0.2.8 or older mw then refuses the board instead of silently rewriting the index without `jobs`, `job` and fanfare `sets`).
+
+JSON uses snake_case keys like every other `-j` output: the board and `jobs show -j` store `news_out`, `news_url` and `pane_style`, and `user show -j` has `alerts_on`, `alerts_exec`, `fanfare_enabled`, `fanfare_use`. The CLI keys stay dotted (`mw jobs set ID news.out=...`, `mw user set fanfare.use=...`). `mw jobs enable` prints `moved SLUG from job OLD` when a tenant leaves another job.
 
 ```text
 mw jobs enable ID -t SLUG...        # create the job if needed and put the tenants in it (-t repeats or takes a comma list)
@@ -381,7 +383,7 @@ Writes files only, into the workspace folder: `PLAN.md` (a plan skeleton), `NEWS
 
 ### Reap and job roles
 
-When a tenant's job exists (`mw jobs`), `mw session reap` skips sessions whose role (`-a`) is `dispatcher` or `newsdesk` by default, with no new flag, so a runner's plain `mw session reap -t T --older-than X` leaves the coordinator alone. `--except NAME,NAME` still skips any other session. A tenant with no job, or one that left it, reaps exactly as before.
+When a tenant's job exists (`mw jobs`), `mw session reap` skips sessions whose role (`-a`) is `dispatcher` or `newsdesk` by default, with no new flag, so a runner's plain `mw session reap -t T --older-than X` leaves the coordinator alone. `--except NAME,NAME` still skips any other session. A tenant with no job, or one that left it, reaps exactly as before. Each spared session is printed as `spared ROLE session NAME (job ID)` when it was otherwise due, and `-j` lists them under `spared` (`[{session, tenant, role, job}]`).
 
 ## Fanfare
 

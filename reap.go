@@ -125,6 +125,14 @@ func isJobRole(w *Workspace, s *Session) bool {
 	return ok
 }
 
+// sparedRow is a dispatcher or newsdesk session reap would have released but left alone.
+type sparedRow struct {
+	Session string `json:"session"`
+	Tenant  string `json:"tenant"`
+	Role    string `json:"role"`
+	Job     string `json:"job"`
+}
+
 type reapRow struct {
 	Session string   `json:"session"`
 	Tenant  string   `json:"tenant"`
@@ -168,13 +176,19 @@ func reapCommand(path string, w *Workspace, o map[string]string, pos []string) e
 	dry := o["dry-run"] == "true"
 	now := time.Now().UTC()
 	rows := []reapRow{}
+	spared := []sparedRow{}
 	for i := range w.Sessions {
 		s := &w.Sessions[i]
-		if s.State == "stopped" || isLocalID(s.ID) || except[s.ID] || (slug != "" && s.Tenant != slug) || isJobRole(w, s) {
+		if s.State == "stopped" || isLocalID(s.ID) || except[s.ID] || (slug != "" && s.Tenant != slug) {
 			continue
 		}
 		last := parseTS(s.Updated)
 		if last.IsZero() || now.Sub(last) <= age {
+			continue
+		}
+		if isJobRole(w, s) {
+			t, _ := tenantBySlug(w, s.Tenant)
+			spared = append(spared, sparedRow{s.ID, s.Tenant, s.Agent, t.Job})
 			continue
 		}
 		row := reapRow{Session: s.ID, Tenant: s.Tenant, Items: []string{}}
@@ -195,16 +209,24 @@ func reapCommand(path string, w *Workspace, o map[string]string, pos []string) e
 	if o["json"] == "true" {
 		if dry {
 			return printJSON(struct {
-				DryRun bool      `json:"dry_run"`
-				Reaped []reapRow `json:"reaped"`
-			}{true, rows})
+				DryRun bool        `json:"dry_run"`
+				Reaped []reapRow   `json:"reaped"`
+				Spared []sparedRow `json:"spared"`
+			}{true, rows, spared})
 		}
 		return printJSON(struct {
-			Reaped []reapRow `json:"reaped"`
-		}{rows})
+			Reaped []reapRow   `json:"reaped"`
+			Spared []sparedRow `json:"spared"`
+		}{rows, spared})
+	}
+	for _, s := range spared {
+		fmt.Printf("spared %s session %s (job %s)\n", s.Role, s.Session, s.Job)
+	}
+	if len(rows) == 0 && len(spared) == 0 {
+		fmt.Println("nothing to reap")
+		return nil
 	}
 	if len(rows) == 0 {
-		fmt.Println("nothing to reap")
 		return nil
 	}
 	verb, item := "reaped", "released"

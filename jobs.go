@@ -15,9 +15,9 @@ import (
 // Nothing here executes: every value is data, and every path stays relative to the workspace.
 
 var (
-	jobIDPattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
-	paneStylePatten = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
-	lockNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+	jobIDPattern     = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+	paneStylePattern = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
+	lockNamePattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 )
 
 // JobConfig holds the explicitly set keys of one job; zero values mean "default".
@@ -27,11 +27,11 @@ type JobConfig struct {
 	MaxWorkers  int    `json:"max_workers,omitempty"`
 	Worktrees   string `json:"worktrees,omitempty"`
 	Lock        string `json:"lock,omitempty"`
-	NewsOut     string `json:"news.out,omitempty"`
-	NewsURL     string `json:"news.url,omitempty"`
+	NewsOut     string `json:"news_out,omitempty"`
+	NewsURL     string `json:"news_url,omitempty"`
 	Summary     string `json:"summary,omitempty"`
 	Pane        string `json:"pane,omitempty"`
-	PaneStyle   string `json:"pane.style,omitempty"`
+	PaneStyle   string `json:"pane_style,omitempty"`
 }
 
 // JobView is a job with its defaults applied and its tenants listed.
@@ -43,11 +43,11 @@ type JobView struct {
 	MaxWorkers  int      `json:"max_workers" toon:"max_workers"`
 	Worktrees   string   `json:"worktrees" toon:"worktrees"`
 	Lock        string   `json:"lock" toon:"lock"`
-	NewsOut     string   `json:"news.out" toon:"news.out"`
-	NewsURL     string   `json:"news.url" toon:"news.url"`
+	NewsOut     string   `json:"news_out" toon:"news_out"`
+	NewsURL     string   `json:"news_url" toon:"news_url"`
 	Summary     string   `json:"summary" toon:"summary"`
 	Pane        string   `json:"pane" toon:"pane"`
-	PaneStyle   string   `json:"pane.style" toon:"pane.style"`
+	PaneStyle   string   `json:"pane_style" toon:"pane_style"`
 }
 
 var jobKeys = []string{"title", "description", "max_workers", "worktrees", "lock", "news.out", "news.url", "summary", "pane", "pane.style"}
@@ -173,7 +173,7 @@ func setJobKey(c *JobConfig, key, val string) error {
 		}
 		c.NewsURL = val
 	case "pane.style":
-		if val != "" && !paneStylePatten.MatchString(val) {
+		if val != "" && !paneStylePattern.MatchString(val) {
 			return fmt.Errorf("pane.style: %q must match ^[a-z0-9-]{1,32}$", val)
 		}
 		c.PaneStyle = val
@@ -253,6 +253,9 @@ func jobsCommand(p string, w *Workspace, args []string) error {
 			w.Jobs[id] = JobConfig{}
 		}
 		for _, t := range ts {
+			if t.Job != "" && t.Job != id {
+				fmt.Printf("moved %s from job %s\n", t.Slug, t.Job)
+			}
 			t.Job = id
 		}
 		if err := save(p, w); err != nil {

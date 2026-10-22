@@ -153,21 +153,23 @@ func decideCommand(path string, w *Workspace, args []string) error {
 		return err
 	}
 	if len(pos) < 1 {
-		return errors.New("usage: mw decide TEXT... --by NAME [-b WHY] [-p ID] [-t SLUG]")
+		return errors.New("usage: mw decide TEXT... [--by NAME] [-s SESSION] [-b WHY] [-p ID] [-t SLUG]")
 	}
 	if err := allowOptions(o, "tenant", "session", "by", "body", "parent"); err != nil {
 		return err
 	}
-	by := strings.TrimSpace(o["by"])
-	if by == "" {
-		if !stdinIsTerminal() {
-			return errors.New("mw decide needs --by NAME when stdin is not a terminal")
-		}
-		by = value(map[string]string{"u": os.Getenv("USER")}, "u", "human")
-	}
 	text := strings.TrimSpace(strings.Join(pos, " "))
 	if text == "" {
 		return errors.New("the decision must not be blank")
+	}
+	// recorded by the session when there is one (-s or MW_SESSION); a named decider (--by) is then part of the note
+	by := value(o, "session", os.Getenv("MW_SESSION"))
+	if by != "" {
+		if d := strings.TrimSpace(o["by"]); d != "" {
+			text += " (for " + d + ")"
+		}
+	} else if by, err = humanBy("mw decide", o); err != nil {
+		return err
 	}
 	if why := strings.TrimSpace(o["body"]); why != "" {
 		text += " (why: " + why + ")"

@@ -52,7 +52,7 @@ func TestJobsEnableSetShowDisable(t *testing.T) {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := raw["jobs"].(map[string]any)["tiny"].(map[string]any)["news.out"]; !ok {
+	if _, ok := raw["jobs"].(map[string]any)["tiny"].(map[string]any)["news_out"]; !ok {
 		t.Fatalf("index: %s", b)
 	}
 

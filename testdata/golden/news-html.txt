@@ -13,7 +13,7 @@ section{background:var(--card);border:1px solid var(--line);border-radius:8px;pa
 code{font:13px ui-monospace,monospace}
 </style></head><body><main>
 <h1>News app</h1>
-<div class=mut>Updated <NOW> local</div>
+<div class=mut>Updated <NOW> +0000</div>
 <section><h2>Tiny &lt;job&gt;</h2>
 <div class=mut>https://example.com/news?a=1&amp;b=2</div>
 <h3>Headline</h3><div>1 need you; 1 blocked; 1 in progress; 2 of 5 done.</div>

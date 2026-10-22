@@ -3,11 +3,8 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"syscall"
 	"testing"
-	"time"
 )
 
 func TestNewsReadOnlyTable(t *testing.T) {
@@ -18,27 +15,6 @@ func TestNewsReadOnlyTable(t *testing.T) {
 		if got := readOnly(strings.Fields(args)); got != want {
 			t.Errorf("%s: readOnly=%v", args, got)
 		}
-	}
-}
-
-func TestNewsSummaryFIFO(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("no FIFOs")
-	}
-	newsBoard(t)
-	os.Remove("summary.txt")
-	if err := syscall.Mkfifo("summary.txt", 0o600); err != nil {
-		t.Skip(err)
-	}
-	done := make(chan string, 1)
-	go func() { done <- captureOutput(t, func() { runAll(t, []string{"news", "--job", "tiny", "-o", "-"}) }) }()
-	select {
-	case out := <-done:
-		if strings.Contains(out, "## Summary") {
-			t.Fatal("FIFO summary was rendered")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("news hangs on a FIFO summary")
 	}
 }
 

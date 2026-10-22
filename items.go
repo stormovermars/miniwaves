@@ -1052,12 +1052,13 @@ type boardDoc struct {
 	Sessions []string               `json:"sessions"`
 	Waves    []waveRow              `json:"waves"`
 	States   map[string][]itemBrief `json:"states"`
+	Needs    []needRow              `json:"needs"`
 }
 
 func boardData(t *Tenant, sessions []Session, full bool, gs []gateInfo) boardDoc {
 	judgeOn := byName(gs, "judge").Effective
 	at, id, act := lastActivity(t)
-	d := boardDoc{LastAt: at, Today: doneToday(t), Tenant: t.Slug, Name: t.Name, Tags: t.Tags, Level: levelOf(gs), Gates: effectiveMap(gs), Sessions: []string{}, Waves: []waveRow{}, States: map[string][]itemBrief{}}
+	d := boardDoc{LastAt: at, Today: doneToday(t), Tenant: t.Slug, Name: t.Name, Tags: t.Tags, Level: levelOf(gs), Gates: effectiveMap(gs), Sessions: []string{}, Waves: []waveRow{}, States: map[string][]itemBrief{}, Needs: needsOf(t)}
 	for _, it := range t.Items {
 		if it.Kind == "wave" {
 			if full || it.Status != "done" {

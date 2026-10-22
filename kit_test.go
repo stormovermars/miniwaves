@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -96,6 +97,47 @@ func TestKitBuildlockShell(t *testing.T) {
 	}
 }
 
+// Eight waiters on one stale lock must still run one at a time (the takeover is an atomic rename), and a live
+// owner that kill -0 cannot signal (pid 1) is never mistaken for a dead one: the wait times out, no spin.
+func TestKitBuildlockTakeoverRace(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh lock")
+	}
+	path := inTempDir(t)
+	runAll(t, []string{"init", "Kit app"}, []string{"init", "--kit", "coordinated", "--job", "tiny"})
+	script := filepath.Join(filepath.Dir(path), "buildlock.sh")
+	dir := t.TempDir()
+	lock := filepath.Join(dir, "lock")
+	marker := filepath.Join(dir, "marker")
+	t.Setenv("BUILDLOCK_DIR", lock)
+	t.Setenv("BUILDLOCK_TIMEOUT", "60")
+	os.Mkdir(lock, 0700)
+	os.WriteFile(filepath.Join(lock, "pid"), []byte("999999"), 0600)
+	codes := make(chan int, 8)
+	for i := 0; i < 8; i++ {
+		go func() {
+			codes <- runShell(t, script, "sh", "-c", "mkdir "+marker+" || exit 9; sleep 0.2; rmdir "+marker)
+		}()
+	}
+	for i := 0; i < 8; i++ {
+		if c := <-codes; c != 0 {
+			t.Fatalf("waiter exit %d (two builds ran at once)", c)
+		}
+	}
+	if os.Geteuid() == 0 {
+		return
+	}
+	os.Mkdir(lock, 0700)
+	os.WriteFile(filepath.Join(lock, "pid"), []byte("1"), 0600)
+	os.Chmod(dir, 0500)
+	defer os.Chmod(dir, 0700)
+	t.Setenv("BUILDLOCK_TIMEOUT", "2")
+	start := time.Now()
+	if code := runShell(t, script, "true"); code != 75 || time.Since(start) > 10*time.Second {
+		t.Fatalf("foreign live owner: exit %d after %v", code, time.Since(start))
+	}
+}
+
 func runShell(t *testing.T, script string, args ...string) int {
 	t.Helper()
 	err := exec.Command("sh", append([]string{script}, args...)...).Run()
@@ -131,7 +173,8 @@ func TestReapSkipsJobRoles(t *testing.T) {
 	runAll(t, []string{"jobs", "enable", "tiny", "-t", "gate-app"})
 	// wr's exact argv
 	out = captureOutput(t, func() { runAll(t, []string{"session", "reap", "-t", "gate-app", "--older-than", "1h"}) })
-	if strings.Contains(out, "session boss") || strings.Contains(out, "session desk") || !strings.Contains(out, "reaped session worker") {
+	if strings.Contains(out, "reaped session boss") || strings.Contains(out, "reaped session desk") || !strings.Contains(out, "reaped session worker") ||
+		!strings.Contains(out, "spared dispatcher session boss (job tiny)") || !strings.Contains(out, "spared newsdesk session desk (job tiny)") {
 		t.Fatalf("job roles not skipped:\n%s", out)
 	}
 	if it := itemOf(t, path, "TSK-001"); it.Status != "doing" || it.Assignee != "boss" {
@@ -142,15 +185,22 @@ func TestReapSkipsJobRoles(t *testing.T) {
 	}
 	// -A too; --except still works for the others
 	out = captureOutput(t, func() { runAll(t, []string{"session", "reap", "-A", "--older-than", "1h", "-n"}) })
-	if strings.Contains(out, "session boss") || strings.Contains(out, "session desk") {
+	if strings.Contains(out, "would reap session boss") || strings.Contains(out, "would reap session desk") {
 		t.Fatalf("-A:\n%s", out)
+	}
+	var js struct {
+		Spared []sparedRow `json:"spared"`
+	}
+	if err := json.Unmarshal([]byte(captureOutput(t, func() { runAll(t, []string{"session", "reap", "-A", "--older-than", "1h", "-n", "-j"}) })), &js); err != nil ||
+		len(js.Spared) != 2 || js.Spared[0] != (sparedRow{"boss", "gate-app", "dispatcher", "tiny"}) {
+		t.Fatalf("spared rows: %+v %v", js.Spared, err)
 	}
 	// a tenant that left the job is reaped as before
 	runAll(t, []string{"jobs", "disable", "tiny"})
 	out = captureOutput(t, func() {
 		runAll(t, []string{"session", "reap", "-t", "gate-app", "--older-than", "1h", "--except", "desk"})
 	})
-	if !strings.Contains(out, "reaped session boss") || strings.Contains(out, "session desk") {
+	if !strings.Contains(out, "reaped session boss") || strings.Contains(out, "reaped session desk") {
 		t.Fatalf("after disable:\n%s", out)
 	}
 }

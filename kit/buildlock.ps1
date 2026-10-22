@@ -2,7 +2,10 @@
 # Usage: ./buildlock.ps1 COMMAND [ARGS...]   (exit code = the command's; 75 = timed out waiting)
 # Env: BUILDLOCK_DIR (lock folder), BUILDLOCK_TIMEOUT (seconds to wait, default 1800).
 # The lock is a folder made with New-Item, which fails when it exists; a lock whose owner process is gone is taken over.
-param([Parameter(Mandatory = $true, Position = 0)][string]$Command, [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest)
+# No param() block: it would make this an advanced script and bind the wrapped command's -v, -o, -e to common parameters.
+if ($args.Count -lt 1) { [Console]::Error.WriteLine('usage: buildlock.ps1 COMMAND [ARGS...]'); exit 2 }
+$Command = $args[0]
+$Rest = @($args | Select-Object -Skip 1)
 $lock = if ($env:BUILDLOCK_DIR) { $env:BUILDLOCK_DIR } else { Join-Path ([System.IO.Path]::GetTempPath()) 'buildlock-@@JOB@@' }
 $timeout = if ($env:BUILDLOCK_TIMEOUT) { [int]$env:BUILDLOCK_TIMEOUT } else { 1800 }
 $waited = 0
@@ -11,9 +14,21 @@ while ($true) {
   $owner = $null
   try { $owner = [int](Get-Content -Path (Join-Path $lock 'pid') -ErrorAction Stop) } catch {}
   if ($owner -and -not (Get-Process -Id $owner -ErrorAction SilentlyContinue)) {
-    Remove-Item -Recurse -Force $lock -ErrorAction SilentlyContinue
-    continue
+    # only the holder of $lock.takeover removes a stale lock, so the lock cannot be replaced under us;
+    # re-read the owner first, another waiter may have finished the takeover already
+    $mutex = "$lock.takeover"
+    $got = $false
+    try { New-Item -ItemType Directory -Path $mutex -ErrorAction Stop | Out-Null; $got = $true } catch {}
+    if ($got) {
+      $now = $null
+      try { $now = [int](Get-Content -Path (Join-Path $lock 'pid') -ErrorAction Stop) } catch {}
+      if ($now -eq $owner) { Remove-Item -Recurse -Force $lock -ErrorAction SilentlyContinue }
+      Remove-Item -Recurse -Force $mutex -ErrorAction SilentlyContinue
+      continue
+    }
   }
+  # a takeover folder left by a crashed waiter is cleared after a minute
+  if ((Test-Path "$lock.takeover") -and ((Get-Date) - (Get-Item "$lock.takeover").LastWriteTime).TotalSeconds -gt 60) { Remove-Item -Recurse -Force "$lock.takeover" -ErrorAction SilentlyContinue }
   if ($waited -ge $timeout) {
     [Console]::Error.WriteLine("buildlock: timed out after ${timeout}s waiting for $lock")
     exit 75

@@ -101,14 +101,28 @@ func humanName(cmd string, o map[string]string) (string, error) {
 	if err := refuseSession(o, cmd); err != nil {
 		return "", err
 	}
+	return humanBy(cmd, o)
+}
+
+// humanBy is --by NAME, else the login name when stdin is a terminal.
+func humanBy(cmd string, o map[string]string) (string, error) {
 	by := strings.TrimSpace(o["by"])
 	if by == "" {
 		if !stdinIsTerminal() {
 			return "", fmt.Errorf("%s needs --by NAME when stdin is not a terminal", cmd)
 		}
-		by = value(map[string]string{"u": os.Getenv("USER")}, "u", "human")
+		by = value(map[string]string{"u": firstEnv("USER", "USERNAME")}, "u", "human")
 	}
 	return by, nil
+}
+
+func firstEnv(keys ...string) string {
+	for _, k := range keys {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func releaseOwner(w *Workspace, it *Item) {

@@ -1,5 +1,5 @@
 # Tiny &lt;job&gt;
-Updated <NOW> local
+Updated <NOW> +0000
 Page: https\:\/\/example\.com\/news\?a\=1&amp;b\=2
 
 ## Headline

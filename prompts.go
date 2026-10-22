@@ -32,9 +32,6 @@ type promptData struct {
 	// Coordinated-job variables (neutral defaults without --job; jobs.<id> with it).
 	Job, Title, Lock, Worktrees, NewsOut, NewsURL string
 	MaxWorkers                                    int
-	// Ceremonies is the template hook for docs/specs/ceremonies.md (not built yet): when set, its text is
-	// rendered at the end of the dispatcher and newsdesk prompts. Always empty today.
-	Ceremonies string
 }
 
 func (d promptData) render(name string) string {
@@ -177,11 +174,6 @@ func getPromptCommand(path string, w *Workspace, args []string) error {
 	}
 	fmt.Println(prompt)
 	return nil
-}
-
-func buildDispatcherPrompt(path string, w *Workspace, name string) string {
-	d, _ := jobPromptData(w, "")
-	return buildDispatcherPromptJob(path, w, name, d)
 }
 
 func buildDispatcherPromptJob(path string, w *Workspace, name string, d promptData) string {

@@ -365,7 +365,7 @@ func renderNewsMD(p newsPart, d newsData, events, summaryMax int) string {
 func newsMDFit(p newsPart, d newsData) string {
 	// the markers expand to at most this many characters when the file is written
 	fits := func(s string) bool {
-		s = strings.ReplaceAll(s, newsStampMarker, "2006-01-02 15:04 local")
+		s = strings.ReplaceAll(s, newsStampMarker, "2006-01-02 15:04 -0700")
 		s = strings.ReplaceAll(s, newsMovedMarker, "; 99999 moved since the last run")
 		return len([]rune(s)) <= newsMDLimit
 	}
@@ -448,7 +448,7 @@ func renderNewsHTML(parts []newsPart, datas []newsData, title string) string {
 
 // newsFill replaces the markers: with the real stamp and moved count when writing, with "" when hashing.
 func newsFill(content string, now time.Time, moved int, hasPrev, hashing bool) string {
-	stamp, mv := now.Local().Format("2006-01-02 15:04")+" local", "; first run"
+	stamp, mv := now.Local().Format("2006-01-02 15:04 -0700"), "; first run"
 	if hasPrev {
 		mv = fmt.Sprintf("; %d moved since the last run", moved)
 	}

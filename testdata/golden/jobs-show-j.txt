@@ -9,11 +9,11 @@
     "max_workers": 4,
     "worktrees": "on",
     "lock": "",
-    "news.out": "docs/news/",
-    "news.url": "",
+    "news_out": "docs/news/",
+    "news_url": "",
     "summary": "",
     "pane": "on",
-    "pane.style": ""
+    "pane_style": ""
   },
   {
     "id": "tiny",
@@ -26,10 +26,10 @@
     "max_workers": 2,
     "worktrees": "on",
     "lock": "",
-    "news.out": "docs/news/",
-    "news.url": "https://example.com/news",
+    "news_out": "docs/news/",
+    "news_url": "https://example.com/news",
     "summary": "",
     "pane": "on",
-    "pane.style": ""
+    "pane_style": ""
   }
 ]

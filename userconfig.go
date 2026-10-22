@@ -21,7 +21,6 @@ const userConfigName = "mw-user.json"
 
 var (
 	alertNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
-	fanfareUsePatten = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 )
 
 // userModeCheck is false on Windows.
@@ -135,7 +134,7 @@ func setUserKey(c *UserConfig, key, val string) error {
 		}
 		c.Fanfare.Enabled = &b
 	case "fanfare.use":
-		if val != "" && val != "all" && !fanfareUsePatten.MatchString(val) {
+		if val != "" && val != "all" && !setNameRe.MatchString(val) {
 			return fmt.Errorf("fanfare.use: %q must be a set name or all", val)
 		}
 		c.Fanfare.Use = val
@@ -149,10 +148,10 @@ func setUserKey(c *UserConfig, key, val string) error {
 type userView struct {
 	Path           string   `json:"path"`
 	Exists         bool     `json:"exists"`
-	AlertsOn       []string `json:"alerts.on"`
-	AlertsExec     []string `json:"alerts.exec"`
-	FanfareEnabled *bool    `json:"fanfare.enabled"`
-	FanfareUse     string   `json:"fanfare.use"`
+	AlertsOn       []string `json:"alerts_on"`
+	AlertsExec     []string `json:"alerts_exec"`
+	FanfareEnabled *bool    `json:"fanfare_enabled"`
+	FanfareUse     string   `json:"fanfare_use"`
 }
 
 func userCommand(args []string) error {
@@ -239,20 +238,27 @@ var userConfigWarned bool
 // fanfareEffective is the board's fanfare config with the per-user fanfare.enabled applied on top
 // (the user's choice wins over the committed board). A broken user file is ignored with one stderr note.
 func fanfareEffective(w *Workspace) FanfareConfig {
+	c, _ := fanfareEffectiveSrc(w)
+	return c
+}
+
+// fanfareEffectiveSrc is fanfareEffective plus where enabled and use came from ("user" or "board").
+func fanfareEffectiveSrc(w *Workspace) (FanfareConfig, map[string]string) {
 	c := fanfareCfg(w)
+	src := map[string]string{"enabled": "board", "use": "board"}
 	u, _, _, err := readUserConfig()
 	if err != nil {
 		if !userConfigWarned {
 			userConfigWarned = true
 			fmt.Fprintln(os.Stderr, "mw: per-user config ignored:", err)
 		}
-		return c
+		return c, src
 	}
 	if u.Fanfare.Enabled != nil {
-		c.Enabled = *u.Fanfare.Enabled
+		c.Enabled, src["enabled"] = *u.Fanfare.Enabled, "user"
 	}
 	if u.Fanfare.Use != "" {
-		c.Use = u.Fanfare.Use
+		c.Use, src["use"] = u.Fanfare.Use, "user"
 	}
-	return c
+	return c, src
 }

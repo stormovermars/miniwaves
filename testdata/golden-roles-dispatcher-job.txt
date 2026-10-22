@@ -7,6 +7,8 @@ Inspect:
   mw log -A -n 20
   mw session list
 
+Register: `mw session start dispatcher -t TENANT -a dispatcher` once, so `mw session reap` leaves you alone.
+
 Free live session: message it to run `mw next -j`. Otherwise run `mw get-prompt session SESSION -t TENANT -a ROLE -j` (exit 3 = the session exists) and spawn its prompt with the host tool; `--headless` when you claim the item for it.
 New tenant: `mw tenant add SLUG NAME -d DIR`; record prompt → story → ready work; spawn a session.
 A wave (mw wave) closes only after every protocol step is ticked with evidence (mw wave step).

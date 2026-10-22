@@ -849,15 +849,21 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 			}
 		}
 		_, merr := os.Stat(filepath.Join(dir, manifestName))
+		eff, src := fanfareEffectiveSrc(w) // config stays the board's; enabled/use are what a play would do
 		if o["json"] == "true" {
-			return fanfareStatusJSON(map[string]any{"config": c, "dir": dir, "ready": ready, "unplayable": unplayable, "incomplete": incomplete, "empty": empty, "manifest": merr == nil}, c, pairs)
+			return fanfareStatusJSON(map[string]any{"config": c, "dir": dir, "ready": ready, "unplayable": unplayable, "incomplete": incomplete, "empty": empty, "manifest": merr == nil, "source": src}, eff, pairs)
 		}
-		state := "disabled"
-		if c.Enabled {
-			state = "enabled"
+		onOff := func(b bool) string { return map[bool]string{true: "enabled", false: "disabled"}[b] }
+		state := onOff(eff.Enabled)
+		if src["enabled"] == "user" {
+			state += " (user; board: " + onOff(c.Enabled) + ")"
 		}
 		fmt.Printf("fanfare: %s\ndir: %s\nmilestone_seconds: %d\nfinale_seconds: %d\nvolume: %g\nstop_dialog: %v\n", state, c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume, *c.StopDialog)
-		fmt.Printf("use: %s\n", activeSet(c))
+		if src["use"] == "user" {
+			fmt.Printf("use: %s (user; board: %s)\n", activeSet(eff), activeSet(c))
+		} else {
+			fmt.Printf("use: %s\n", activeSet(c))
+		}
 		man := "manifest present"
 		if merr != nil {
 			man = "no manifest (mw fanfare fetch)"

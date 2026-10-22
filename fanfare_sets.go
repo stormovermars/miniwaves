@@ -100,7 +100,7 @@ func fanfareSetsCommand(path string, w *Workspace, o map[string]string, pos []st
 	c := fanfareCfg(w)
 	pairs := scanPairs(dir)
 	if len(pos) == 0 {
-		use := activeSet(c)
+		use := activeSet(fanfareEffective(w))
 		if o["json"] == "true" {
 			type sj struct {
 				Name   string    `json:"name"`

@@ -417,8 +417,9 @@ It stays open until an answer follows it on the same item. mw review shows it as
 		"answer": `mw answer ID TEXT... --by NAME [-t SLUG]
 Human only (refused under MW_SESSION or -s; --by NAME when stdin is not a terminal). Appends an "answer" event that
 closes the item's open ask; refused when the item has none.`,
-		"decide": `mw decide TEXT... --by NAME [-b WHY] [-p ID] [-t SLUG]
-Record a decision as a "decide" event on item ID (-p), else on the tenant's "Decisions" chore, which is created
+		"decide": `mw decide TEXT... [--by NAME] [-s SESSION] [-b WHY] [-p ID] [-t SLUG]
+Open to humans and sessions: with -s (or MW_SESSION) the event is recorded by that session and --by NAME is kept in the
+note as "(for NAME)"; else by --by NAME (required when stdin is not a terminal), else the login name. Record a decision as a "decide" event on item ID (-p), else on the tenant's "Decisions" chore, which is created
 (already done, so it holds nothing open) on first use. -b WHY is kept in the note as "(why: WHY)". Any board, no gate.`,
 		"user": `mw user show [-j]
 mw user set KEY=VALUE...
@@ -566,7 +567,7 @@ Usage:
   mw user show [-j] | mw user set KEY=VALUE...
   mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]
   mw news [--job ID] [--format md|html|text] [--width N] [-o PATH] [-j]
-  mw ask ID QUESTION... [-s NAME] | mw answer ID TEXT... --by NAME | mw decide TEXT... --by NAME [-b WHY] [-p ID]
+  mw ask ID QUESTION... [-s NAME] | mw answer ID TEXT... --by NAME | mw decide TEXT... [--by NAME] [-b WHY] [-p ID]
   mw gate [-t SLUG] [-j] | gate level trust|proof|spec|judged | gate evidence|acceptance|judge on|off|auto [--by NAME]
   mw review [-t SLUG] [-j]
   mw judge ID [-t SLUG]
