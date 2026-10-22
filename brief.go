@@ -29,6 +29,7 @@ type logRow struct {
 	Action  string `json:"action" toon:"action"`
 	By      string `json:"by" toon:"by"`
 	Note    string `json:"note" toon:"note"`
+	Key     string `json:"key,omitempty" toon:"key,omitempty"` // tenant/item/index, set by log --since
 	sortKey time.Time
 }
 
@@ -68,7 +69,7 @@ func tenantRows(t *Tenant) []logRow {
 	var rows []logRow
 	for _, it := range t.Items {
 		for _, e := range it.Events {
-			rows = append(rows, logRow{e.At, t.Slug, it.ID, e.Action, e.By, e.Note, parseTS(e.At)})
+			rows = append(rows, logRow{At: e.At, Tenant: t.Slug, Item: it.ID, Action: e.Action, By: e.By, Note: e.Note, sortKey: parseTS(e.At)})
 		}
 	}
 	return rows
@@ -111,8 +112,15 @@ func logCommand(w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "tenant", "session", "all", "limit", "json", "tag"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "all", "limit", "json", "tag", "since", "lookback"); err != nil {
 		return err
+	}
+	_, since := o["since"]
+	if _, lb := o["lookback"]; lb && !since {
+		return errors.New("--lookback needs --since")
+	}
+	if since {
+		return logSinceCommand(w, o)
 	}
 	limit := 20
 	if o["limit"] != "" {
@@ -453,4 +461,61 @@ func copyEvidence(paths []string, dest string) ([]string, error) {
 		out = append(out, fmt.Sprintf("%s %d", filepath.ToSlash(j.rel), size))
 	}
 	return out, nil
+}
+
+// logSinceCommand is mw log --since CURSOR: events the cursor has not delivered, oldest first, plus the next cursor.
+func logSinceCommand(w *Workspace, o map[string]string) error {
+	limit := 0 // a feed is complete unless -n says otherwise
+	if o["limit"] != "" {
+		if _, e := fmt.Sscanf(o["limit"], "%d", &limit); e != nil || limit < 1 {
+			return errors.New("-n needs a positive number")
+		}
+	}
+	lookback := defaultLookback
+	if o["lookback"] != "" {
+		d, err := parseAge(o["lookback"])
+		if err != nil {
+			return fmt.Errorf("--lookback: %w", err)
+		}
+		lookback = d
+	}
+	var tenants []*Tenant
+	if o["all"] == "true" {
+		if o["tenant"] != "" {
+			return errors.New("mw log -A cannot be combined with -t")
+		}
+		for _, t := range shown(w, o) {
+			announceTenant(w, t)
+			tenants = append(tenants, t)
+		}
+	} else {
+		t, err := selectTenant(w, o)
+		if err != nil {
+			return err
+		}
+		tenants = []*Tenant{t}
+	}
+	rows, next, err := logSince(tenants, o["since"], lookback, limit)
+	if err != nil {
+		return err
+	}
+	if o["json"] == "true" {
+		return printJSON(struct {
+			Events []logRow `json:"events"`
+			Next   string   `json:"next"`
+		}{rows, next})
+	}
+	for _, r := range rows {
+		by := r.By
+		if by == "" {
+			by = "-"
+		}
+		line := fmt.Sprintf("%s  %s  %-8s %-9s %s", shortTS(r.At), r.Tenant, r.Item, r.Action, by)
+		if r.Note != "" {
+			line += "  " + compactText(r.Note, 90)
+		}
+		fmt.Println(line)
+	}
+	fmt.Println("next: " + next)
+	return nil
 }

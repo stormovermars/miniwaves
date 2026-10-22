@@ -140,6 +140,7 @@ mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v]   # the same full brief as show;
 mw next --claim [-s NAME] [-a ROLE] [-t SLUG] [-k KIND] [-j]   # pick + start in one locked step; -j adds "claimed": true
 mw archive [--days N] [-t SLUG] [--dry-run]   # done items older than N days (30) -> .miniwaves/<slug>.archive.json
 mw log [-t SLUG | -A] [-n N] [-j]   # activity feed, newest first
+mw log [-t SLUG | -A] --since CURSOR|start [--lookback DUR] [-n N] [-j]   # resumable feed, oldest first, plus a next cursor
 mw board [-t SLUG | -A] [-v] [-j]   # last: <ago> <item> <action>, today: N done; -A sorted by last activity
 mw context [-t SLUG] [-s NAME] [-j]
 ```
@@ -286,6 +287,14 @@ block/done note.
 - An **open ask** is the last `ask` of an item with no later `answer` on that item (one answer closes every earlier ask).
 - `mw review` shows open asks as `needs you`, `mw review -j` gains `needs` (`[{tenant, item, question, by, at}]`, always an array), and the text `mw board` prints a `NEEDS YOU` block.
 - `mw decide TEXT... --by NAME [-b WHY] [-p ID]` appends a `decide` event to `-p ID`, else to the tenant's `Decisions` chore, created on first use (already `done`, so it never holds the tenant open). `-b WHY` is stored as `(why: WHY)` at the end of the note.
+
+## Resumable log (`log --since`)
+
+`mw log [-t SLUG | -A] --since CURSOR|start [--lookback DUR] [-n N] [-j]` is an event feed a poller can resume. It lists, oldest first, the events the cursor has not delivered, then a `next` cursor (`-j`: `{"events": [...], "next": "..."}`, each event with a `key`; text: a last `next: CURSOR` line). `--since ""` and `--since start` return everything; `-n` keeps the first N and `next` resumes after them.
+
+- The cursor is opaque (base64 of a time and the event keys seen near it). An event's key is `tenant/item/eventIndex`.
+- Each read re-scans from the cursor time minus the lookback (default `24h`; `--lookback 90m`, `2h`, `1d`) and drops the keys already delivered. An event stamped before the cursor that reaches the board later (a `git merge` from another clone) is therefore returned exactly once. One that arrives later than the lookback is not returned; keep the same `--lookback` on every read of a cursor.
+- `mw archive` removes whole items from the feed; their keys fall out of the cursor and nothing is replayed.
 
 ## Coordinated jobs
 
