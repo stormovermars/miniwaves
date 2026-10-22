@@ -379,7 +379,7 @@ func scopeOf(w *Workspace, args []string) scope {
 		single = hasT
 	case "get-prompt":
 		single = sub == "session"
-	case "tenant", "dirs", "fanfare", "jobs":
+	case "tenant", "dirs", "fanfare", "jobs", "init":
 		idx = true
 	}
 	if !single {

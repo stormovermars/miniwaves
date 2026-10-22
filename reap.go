@@ -111,6 +111,20 @@ func releaseSession(w *Workspace, s *Session, note, by string) []string {
 	return ids
 }
 
+// isJobRole reports whether the session is a dispatcher or newsdesk of a tenant whose job exists:
+// reap leaves those alone by default, so wr's plain `reap -t T --older-than X` is safe for a job.
+func isJobRole(w *Workspace, s *Session) bool {
+	if s.Agent != "dispatcher" && s.Agent != "newsdesk" {
+		return false
+	}
+	t, err := tenantBySlug(w, s.Tenant)
+	if err != nil || t.Job == "" {
+		return false
+	}
+	_, ok := w.Jobs[t.Job]
+	return ok
+}
+
 type reapRow struct {
 	Session string   `json:"session"`
 	Tenant  string   `json:"tenant"`
@@ -156,7 +170,7 @@ func reapCommand(path string, w *Workspace, o map[string]string, pos []string) e
 	rows := []reapRow{}
 	for i := range w.Sessions {
 		s := &w.Sessions[i]
-		if s.State == "stopped" || isLocalID(s.ID) || except[s.ID] || (slug != "" && s.Tenant != slug) {
+		if s.State == "stopped" || isLocalID(s.ID) || except[s.ID] || (slug != "" && s.Tenant != slug) || isJobRole(w, s) {
 			continue
 		}
 		last := parseTS(s.Updated)

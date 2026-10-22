@@ -99,7 +99,7 @@ an initialized workspace.
 
 ```text
 mw description [-j]
-mw init [workspace name]
+mw init [workspace name] | mw init --kit coordinated --job ID   # the kit writes files only (see "Kit")
 mw tenant add SLUG [NAME...] [-d DIR]   # on an existing slug with -d: updates the path
 mw tenant list [-j] [-v] | default [SLUG|-]
 mw migrate [--dry-run] [PATH]   # upgrade a schema 5/6 workspace file to 7 (MIGRATION.md)
@@ -350,6 +350,18 @@ mw get-prompt newsdesk [NAME] [--job ID] [-j]
 - **dispatcher** routes work and reviews it. For sessions it spawns, the review loop is: the worker signals `mw note ID "ready for review"` and stays `doing`; the dispatcher reviews the diff, merges, re-runs the tests, then runs `mw done`. One task per session; a brief ends with "ping when ready, need input, or idle"; a question only a human can answer goes through `mw ask`. wr builders are unchanged: they keep `mw done` / `mw block`.
 - **newsdesk** runs `mw news`, tells the human what changed in a few lines, keeps the human docs current, and alerts only on two events: a milestone closed or a new needs-you item. It never edits code, the board or the plan.
 - `--job ID` fills the variables from `jobs.<ID>`: `max_workers`, `worktrees`, `lock` (the dispatcher), `title`, `news.out`, `news.url` (the newsdesk). Without `--job` the defaults apply (4 workers, worktrees on, no lock). An unknown job is an error. Prompts are embedded in mw and never read from repo files.
+
+### Kit
+
+```text
+mw init --kit coordinated --job ID
+```
+
+Writes files only, into the workspace folder: `PLAN.md` (a plan skeleton), `NEWSDESK.md` (the news desk's page spec), `buildlock.sh` and `buildlock.ps1` (a lock made with `mkdir`, so it works on macOS, Linux and Windows; `./buildlock.sh CMD...` waits up to `BUILDLOCK_TIMEOUT` seconds, default 1800, then exits 75; a lock whose owner process is gone is taken over; `BUILDLOCK_DIR` moves the lock folder). It never overwrites a file: existing ones are listed as skipped, so a second run changes nothing. It creates job ID if missing, like `mw jobs enable` with no tenants (add them with `mw jobs enable ID -t SLUG`), and prints the two `mw get-prompt ... --job ID` commands. It writes the index only when it creates the job. Set `mw jobs set ID lock=buildlock.sh` to put the lock into the dispatcher prompt.
+
+### Reap and job roles
+
+When a tenant's job exists (`mw jobs`), `mw session reap` skips sessions whose role (`-a`) is `dispatcher` or `newsdesk` by default, with no new flag, so a runner's plain `mw session reap -t T --older-than X` leaves the coordinator alone. `--except NAME,NAME` still skips any other session. A tenant with no job, or one that left it, reaps exactly as before.
 
 ## Fanfare
 

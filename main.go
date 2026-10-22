@@ -29,7 +29,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "lookback": true, "job": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true,
+	"since": true, "lookback": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -106,7 +106,7 @@ func run(args []string) error {
 			return usage(args[0])
 		}
 	}
-	if args[0] == "init" {
+	if args[0] == "init" && !hasFlag(args[1:], "--kit") {
 		name := filepath.Base(mustGetwd())
 		if len(args) > 1 {
 			name = strings.Join(args[1:], " ")
@@ -223,6 +223,8 @@ func dispatch(path string, w *Workspace, args []string) error {
 		return fanfareCommand(path, w, args[1:])
 	case "jobs":
 		return jobsCommand(path, w, args[1:])
+	case "init": // only with --kit (a plain init runs before a workspace is loaded); it writes, so it is never in readOnly
+		return initKit(path, w, args[1:])
 	case "ask":
 		return askCommand(path, w, args[1:])
 	case "answer":
@@ -252,6 +254,15 @@ func dispatch(path string, w *Workspace, args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q (try mw help)", args[0])
 	}
+}
+
+func hasFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
 }
 
 // readOnly reports whether the command only reads the board (shared lock).
@@ -306,8 +317,13 @@ Upgrade an old workspace file (schema 5, 6 or 7) to schema 8 in place (the index
 prints what changed; --dry-run prints without writing. The only command that reads old schemas
 (see MIGRATION.md).`,
 		"init": `mw init [WORKSPACE NAME]
+mw init --kit coordinated --job ID
 Create .miniwaves.json (the index) and .miniwaves/<slug>.json in the current folder with one tenant.
-Example: mw init "My apps"`,
+Example: mw init "My apps"
+--kit coordinated (inside an existing workspace) writes files only, into the workspace folder: PLAN.md (a plan skeleton), NEWSDESK.md (the
+news desk's page spec), buildlock.sh and buildlock.ps1 (a mkdir lock with a timeout; BUILDLOCK_TIMEOUT seconds, default 1800; run ./buildlock.sh CMD...).
+It never overwrites a file (existing ones are reported as skipped), creates job ID if missing like mw jobs enable with no tenants, and prints the
+two get-prompt commands. Safe to repeat.`,
 		"tenant": `mw tenant add SLUG [NAME...] [-d DIR]
 mw tenant list [-j] [-v] [--tag T]
 mw tenant default [SLUG|-]
@@ -340,7 +356,9 @@ stop refuses while the session owns an item; --release first sets its doing item
 cleared, a note appended) and then stops it. reap releases and stops every session idle longer than
 --older-than (default 2h; 90m, 2h, 1d) in -t TENANT or all tenants (-A); --except NAME,NAME skips those sessions; -n/--dry-run only prints. A
 session's last activity is set by session start and by every start/ready/block/done/reopen, note and
-edit it runs. The implicit local session is never reaped.`,
+edit it runs. The implicit local session is never reaped.
+Job roles: when the session's tenant belongs to a job that exists (mw jobs), reap also skips sessions whose role (-a) is dispatcher or newsdesk,
+with no extra flag; --except still skips any named session.`,
 		"get-prompt": `mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]
 mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
 Print a minimal embedded prompt to paste into an assistant. Retrieval changes no state.
@@ -521,7 +539,7 @@ Usage:
   mw migrate [--dry-run] [PATH]
   mw version [-j]
   mw update [--check]
-  mw init [workspace name]
+  mw init [workspace name] | mw init --kit coordinated --job ID
   mw tenant add SLUG [NAME...] [-d DIR]
   mw tenant list [-j] [-v] [--tag T] | default [SLUG|-] | archive|restore SLUG | tag SLUG +T -T
   mw dirs [init] [-j] | set datalake|docs|data|tools|templates|builds|evidence|scratch PATH
