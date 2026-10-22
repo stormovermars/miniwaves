@@ -58,8 +58,8 @@ func TestMigrateSchema7To8(t *testing.T) {
 		t.Fatalf("backup: %v", err)
 	}
 	ix, _ := os.ReadFile(path)
-	if strings.Contains(string(ix), `"items"`) || !strings.Contains(string(ix), `"version":8`) {
-		t.Fatalf("index must be schema 8 without items: %.300s", ix)
+	if strings.Contains(string(ix), `"items"`) || !strings.Contains(string(ix), `"version":9`) {
+		t.Fatalf("index must be schema 9 without items: %.300s", ix)
 	}
 	if _, err := os.Stat(rootArchive); err == nil {
 		t.Fatal("the root archive was left behind")
@@ -87,7 +87,7 @@ func TestMigrateSchema7To8(t *testing.T) {
 		t.Fatal("migrated board differs from the schema 7 content")
 	}
 	runAll(t, []string{"board", "-A"}, []string{"list", "-t", "t3"})
-	if out := captureOutput(t, func() { runAll(t, []string{"migrate"}) }); !strings.Contains(out, "already schema 8") {
+	if out := captureOutput(t, func() { runAll(t, []string{"migrate"}) }); !strings.Contains(out, "already schema 9") {
 		t.Fatal(out) // idempotent
 	}
 }

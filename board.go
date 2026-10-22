@@ -13,7 +13,7 @@ import (
 
 const (
 	dataFile      = ".miniwaves.json"
-	currentSchema = 8
+	currentSchema = 9
 )
 
 var kinds = map[string]string{

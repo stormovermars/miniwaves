@@ -318,7 +318,7 @@ On Unix mw refuses to read the file when it is group- or world-writable (`chmod 
 
 ## Coordinated jobs
 
-A job groups tenants under one coordinator. mw only stores the config and ships prompts and data; it never starts a session. The config lives in `.miniwaves.json` as an omitempty `jobs` object keyed by job id (a tenant carries `"job": ID`), in schema 8 with no migration: a board that never opts in is unchanged.
+A job groups tenants under one coordinator. mw only stores the config and ships prompts and data; it never starts a session. The config lives in `.miniwaves.json` as an omitempty `jobs` object keyed by job id (a tenant carries `"job": ID`), in schema 9 (a board from 0.2.x needs `mw migrate`, which only bumps the version; a 0.2.8 or older mw then refuses the board instead of silently rewriting the index without `jobs`, `job` and fanfare `sets`).
 
 ```text
 mw jobs enable ID -t SLUG...        # create the job if needed and put the tenants in it (-t repeats or takes a comma list)

@@ -42,7 +42,7 @@ type indexTenant struct {
 	Job      string   `json:"job,omitempty"`
 }
 
-// indexDoc is the schema 8 .miniwaves.json.
+// indexDoc is the schema 9 .miniwaves.json.
 type indexDoc struct {
 	Version  int                  `json:"version"`
 	Name     string               `json:"name"`
@@ -91,6 +91,23 @@ func load(path string) (*Workspace, error) { return loadScoped(path, true) }
 // loadScoped reads the index and, with all, every tenant file, else only the named ones
 // (the other tenants stay listed but empty: a command must not touch them).
 func loadScoped(path string, all bool, slugs ...string) (*Workspace, error) {
+	return loadScopedFrom(path, currentSchema, all, slugs...)
+}
+
+// checkSchema is the guard every reader runs: a board newer than cur is refused (upgrade mw), an older one
+// needs mw migrate. cur is currentSchema (a parameter so a test can play an older build).
+func checkSchema(path string, v, cur int, hasTenants bool) error {
+	if v > cur {
+		return fmt.Errorf("workspace schema %d is newer than this mw supports (schema %d): upgrade mw", v, cur)
+	}
+	if v < cur || !hasTenants {
+		return fmt.Errorf("%s is schema %d and this mw only reads schema %d: run mw migrate (see MIGRATION.md)", path, v, cur)
+	}
+	return nil
+}
+
+// loadScopedFrom is loadScoped for a board of schema minSchema (mw migrate reads the previous one).
+func loadScopedFrom(path string, minSchema int, all bool, slugs ...string) (*Workspace, error) {
 	b, err := readIndexBytes(path)
 	if err != nil {
 		return nil, err
@@ -99,11 +116,8 @@ func loadScoped(path string, all bool, slugs ...string) (*Workspace, error) {
 	if err := json.Unmarshal(b, &ix); err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	if ix.Version > currentSchema {
-		return nil, fmt.Errorf("workspace schema %d is newer than this mw supports (schema %d): upgrade mw", ix.Version, currentSchema)
-	}
-	if ix.Version < currentSchema || len(ix.Tenants) == 0 {
-		return nil, fmt.Errorf("%s is schema %d and this mw only reads schema %d: run mw migrate (see MIGRATION.md)", path, ix.Version, currentSchema)
+	if err := checkSchema(path, ix.Version, minSchema, len(ix.Tenants) > 0); err != nil {
+		return nil, err
 	}
 	w := &Workspace{Version: ix.Version, Name: ix.Name, Defaults: ix.Defaults, Protocol: ix.Protocol, Folders: ix.Folders,
 		Gates: ix.Gates, GateBy: ix.GateBy, Publish: ix.Publish, Fanfare: ix.Fanfare, Jobs: ix.Jobs, Sessions: []Session{}, base: map[string]string{}}

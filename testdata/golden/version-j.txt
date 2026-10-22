@@ -1,7 +1,7 @@
 {
   "version": "0.2.9",
-  "schema": 8,
-  "board_schema": 8,
+  "schema": 9,
+  "board_schema": 9,
   "board": "<DIR>/.miniwaves.json",
   "tenants": [
     {

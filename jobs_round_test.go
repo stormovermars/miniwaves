@@ -39,7 +39,7 @@ func TestJobsRoundTripAndOldReader(t *testing.T) {
 			Name string `json:"name"`
 		} `json:"tenants"`
 	}
-	if err := json.Unmarshal(after, &old); err != nil || old.Version != 8 || len(old.Tenants) != 3 {
+	if err := json.Unmarshal(after, &old); err != nil || old.Version != 9 || len(old.Tenants) != 3 {
 		t.Fatalf("old reader: %v %+v", err, old)
 	}
 	// a board that never opts in has no jobs or job keys at all

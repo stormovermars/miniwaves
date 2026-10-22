@@ -36,7 +36,7 @@ func TestJobsEnableSetShowDisable(t *testing.T) {
 		c.NewsURL != "https://example.com/n" || c.Summary != "out/summary.txt" || c.Pane != "off" || c.PaneStyle != "blocks" {
 		t.Fatalf("job: %+v", c)
 	}
-	if w.Version != 8 {
+	if w.Version != 9 {
 		t.Fatalf("schema %d", w.Version)
 	}
 	jobOf := map[string]string{}

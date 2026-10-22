@@ -314,7 +314,7 @@ func usage(topic string) error {
 Explain what miniwaves does and show the human and coding-assistant workflows.
 Works before initialization. Output is TOON by default; -j selects JSON.`,
 		"migrate": `mw migrate [--dry-run] [PATH]
-Upgrade an old workspace file (schema 5, 6 or 7) to schema 8 in place (the index stays .miniwaves.json, each tenant moves to .miniwaves/<slug>.json); PATH defaults to the
+Upgrade an old workspace file (schema 5 to 8) to schema 9 in place (the index stays .miniwaves.json, each tenant moves to .miniwaves/<slug>.json); PATH defaults to the
 .miniwaves.json found upward from the current folder. Backs it up to <file>.bak<schema> (e.g. .miniwaves.json.bak7) and
 prints what changed; --dry-run prints without writing. The only command that reads old schemas
 (see MIGRATION.md).`,

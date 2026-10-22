@@ -84,6 +84,14 @@ func migrateBytes(b []byte, path string) (*Workspace, int, []string, error) {
 		return nil, 0, nil, fmt.Errorf("read %s: %w", path, err)
 	}
 	from := w.Version
+	if from == currentSchema-1 { // schema 8 -> 9: same layout, the version is the whole change
+		w8, err := loadScopedFrom(path, from, true)
+		if err != nil {
+			return nil, from, nil, err
+		}
+		w8.Version = currentSchema
+		return w8, from, []string{"schema 9 stops older mw builds from rewriting the index and dropping jobs, tenant jobs and fanfare sets"}, nil
+	}
 	if from > currentSchema {
 		return nil, from, nil, fmt.Errorf("workspace schema %d is newer than this mw supports (schema %d): upgrade mw", from, currentSchema)
 	}

@@ -60,7 +60,7 @@ func TestMigrateMatchesHandRecipe(t *testing.T) {
 		}
 		runAll(t, []string{"board"}, []string{"log"})
 		out := captureOutput(t, func() { runAll(t, []string{"migrate"}) })
-		if !strings.Contains(out, "already schema 8") {
+		if !strings.Contains(out, "already schema 9") {
 			t.Fatal(out)
 		}
 	}
@@ -70,7 +70,7 @@ func TestOldAndNewerBoardsAreRefused(t *testing.T) {
 	path := inTempDir(t)
 	os.WriteFile(path, fixture(t, "v5.json"), 0o600)
 	for _, args := range [][]string{{"board"}, {"add", "task", "x"}, {"log"}} {
-		wantErr(t, "is schema 5 and this mw only reads schema 8: run mw migrate", args...)
+		wantErr(t, "is schema 5 and this mw only reads schema 9: run mw migrate", args...)
 	}
 	os.WriteFile(path, []byte(`{"version":99,"name":"N","tenants":[{"slug":"n","name":"N"}]}`), 0o600)
 	wantErr(t, "upgrade mw", "board")

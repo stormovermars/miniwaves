@@ -60,11 +60,11 @@ func TestStartGuardAndClaim(t *testing.T) {
 func TestVersionBoardSchema(t *testing.T) {
 	path, _, _ := contractBoard(t)
 	m := jsonOut(t, "version", "-j")
-	if m["board_schema"] != float64(8) || !strings.HasSuffix(m["board"].(string), dataFile) || m["version"] != "0.2.9" {
+	if m["board_schema"] != float64(9) || !strings.HasSuffix(m["board"].(string), dataFile) || m["version"] != "0.2.9" {
 		t.Fatalf("version: %v", m)
 	}
 	b, _ := os.ReadFile(path)
-	os.WriteFile(path, []byte(strings.Replace(string(b), `"version":8`, `"version":5`, 1)), 0600)
+	os.WriteFile(path, []byte(strings.Replace(string(b), `"version":9`, `"version":5`, 1)), 0600)
 	if m := jsonOut(t, "version", "-j"); m["board_schema"] != float64(5) {
 		t.Fatalf("old schema: %v", m)
 	}
