@@ -4,7 +4,7 @@ import type { Register } from 'claude-code'
 import type { Counts, Entry, Tab, SwState, Favorites } from './switcher'
 import { pollPlan, rrSlice, attentionSort, badgeOf, cleanFavorites, countsShort, cutLabel, fitCols, hhmm as hhmmMs, inRange, keyCol, listFor, moveIn, newsLine, pagerLabel, paged, parseFavorites, pickLine, planBar, RANGES, summaryLine, toggleIn, totalsOf, PAGE } from './switcher'
 import type { ItemRow, MileRow } from './rows'
-import { buildIdIndex, splitIds, type IdIndex } from './ids'
+import { buildIdIndex, splitIds, type IdIndex, type IdRef } from './ids'
 import { capN, cellWidth, cutCells, safeSlice, INVISIBLE, memberParts, tenantLabels, waveName, mileOf, waveToMile, mileName, mileCount, textBar, itemRow, itemName } from './rows'
 export { tenantLabels, waveName }
 import { parseItemDetail, parseWaveDetail } from './detail'
@@ -3881,7 +3881,7 @@ const modelNewsNodes = async (
     const fillOn = ((await read($, blocksFill)) as { jobs: boolean; news: boolean }).news
     if (fillOn && fullUnsupported.has(job.id)) nodes.push(<Text key="full-hint" dimColor>{FULL_HINT}</Text>)
     const lines = withTenantHidden(m.only !== undefined, () => bulletin(m, { width: cols, releases: entry.nums, prevAt, url: job.news || undefined, metrics: views, full: fillOn && entry.full === true && cur === 0 }))
-    nodes.push(<Box key="gopher" flexDirection="column">{gopherNodes(ui, lines, { canSvg, cols, size, key: 'bul', ask: askIt })}</Box>)
+    nodes.push(<Box key="gopher" flexDirection="column">{gopherNodes(ui, lines, { canSvg, cols, size, key: 'bul', ask: askIt })}{idsRow(ui, $, job.id, lines, modelIdIndex(m), 'bul', 'news')}</Box>)
     return nodes
   }
   if (o.style === 'kanban' || o.style === 'agile') {
@@ -4149,6 +4149,25 @@ const meterBar = (ui: any, key: string, parts: Array<{ n: number; color?: string
 
 /** The ids that exist on a job's board (items and milestones of its snapshot), cached per snapshot. */
 const idIndexCache = new WeakMap<object, IdIndex>()
+/** The ids of a news model alone (its items and milestones). */
+const modelIdIndex = (model: Model): IdIndex => idIndexOf({ waves: [], items: [], events: [], harness: [], updatedAt: 0 } as unknown as MwJobsSnapshot, model)
+
+/** Gopher draws its text as a Code block for copying, so ids in it stay plain; this small row under it lists the ids in view as links. */
+const idsRow = (ui: any, $: any, jobId: string, lines: Array<{ t: string }>, index: IdIndex, key: string, from: 'jobs' | 'news') => {
+  const { Box, Text, Button } = ui
+  const seen = new Map<string, IdRef>()
+  for (const l of lines) for (const p of splitIds(l.t, index)) if (p.ref !== undefined && !seen.has(p.ref.id)) seen.set(p.ref.id, p.ref)
+  if (seen.size === 0) return null
+  return (
+    <Box key={`${key}-ids`} flexWrap="wrap" gap={1}>
+      <Text dimColor>ids</Text>
+      {[...seen.values()].map(ref => (
+        <Button key={`${key}-id-${ref.id}`} plain label={ref.id.includes(':') ? ref.id.slice(ref.id.indexOf(':') + 1) : ref.id} onPress={() => void openDetail($, { kind: ref.kind, jobId, tenant: ref.tenant, id: ref.id }, from)} />
+      ))}
+    </Box>
+  )
+}
+
 const modelIndexCache = new WeakMap<object, IdIndex>()
 const idIndexOf = (snap: MwJobsSnapshot, model?: Model): IdIndex => {
   let base = idIndexCache.get(snap)
@@ -6467,6 +6486,7 @@ export const register: Register = (on, options) => {
             {header}
             <Box key="gopher" flexDirection="column">
               {gopherNodes({ Box, Text, Button, Svg, Code }, lines, { canSvg, cols: gcols, size: gsize, key: 'now', ask: (tn, id) => void askInChat($, job, tn, id) })}
+              {idsRow({ Box, Text, Button }, $, job.id, lines, idx, 'now', 'jobs')}
             </Box>
             {moreRow}
           </Box>

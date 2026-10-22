@@ -2251,6 +2251,22 @@ test('news issue numbers are links: the "vs issue N-1" and "since issue M" parts
   await ui.unmount()
 })
 
+test('gopher keeps its text as plain Code and adds a small ids row of links under it', async ($, on) => {
+  const { state } = rig($, on, true)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await cmd($, 'style gopher')
+  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 100 }, surface: 'desktop' } as never)
+  const row = await ui.find({ key: 'now-ids' })
+  expect(row).toBeDefined()
+  const labels = (await ui.findAll({ type: 'Button' })).filter((b: any) => String(b.props?.key ?? '').startsWith('now-id-')).map((b: any) => String(b.props.label))
+  expect(labels.length).toBeGreaterThan(0)
+  expect(await ui.find({ type: 'Code' })).toBeDefined()
+  const one = (await ui.findAll({ type: 'Button' })).find((b: any) => String(b.props?.key ?? '').startsWith('now-id-')) as any
+  await ui.press({ key: one.props.key })
+  expect(state.opens.at(-1)).toMatchObject({ id: DETAIL_PANE, focus: true })
+  await ui.unmount()
+})
+
 test('an invalid or newer metrics file shows a one-line dim notice instead of the section', async ($, on) => {
   const { state } = rig($, on, true, REG_M)
   state.newsFiles.zeta = '# S'
