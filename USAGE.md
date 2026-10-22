@@ -117,6 +117,7 @@ mw version [-j]   # {version, schema, board_schema, board}: nearest workspace an
 mw ask ID QUESTION... [-t SLUG] [-s NAME]   # a question for a human, as an event (see "Needs you and decisions")
 mw answer ID TEXT... --by NAME [-t SLUG]   # human only; closes the item's open ask
 mw decide TEXT... --by NAME [-b WHY] [-p ID] [-t SLUG]   # a decision event on ID, else on the tenant's "Decisions" chore
+mw user show [-j] | mw user set KEY=VALUE...   # per-user config (see "Per-user config")
 mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]   # coordinated-job config (see "Coordinated jobs")
 mw review [-t SLUG] [-j]
 mw judge ID [-t SLUG]
@@ -295,6 +296,24 @@ block/done note.
 - The cursor is opaque (base64 of a time and the event keys seen near it). An event's key is `tenant/item/eventIndex`.
 - Each read re-scans from the cursor time minus the lookback (default `24h`; `--lookback 90m`, `2h`, `1d`) and drops the keys already delivered. An event stamped before the cursor that reaches the board later (a `git merge` from another clone) is therefore returned exactly once. One that arrives later than the lookback is not returned; keep the same `--lookback` on every read of a cursor.
 - `mw archive` removes whole items from the feed; their keys fall out of the cursor and nothing is replayed.
+
+## Per-user config
+
+Personal choices live outside the committed board, in `mw-user.json` under `os.UserConfigDir()/miniwaves/` (`MW_USER_CONFIG` overrides the path). `mw user` works without a board.
+
+```text
+mw user show [-j]            # the values and the file's path
+mw user set KEY=VALUE...     # validates every key and value, then writes the file (mode 0600); an empty VALUE unsets a key
+```
+
+| Key | Value |
+|---|---|
+| `alerts.on` | comma list of event names (lowercase letters, digits, `.` `_` `-`) |
+| `alerts.exec` | a JSON argv array, for example `["notify-send","mw"]`; stored as data, never run through a shell |
+| `fanfare.enabled` | `true` or `false`: overrides the board's `fanfare.enabled` when set (the user's choice wins) |
+| `fanfare.use` | a fanfare set name, or `all` |
+
+On Unix mw refuses to read the file when it is group- or world-writable (`chmod 600` fixes it), because `alerts.exec` names a command. On Windows there are no comparable mode bits and no check is made. A broken file never fails a board command: fanfare ignores it with one note on stderr. `log --follow --exec` (which would run `alerts.exec`) is not built yet.
 
 ## Coordinated jobs
 

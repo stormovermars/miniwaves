@@ -122,6 +122,9 @@ func run(args []string) error {
 	if args[0] == "update" {
 		return updateCommand(args[1:])
 	}
+	if args[0] == "user" {
+		return userCommand(args[1:])
+	}
 	if args[0] == "migrate" {
 		return migrateCommand(args[1:])
 	}
@@ -381,6 +384,13 @@ closes the item's open ask; refused when the item has none.`,
 		"decide": `mw decide TEXT... --by NAME [-b WHY] [-p ID] [-t SLUG]
 Record a decision as a "decide" event on item ID (-p), else on the tenant's "Decisions" chore, which is created
 (already done, so it holds nothing open) on first use. -b WHY is kept in the note as "(why: WHY)". Any board, no gate.`,
+		"user": `mw user show [-j]
+mw user set KEY=VALUE...
+Per-user choices, kept out of the committed board, in os.UserConfigDir()/miniwaves/mw-user.json (MW_USER_CONFIG overrides the path).
+Works without a board. Keys: alerts.on (comma list of event names), alerts.exec (a JSON argv array, never run through a shell),
+fanfare.enabled (true|false; overrides the board's fanfare enabled), fanfare.use (a set name or all). An empty VALUE unsets a key.
+On Unix a file that is group- or world-writable is refused (chmod 600); on Windows there is no mode check.
+Example: mw user set fanfare.enabled=false alerts.on=ask,block`,
 		"gate": `mw gate [-t SLUG] [-j]
 mw gate level trust|proof|spec|judged [-t SLUG | --workspace] [--by NAME]
 mw gate evidence|acceptance|judge on|off|auto [-t SLUG] [--by NAME]
@@ -518,6 +528,7 @@ Usage:
   mw get-prompt dispatcher|coach [NAME] [-j]
   mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]
+  mw user show [-j] | mw user set KEY=VALUE...
   mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]
   mw ask ID QUESTION... [-s NAME] | mw answer ID TEXT... --by NAME | mw decide TEXT... --by NAME [-b WHY] [-p ID]
   mw gate [-t SLUG] [-j] | gate level trust|proof|spec|judged | gate evidence|acceptance|judge on|off|auto [--by NAME]
