@@ -294,8 +294,9 @@ block/done note.
 
 `mw log [-t SLUG | -A] --since CURSOR|start [-n N] [-j]` is an event feed a poller can resume. It lists, oldest first, the events the cursor has not delivered, then a `next` cursor (`-j`: `{"events": [...], "next": "..."}`, each event with a `key`; text: a last `next: CURSOR` line). `--since ""` and `--since start` return everything; `-n` keeps the first N and `next` resumes after them.
 
-- The cursor is opaque and small (base64 of the last event time and the keys delivered at exactly that time; under 512 characters typically, whatever the board size). An event's key is `tenant/item/H`, H being 12 hex digits of a hash of the event's stamp, action, actor and note, so a `git merge` that reorders events never moves a key.
-- Each read returns the events stamped after the cursor time, plus those stamped at it whose key was not delivered. An event from another clone that is stamped after the cursor time is returned exactly once when a `git merge` brings it in. One stamped before the cursor time is not returned: read from `start` to see it (there is no lookback).
+- The cursor is opaque and bounded (base64 of the newest delivered time and 8-byte hashes of the delivered events stamped within the 24 hours before it). An event's key is `tenant/item/H`, H being 12 hex digits of a hash of the event's stamp, action, actor and note, so a `git merge` that reorders events never moves a key.
+- Each read returns the events stamped after the cursor time, plus those stamped within the 24h window up to it whose key hash is not in the cursor. An event from another clone, or from a tenant that stamped before another tenant's save, is returned exactly once when it reaches the board, even with an older stamp. One older than the window is not returned: read from `start` to see it. The window is fixed at 24 hours.
+- `--since-file PATH` reads the cursor from PATH (a missing file means `start`) and writes the next cursor back atomically, so the cursor need not fit on a command line. Do not combine it with `--since`.
 - `mw archive` removes whole items from the feed; their keys fall out of the cursor and nothing is replayed.
 
 ## Per-user config

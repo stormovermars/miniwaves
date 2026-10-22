@@ -21,6 +21,13 @@ Schema 8 stores each tenant in its own file: `.miniwaves.json` is the index, ite
 
 Schema 9 changes no file layout: `mw migrate` rewrites the index with `"version":9` (backup `.miniwaves.json.bak8`) and nothing else. It exists because 0.3.0 adds index keys (`jobs`, a tenant's `job`, fanfare `sets` and `use`) that a 0.2.8 or older mw drops when it saves the index. Job keys written by 0.2.9-dev builds with dotted names (`news.out`, `news.url`, `pane.style`) are read as before and rewritten as `news_out`, `news_url`, `pane_style` (idempotent; unknown job keys are kept). A 0.2.8 mw refuses a schema 9 board ("workspace schema 9 is newer than this mw supports: upgrade mw") instead of rewriting it, and 0.3.0 refuses a schema 8 board until you run `mw migrate`. Upgrade every machine and CI image to 0.3.0 before migrating the committed board.
 
+## Changes in the 0.3.0 line to know about
+
+- `mw migrate` 8 to 9 writes only the index; tenant files are not touched.
+- `mw log --since`: the `--lookback` option is removed. Instead the cursor carries a fixed 24 hour window (there is no `--window` flag): events stamped up to 24h before the cursor time are still delivered once. Cursor keys are now 8-byte hashes; old cursors whose `seen` holds full `tenant/item/N` keys keep working and match exactly (no duplicates). New: `--since-file PATH`.
+- `mw reap` prints `spared ...` instead of `nothing to reap` when only dispatcher or news-desk sessions are due.
+- News Markdown: the line is `Updated ... +0000`, nothing "first run" is printed on stdout, and the `Page:` URL is a Markdown link `[url](url)` when it is a plain http(s) URL (no spaces, parentheses or brackets), otherwise escaped text.
+
 ## One mw version per workspace
 
 Tenant tags and the archived flag live only in the index (`.miniwaves.json`) and the schema stays 8. If mw 0.2.0 or older saves the index of a 0.2.1 board, it silently drops every tag and un-archives every tenant. Keep a single mw binary version per workspace (check `which -a mw`).
