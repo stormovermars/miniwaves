@@ -192,13 +192,13 @@ func TestUpdateRunsPluginStep(t *testing.T) {
 	calls := fakeClaude(t, true, "", "mw@miniwaves")
 	t.Setenv("MW_NO_PLUGINS", "")
 	s := out(t, "update")
-	for _, want := range []string{"plugin mw: updated", "plugin mw-watch: installed", "plugin mw-jobs: installed"} {
+	for _, want := range []string{"plugin mw: updated", "plugin mw-jobs: installed"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("missing %q in %q", want, s)
 		}
 	}
 	all := strings.Join(*calls, "|")
-	for _, want := range []string{"plugin marketplace add stormovermars/miniwaves", "plugin marketplace update miniwaves", "plugin update mw@miniwaves", "plugin install mw-watch@miniwaves", "plugin install mw-jobs@miniwaves"} {
+	for _, want := range []string{"plugin marketplace add stormovermars/miniwaves", "plugin marketplace update miniwaves", "plugin update mw@miniwaves", "plugin install mw-jobs@miniwaves"} {
 		if !strings.Contains(all, want) {
 			t.Fatalf("missing call %q in %q", want, all)
 		}
@@ -226,7 +226,7 @@ func TestUpdatePluginsNoClaudeHint(t *testing.T) {
 func TestUpdatePluginFailureKeepsExit(t *testing.T) {
 	fakeRelease(t, "v9.9.9", []byte("new binary"), false)
 	exe := fakeExe(t)
-	fakeClaude(t, true, "install mw-watch", "")
+	fakeClaude(t, true, "install mw-jobs", "")
 	t.Setenv("MW_NO_PLUGINS", "")
 	if err := run([]string{"update"}); err != nil {
 		t.Fatalf("exit changed: %v", err)
@@ -242,9 +242,9 @@ func TestUpdatePluginFailureKeepsExit(t *testing.T) {
 
 func TestUpdatePluginsAlone(t *testing.T) {
 	t.Setenv("MW_NO_PLUGINS", "")
-	calls := fakeClaude(t, true, "", "mw-watch@miniwaves")
+	calls := fakeClaude(t, true, "", "mw-jobs@miniwaves")
 	s := out(t, "update", "--plugins")
-	if !strings.Contains(s, "plugin mw: installed") || !strings.Contains(s, "plugin mw-watch: updated") || len(*calls) == 0 {
+	if !strings.Contains(s, "plugin mw: installed") || !strings.Contains(s, "plugin mw-jobs: updated") || len(*calls) == 0 {
 		t.Fatalf("out %q", s)
 	}
 }
@@ -253,7 +253,7 @@ func TestUpdateRemovesOldTidewatch(t *testing.T) {
 	t.Setenv("MW_NO_PLUGINS", "")
 	calls := fakeClaude(t, true, "", "tidewatch@miniwaves")
 	s := out(t, "update", "--plugins")
-	if !strings.Contains(s, "plugin tidewatch: removed (renamed to mw-watch)") || !strings.Contains(s, "plugin mw-watch: installed") {
+	if !strings.Contains(s, "plugin tidewatch: removed (replaced by mw-jobs)") || !strings.Contains(s, "plugin mw-jobs: installed") {
 		t.Fatalf("out %q", s)
 	}
 	if !strings.Contains(strings.Join(*calls, "|"), "plugin uninstall tidewatch@miniwaves") {
@@ -280,5 +280,65 @@ func TestUpdateRunsFanfareDefaults(t *testing.T) {
 	out(t, "update", "--plugins")
 	if n != 2 {
 		t.Fatalf("fanfareDefaults ran %d times, want 2", n)
+	}
+}
+
+// indexOf returns the position of the first call containing sub, or -1.
+func indexOf(calls []string, sub string) int {
+	for i, c := range calls {
+		if strings.Contains(c, sub) {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestUpdateInstallFailureKeepsOldPlugins(t *testing.T) {
+	t.Setenv("MW_NO_PLUGINS", "")
+	calls := fakeClaude(t, true, "install mw-jobs", "tidewatch@miniwaves\n  mw-watch@miniwaves")
+	out(t, "update", "--plugins")
+	if indexOf(*calls, "uninstall") >= 0 {
+		t.Fatalf("uninstall after a failed install: %v", *calls)
+	}
+}
+
+func TestUpdateInstallSuccessUninstallsOldPlugins(t *testing.T) {
+	t.Setenv("MW_NO_PLUGINS", "")
+	calls := fakeClaude(t, true, "", "tidewatch@miniwaves\n  mw-watch@miniwaves")
+	s := out(t, "update", "--plugins")
+	u1, u2 := indexOf(*calls, "plugin uninstall tidewatch@miniwaves"), indexOf(*calls, "plugin uninstall mw-watch@miniwaves")
+	i1, i2 := indexOf(*calls, "plugin install mw@miniwaves"), indexOf(*calls, "plugin install mw-jobs@miniwaves")
+	if u1 < 0 || u2 < 0 || i1 < 0 || i2 < 0 || u1 < i2 || u2 < i2 || u1 < i1 {
+		t.Fatalf("order wrong: %v", *calls)
+	}
+	if !strings.Contains(s, "plugin mw-watch: removed") {
+		t.Fatalf("out %q", s)
+	}
+}
+
+func TestUpdateClaudeConfigDirReachesClaude(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell stub")
+	}
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "cfg")
+	log := filepath.Join(dir, "seen")
+	stub := "#!/bin/sh\necho \"$CLAUDE_CONFIG_DIR\" >> " + log + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
+	t.Setenv("MW_NO_PLUGINS", "")
+	out(t, "update", "--plugins")
+	b, _ := os.ReadFile(log)
+	lines := strings.Fields(string(b))
+	if len(lines) == 0 {
+		t.Fatal("stub claude never ran")
+	}
+	for _, l := range lines {
+		if l != cfg {
+			t.Fatalf("claude saw CLAUDE_CONFIG_DIR=%q, want %q", l, cfg)
+		}
 	}
 }

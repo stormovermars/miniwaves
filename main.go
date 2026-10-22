@@ -481,7 +481,8 @@ ready task "Fix: REASON"; a child goes to ready and reopens its done story. Refu
 		"update": `mw update [--check] [--plugins]
 Replace this mw with the latest GitHub release for this OS/CPU (checksum verified; on Windows the old
 binary is kept as mw.exe.old). --check only reports. Exit 2 when already current. After a real update it
-also installs/updates the Claude Code plugins mw and mw-watch (best effort; MW_NO_PLUGINS=1 skips).
+also installs/updates the Claude Code plugins mw and mw-jobs and, once that worked, removes the retired
+tidewatch and mw-watch (best effort; MW_NO_PLUGINS=1 skips; claude honours CLAUDE_CONFIG_DIR).
 --plugins runs only that plugin step.`,
 		"version": `mw version [-j]
 Print the mw version and schema; -j prints {version, schema, board_schema, board, tenants}: the nearest

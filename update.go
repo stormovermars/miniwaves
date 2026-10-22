@@ -173,8 +173,10 @@ func updateCommand(args []string) error {
 
 // Claude Code plugins: best effort, never changes the exit status.
 var (
-	pluginNames = []string{"mw", "mw-watch", "mw-jobs"}
-	claudeFound = func() bool { _, err := exec.LookPath("claude"); return err == nil }
+	pluginNames = []string{"mw", "mw-jobs"}
+	// retiredPlugins were replaced by mw-jobs; uninstalled once the new ones are in.
+	retiredPlugins = []string{"tidewatch", "mw-watch"}
+	claudeFound    = func() bool { _, err := exec.LookPath("claude"); return err == nil }
 	// claudeRun runs `claude args...` with a timeout and returns its combined output.
 	claudeRun = func(args ...string) (string, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -214,7 +216,8 @@ var fanfareDefaults = func(w io.Writer) {
 	}
 }
 
-// installPlugins installs or updates the mw, mw-watch and mw-jobs plugins from the miniwaves marketplace.
+// installPlugins installs or updates the mw and mw-jobs plugins from the miniwaves marketplace, then removes tidewatch and mw-watch.
+// claude itself resolves CLAUDE_CONFIG_DIR from the inherited environment.
 func installPlugins(w io.Writer) {
 	if os.Getenv("MW_NO_PLUGINS") == "1" {
 		fmt.Fprintln(w, "plugins: skipped (MW_NO_PLUGINS=1)")
@@ -231,29 +234,43 @@ func installPlugins(w io.Writer) {
 		return
 	}
 	listing, _ := claudeRun("plugin", "list")
-	// tidewatch was renamed to mw-watch: remove the old plugin when it is installed (best effort).
-	for _, l := range strings.Split(listing, "\n") {
-		if t := strings.TrimSpace(l); t == "tidewatch@"+repoName || strings.HasSuffix(t, " tidewatch@"+repoName) {
-			if _, err := claudeRun("plugin", "uninstall", "tidewatch@"+repoName); err == nil {
-				fmt.Fprintln(w, "plugin tidewatch: removed (renamed to mw-watch)")
-			}
-			break
-		}
-	}
+	allOK := true
 	for _, p := range pluginNames {
 		id := p + "@" + repoName
 		verb, args := "installed", []string{"plugin", "install", id}
-		for _, l := range strings.Split(listing, "\n") {
-			if strings.HasSuffix(strings.TrimSpace(l), " "+id) || strings.TrimSpace(l) == id {
-				verb, args = "updated", []string{"plugin", "update", id}
-			}
+		if pluginListed(listing, id) {
+			verb, args = "updated", []string{"plugin", "update", id}
 		}
 		if o, err := claudeRun(args...); err != nil {
+			allOK = false
 			fmt.Fprintf(w, "plugin %s: failed: %s\n", p, lastLine(o, err))
 		} else {
 			fmt.Fprintf(w, "plugin %s: %s\n", p, verb)
 		}
 	}
+	if !allOK {
+		return
+	}
+	// The retired pane plugins go only after the new ones are in place (best effort).
+	for _, old := range retiredPlugins {
+		id := old + "@" + repoName
+		if !pluginListed(listing, id) {
+			continue
+		}
+		if _, err := claudeRun("plugin", "uninstall", id); err == nil {
+			fmt.Fprintf(w, "plugin %s: removed (replaced by mw-jobs)\n", old)
+		}
+	}
+}
+
+// pluginListed reports whether `claude plugin list` output names the plugin id.
+func pluginListed(listing, id string) bool {
+	for _, l := range strings.Split(listing, "\n") {
+		if t := strings.TrimSpace(l); t == id || strings.HasSuffix(t, " "+id) {
+			return true
+		}
+	}
+	return false
 }
 
 // fetchVerified downloads the asset and checksums.txt, checks the sha256 and returns the binary.

@@ -55,18 +55,25 @@ try {
                 Write-Output ("plugins: failed: marketplace update: " + ($mo -split "`n" | Select-Object -Last 1))
             } else {
                 $listing = (& claude plugin list 2>&1 | Out-String)
-                if ($listing -match "(?m)\stidewatch@miniwaves\s*$") {
-                    & claude plugin uninstall tidewatch@miniwaves 2>&1 | Out-Null
-                    if ($LASTEXITCODE -eq 0) { Write-Output "plugin tidewatch: removed (renamed to mw-watch)" }
-                }
-                foreach ($p in "mw", "mw-watch", "mw-jobs") {
+                $ok = $true
+                foreach ($p in "mw", "mw-jobs") {
                     $id = "$p@miniwaves"
                     $cmd = if ($listing -match "(?m)\s$([regex]::Escape($id))\s*$") { "update" } else { "install" }
                     $po = (& claude plugin $cmd $id 2>&1 | Out-String).Trim()
                     if ($LASTEXITCODE -eq 0) {
                         Write-Output ("plugin ${p}: " + $(if ($cmd -eq "update") { "updated" } else { "installed" }))
                     } else {
+                        $ok = $false
                         Write-Output ("plugin ${p}: failed: " + ($po -split "`n" | Select-Object -Last 1))
+                    }
+                }
+                # Retired pane plugins go only after the new ones are in place (claude honours CLAUDE_CONFIG_DIR itself).
+                if ($ok) {
+                    foreach ($old in "tidewatch", "mw-watch") {
+                        if ($listing -match "(?m)\s$([regex]::Escape($old))@miniwaves\s*$") {
+                            & claude plugin uninstall "$old@miniwaves" 2>&1 | Out-Null
+                            if ($LASTEXITCODE -eq 0) { Write-Output "plugin ${old}: removed (replaced by mw-jobs)" }
+                        }
                     }
                 }
             }

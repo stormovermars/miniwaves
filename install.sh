@@ -59,12 +59,8 @@ else
     echo "plugins: failed: marketplace update: $(printf '%s' "$mo" | tail -n 1)"
   else
     listing="$(claude plugin list 2>/dev/null || true)"
-    if printf '%s\n' "$listing" | grep -q "[[:space:]]tidewatch@miniwaves\$"; then
-      if claude plugin uninstall tidewatch@miniwaves >/dev/null 2>&1; then
-        echo "plugin tidewatch: removed (renamed to mw-watch)"
-      fi
-    fi
-    for p in mw mw-watch mw-jobs; do
+    ok=1
+    for p in mw mw-jobs; do
       if printf '%s\n' "$listing" | grep -q "[[:space:]]$p@miniwaves\$"; then
         verb=updated; cmd=update
       else
@@ -73,8 +69,19 @@ else
       if po="$(claude plugin "$cmd" "$p@miniwaves" 2>&1)"; then
         echo "plugin $p: $verb"
       else
+        ok=0
         echo "plugin $p: failed: $(printf '%s' "$po" | tail -n 1)"
       fi
     done
+    # Retired pane plugins go only after the new ones are in place (claude honours CLAUDE_CONFIG_DIR itself).
+    if [ "$ok" = 1 ]; then
+      for p in tidewatch mw-watch; do
+        if printf '%s\n' "$listing" | grep -q "[[:space:]]$p@miniwaves\$"; then
+          if claude plugin uninstall "$p@miniwaves" >/dev/null 2>&1; then
+            echo "plugin $p: removed (replaced by mw-jobs)"
+          fi
+        fi
+      done
+    fi
   fi
 fi
