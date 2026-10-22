@@ -98,3 +98,25 @@ func TestMigrate8To9LeavesTenantFilesAlone(t *testing.T) {
 		t.Fatal("index not migrated")
 	}
 }
+
+// A 0.2.x board with archived tenants stores "archived": true in the index; migrate must read it
+// (it once failed: cannot unmarshal bool into Tenant.archived) and keep the tenants archived.
+func TestMigrate8To9ArchivedTenants(t *testing.T) {
+	path := inTempDir(t)
+	runAll(t, []string{"init", "W"}, []string{"tenant", "add", "a"}, []string{"tenant", "add", "b"},
+		[]string{"add", "task", "kept", "-t", "b"}, []string{"tenant", "archive", "b"})
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), `"archived":true`) {
+		t.Fatalf("fixture has no archived flag: %s", b)
+	}
+	os.WriteFile(path, []byte(strings.Replace(string(b), `"version":9`, `"version":8`, 1)), 0o600)
+	runAll(t, []string{"migrate"})
+	if after, _ := os.ReadFile(path); string(after) != string(b) {
+		t.Fatalf("migrate 8->9 changed more than the version:\n%s\n%s", b, after)
+	}
+	runAll(t, []string{"migrate"}) // already 9: still readable
+	runAll(t, []string{"tenant", "restore", "b"})
+	if got := out(t, "list", "-t", "b"); !strings.Contains(got, "kept") {
+		t.Fatalf("archived tenant lost its items: %q", got)
+	}
+}

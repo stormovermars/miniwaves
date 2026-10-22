@@ -447,6 +447,10 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 
 ## Changelog
 
+### 0.3.1
+
+- `mw migrate` reads boards from 0.2.x with archived tenants (0.3.0 failed with `cannot unmarshal bool into ... Tenant.tenants.archived`); archived tenants stay archived.
+
 ### 0.3.0
 
 See `releases/0.3.0.md` and MIGRATION.md (schema 9: run `mw migrate`; `mw review -j` has a new `review` list; the news pages are now a gopher-style bulletin drawn from a json model).

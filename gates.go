@@ -14,7 +14,7 @@ import (
 )
 
 // version is the mw release; schema is currentSchema.
-var version = "0.3.0"
+var version = "0.3.1"
 
 var gateNames = []string{"evidence", "acceptance", "judge"}
 

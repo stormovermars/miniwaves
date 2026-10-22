@@ -80,11 +80,15 @@ func migrateCommand(args []string) error {
 // migrateBytes upgrades the file contents in memory and returns the workspace,
 // the schema it came from and a list of what changed.
 func migrateBytes(b []byte, path string) (*Workspace, int, []string, error) {
-	var w Workspace
-	if err := json.Unmarshal(b, &w); err != nil {
+	// Read only the version first: a schema 8 index stores a tenant's archive flag as a bool
+	// "archived", which does not fit Tenant.Archived (the archived item count) of older layouts.
+	var head struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(b, &head); err != nil {
 		return nil, 0, nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	from := w.Version
+	from := head.Version
 	if from == currentSchema-1 { // schema 8 -> 9: same layout, the version is the whole change
 		w8, err := loadScopedFrom(path, from, true)
 		if err != nil {
@@ -93,11 +97,21 @@ func migrateBytes(b []byte, path string) (*Workspace, int, []string, error) {
 		w8.Version = currentSchema
 		return w8, from, []string{"schema 9 stops older mw builds from rewriting the index and dropping jobs, tenant jobs and fanfare sets"}, nil
 	}
+	var w Workspace
+	if from < currentSchema-1 {
+		if err := json.Unmarshal(b, &w); err != nil {
+			return nil, from, nil, fmt.Errorf("read %s: %w", path, err)
+		}
+	}
 	if from > currentSchema {
 		return nil, from, nil, fmt.Errorf("workspace schema %d is newer than this mw supports (schema %d): upgrade mw", from, currentSchema)
 	}
-	if from == currentSchema && len(w.Tenants) > 0 {
-		return &w, from, nil, nil
+	if from == currentSchema { // already current: the index loader reads its archive flags
+		w9, err := loadScopedFrom(path, from, true)
+		if err != nil {
+			return nil, from, nil, err
+		}
+		return w9, from, nil, nil
 	}
 	var report []string
 	if len(w.Tenants) == 0 { // the original single-tenant format
