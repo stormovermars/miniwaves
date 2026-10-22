@@ -178,6 +178,9 @@ type newsModel struct {
 	Metrics   *newsMetrics `json:"metrics"`
 	Summary   string       `json:"summary"`
 	Truncated bool         `json:"truncated,omitempty"` // set when the 1 MB guard had to drop rows
+	// Full is set by --full: no list is capped. TrimmedRows (only with Full) counts the rows the 1 MB guard still dropped.
+	Full        bool `json:"full,omitempty"`
+	TrimmedRows int  `json:"trimmed_rows,omitempty"`
 }
 
 // ---- metrics ----
@@ -595,12 +598,28 @@ type newsWindow struct {
 	prev     *newsModel
 	prevNum  *int
 	releases []int
+	full     bool // --full: no per-list caps (the 200-character item text and the 1 MB guard stay)
 }
 
 // buildNewsModel computes the model for one job. Everything in it is a function of the board, the metrics
 // and summary files, and the window.
 func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWindow) *newsModel {
-	m := &newsModel{Version: 1}
+	m := &newsModel{Version: 1, Full: win.full}
+	// capOf is the row cap of a list; with --full there is none (the reported caps are 0 = uncapped)
+	capOf := func(n int) int {
+		if win.full {
+			return math.MaxInt
+		}
+		return n
+	}
+	capNow, capMilesOpen, capHappened, capReady := capOf(newsCapNow), capOf(newsCapMilesOpen), capOf(newsCapHappened), capOf(newsCapReady)
+	capNextMiles, capTenants, capBacklog, capRecent, capSprint := capOf(newsCapNextMiles), capOf(newsCapTenants), capOf(newsCapBacklog), capOf(newsCapRecent), capOf(newsCapSprint)
+	shown := func(n int) int { // the cap as reported in "caps"
+		if win.full {
+			return 0
+		}
+		return n
+	}
 	m.Job = newsJobInfo{ID: p.job, Title: newsCap(p.title), Description: newsCap(p.desc), URL: newsClean(p.url, false)}
 	if m.Job.Title == "" {
 		m.Job.Title = p.job
@@ -834,9 +853,9 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 	})
 	m.Now.Tenants = []newsTenant{}
 	tmore := 0
-	if len(trows) > newsCapTenants {
-		tmore = len(trows) - newsCapTenants
-		trows = trows[:newsCapTenants]
+	if len(trows) > capTenants {
+		tmore = len(trows) - capTenants
+		trows = trows[:capTenants]
 	}
 	m.Now.Tenants = append(m.Now.Tenants, trows...)
 	// backlog: the ready queue in order, then the drafts by creation
@@ -849,20 +868,20 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 	backlog = append(backlog, drafts...)
 	m.Now.Backlog.Count = len(backlog)
 	backlogMore := 0
-	if len(backlog) > newsCapBacklog {
-		backlogMore = len(backlog) - newsCapBacklog
-		backlog = backlog[:newsCapBacklog]
+	if len(backlog) > capBacklog {
+		backlogMore = len(backlog) - capBacklog
+		backlog = backlog[:capBacklog]
 	}
 	m.Now.Backlog.Items = append([]newsItem{}, backlog...)
 	newsSortItems(recent, true)
-	if len(recent) > newsCapRecent {
-		recent = recent[:newsCapRecent]
+	if len(recent) > capRecent {
+		recent = recent[:capRecent]
 	}
 	for i := range recent {
 		recent[i].MilestoneTitle = waveTitle[recent[i].Tenant+"/"+recent[i].Milestone]
 	}
 	m.Now.RecentDone = append([]newsItem{}, recent...)
-	m.Now.Caps = map[string]int{"backlog": newsCapBacklog, "recent_done": newsCapRecent, "sprint": newsCapSprint, "tenants": newsCapTenants, "needs": newsCapNow, "review": newsCapNow, "blocked": newsCapNow, "doing": newsCapNow, "milestones": newsCapMilesOpen}
+	m.Now.Caps = map[string]int{"backlog": shown(newsCapBacklog), "recent_done": shown(newsCapRecent), "sprint": shown(newsCapSprint), "tenants": shown(newsCapTenants), "needs": shown(newsCapNow), "review": shown(newsCapNow), "blocked": shown(newsCapNow), "doing": shown(newsCapNow), "milestones": shown(newsCapMilesOpen)}
 	m.Now.More = map[string]int{"tenants": tmore, "backlog": backlogMore}
 	for _, l := range []struct {
 		name string
@@ -870,7 +889,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 		dst  *[]newsItem
 	}{{"needs", needs, &m.Now.Needs}, {"review", review, &m.Now.Review}, {"blocked", blocked, &m.Now.Blocked}, {"doing", doing, &m.Now.Doing}} {
 		newsSortItems(l.src, false)
-		*l.dst, m.Now.More[l.name] = capItems(l.src, newsCapNow)
+		*l.dst, m.Now.More[l.name] = capItems(l.src, capNow)
 	}
 	sort.SliceStable(open, func(i, j int) bool {
 		a, b := open[i], open[j]
@@ -893,9 +912,9 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 	}
 	openAll = open
 	m.Now.Milestones.Open = []newsMilestone{}
-	if len(open) > newsCapMilesOpen {
-		m.Now.More["milestones"] = len(open) - newsCapMilesOpen
-		open = open[:newsCapMilesOpen]
+	if len(open) > capMilesOpen {
+		m.Now.More["milestones"] = len(open) - capMilesOpen
+		open = open[:capMilesOpen]
 	} else {
 		m.Now.More["milestones"] = 0
 	}
@@ -913,17 +932,17 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 		{"new_items", newItems, &m.Happened.NewItems}, {"moved_to_review", movedReview, &m.Happened.MovedToReview}, {"moved_to_doing", movedDoing, &m.Happened.MovedToDoing}} {
 		newsSortItems(l.src, true)
 		m.Happened.Counts[l.name] = len(l.src)
-		m.Happened.Caps[l.name] = newsCapHappened
-		*l.dst, m.Happened.More[l.name] = capItems(l.src, newsCapHappened)
+		m.Happened.Caps[l.name] = shown(newsCapHappened)
+		*l.dst, m.Happened.More[l.name] = capItems(l.src, capHappened)
 	}
 
-	m.Next.Caps = map[string]int{"ready": newsCapReady, "next_milestones": newsCapNextMiles}
+	m.Next.Caps = map[string]int{"ready": shown(newsCapReady), "next_milestones": shown(newsCapNextMiles)}
 	m.Next.More = map[string]int{}
-	m.Next.Ready, m.Next.More["ready"] = capItems(ready, newsCapReady) // queue order: tenant, then item order
+	m.Next.Ready, m.Next.More["ready"] = capItems(ready, capReady) // queue order: tenant, then item order
 	m.Next.NextMilestones = []newsMilestone{}
-	if len(openAll) > newsCapNextMiles {
-		m.Next.More["next_milestones"] = len(openAll) - newsCapNextMiles
-		openAll = openAll[:newsCapNextMiles]
+	if len(openAll) > capNextMiles {
+		m.Next.More["next_milestones"] = len(openAll) - capNextMiles
+		openAll = openAll[:capNextMiles]
 	} else {
 		m.Next.More["next_milestones"] = 0
 	}
@@ -963,9 +982,9 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 			}
 			return mem[i].ID < mem[j].ID
 		})
-		if len(mem) > newsCapSprint {
-			sp.More = len(mem) - newsCapSprint
-			mem = mem[:newsCapSprint]
+		if len(mem) > capSprint {
+			sp.More = len(mem) - capSprint
+			mem = mem[:capSprint]
 		}
 		sp.Items = append(sp.Items, mem...)
 		m.Now.Sprint = sp
@@ -993,6 +1012,12 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 // newsGuardSize keeps the encoded model (as it is written, indented) under 1 MB: if it is over, rows are
 // dropped from the longest lists (counted in their more) until it fits; tenant rows go last.
 func newsGuardSize(m *newsModel) {
+	trimmed := 0 // rows dropped; reported as trimmed_rows under --full
+	defer func() {
+		if m.Full {
+			m.TrimmedRows = trimmed
+		}
+	}()
 	for round := 0; round < 64; round++ {
 		b, err := json.MarshalIndent(m, "", "  ")
 		if err == nil && len(b) <= newsModelMax {
@@ -1018,12 +1043,14 @@ func newsGuardSize(m *newsModel) {
 				k := n / 2
 				*x.l = (*x.l)[:n-k]
 				x.more[x.key] += k
+				trimmed += k
 				reduced = true
 			}
 		}
 		if n := len(m.Now.Milestones.Open); n > 1 {
 			m.Now.Milestones.Open = m.Now.Milestones.Open[:n-n/2]
 			m.Now.More["milestones"] += n / 2
+			trimmed += n / 2
 			reduced = true
 		}
 		if len(m.Summary) > 4096 {
@@ -1035,6 +1062,7 @@ func newsGuardSize(m *newsModel) {
 				k := n / 2
 				m.Now.Tenants = m.Now.Tenants[:n-k]
 				m.Now.More["tenants"] += k
+				trimmed += k
 			} else {
 				return
 			}
