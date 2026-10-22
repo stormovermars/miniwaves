@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "lookback": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "format": true, "width": true,
+	"since": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "format": true, "width": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -488,13 +488,12 @@ With the evidence gate on, <evidence>/<tenant>/<ID>/ must hold a non-empty file
 		"reopen": `mw reopen ID [-t SLUG] [-s NAME]
 Return an item to inbox and release its session owner.`,
 		"log": `mw log [-t SLUG | -A] [-n N] [-j]
-mw log [-t SLUG | -A] --since CURSOR|start [--lookback DUR] [-n N] [-j]
+mw log [-t SLUG | -A] --since CURSOR|start [-n N] [-j]
 Activity feed, newest first (default 20): time, tenant, item, action, session, note. Actions: created,
 ready, start, block, done, reopen, accept, reject, note, ask, answer, decide, edit, step, unstep. -A spans all tenants.
 --since turns it into a resumable feed, oldest first: it prints the events the cursor has not delivered and a next cursor
-(-j: {events, next}; text: a last "next: CURSOR" line). The cursor is opaque; --since "" or start returns everything. A read re-scans
-DUR (default 24h) before the cursor time and drops the events already delivered, so an event stamped earlier that arrives later
-(a git merge) is returned once; one that arrives later than DUR is not. Keep the same --lookback on every read. -n keeps the first N.`,
+(-j: {events, next}; text: a last "next: CURSOR" line). The cursor is opaque and small (the last time plus the event keys at that time); --since "" or start returns everything.
+An event stamped after the cursor time that arrives later (a git merge) is returned once; one stamped before it is not (read from start). -n keeps the first N.`,
 		"wave": `mw wave create TITLE... [-t SLUG] [-p WAVE] [-b TEXT]
 mw wave add|remove WAVE ID... [-t SLUG]
 mw wave step WAVE KEY=NOTE [KEY=NOTE...] [--na] [-t SLUG]   (several steps in one call; --na applies to all)
@@ -578,7 +577,7 @@ Usage:
   mw start ID [-t SLUG] [-s NAME] [-a ROLE]
   mw block ID REASON... [-t SLUG] [-s NAME]
   mw done ID VERIFICATION... [--evidence PATH]... [--no-evidence REASON] [-t SLUG] [-s NAME]
-  mw log [-t SLUG | -A] [-n N] [-j] | mw log [-t SLUG | -A] --since CURSOR|start [--lookback DUR] [-j]
+  mw log [-t SLUG | -A] [-n N] [-j] | mw log [-t SLUG | -A] --since CURSOR|start [-j]
   mw wave create|add|remove|step|unstep|show|list|close ...  (mw help wave)
   mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v] | mw next --claim [-s NAME] [-a ROLE] [-j] [--prompt]
   mw board [-t SLUG | -A] [-v] [-j] | mw board --html [-o PATH]

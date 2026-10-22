@@ -7,7 +7,7 @@
       "action": "created",
       "by": "",
       "note": "",
-      "key": "cursor-app/TSK-001/0"
+      "key": "\u003cKEY\u003e"
     },
     {
       "ts": "\u003cTS\u003e",
@@ -16,7 +16,7 @@
       "action": "ready",
       "by": "",
       "note": "",
-      "key": "cursor-app/TSK-001/1"
+      "key": "\u003cKEY\u003e"
     },
     {
       "ts": "\u003cTS\u003e",
@@ -25,7 +25,7 @@
       "action": "created",
       "by": "",
       "note": "",
-      "key": "cursor-app/TSK-002/0"
+      "key": "\u003cKEY\u003e"
     },
     {
       "ts": "\u003cTS\u003e",
@@ -34,7 +34,7 @@
       "action": "ready",
       "by": "",
       "note": "",
-      "key": "cursor-app/TSK-002/1"
+      "key": "\u003cKEY\u003e"
     }
   ],
   "next": "\u003cCURSOR\u003e"

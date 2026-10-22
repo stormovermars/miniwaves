@@ -142,7 +142,7 @@ mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v]   # the same full brief as show;
 mw next --claim [-s NAME] [-a ROLE] [-t SLUG] [-k KIND] [-j]   # pick + start in one locked step; -j adds "claimed": true
 mw archive [--days N] [-t SLUG] [--dry-run]   # done items older than N days (30) -> .miniwaves/<slug>.archive.json
 mw log [-t SLUG | -A] [-n N] [-j]   # activity feed, newest first
-mw log [-t SLUG | -A] --since CURSOR|start [--lookback DUR] [-n N] [-j]   # resumable feed, oldest first, plus a next cursor
+mw log [-t SLUG | -A] --since CURSOR|start [-n N] [-j]   # resumable feed, oldest first, plus a next cursor
 mw board [-t SLUG | -A] [-v] [-j]   # last: <ago> <item> <action>, today: N done; -A sorted by last activity
 mw context [-t SLUG] [-s NAME] [-j]
 ```
@@ -292,10 +292,10 @@ block/done note.
 
 ## Resumable log (`log --since`)
 
-`mw log [-t SLUG | -A] --since CURSOR|start [--lookback DUR] [-n N] [-j]` is an event feed a poller can resume. It lists, oldest first, the events the cursor has not delivered, then a `next` cursor (`-j`: `{"events": [...], "next": "..."}`, each event with a `key`; text: a last `next: CURSOR` line). `--since ""` and `--since start` return everything; `-n` keeps the first N and `next` resumes after them.
+`mw log [-t SLUG | -A] --since CURSOR|start [-n N] [-j]` is an event feed a poller can resume. It lists, oldest first, the events the cursor has not delivered, then a `next` cursor (`-j`: `{"events": [...], "next": "..."}`, each event with a `key`; text: a last `next: CURSOR` line). `--since ""` and `--since start` return everything; `-n` keeps the first N and `next` resumes after them.
 
-- The cursor is opaque (base64 of a time and the event keys seen near it). An event's key is `tenant/item/eventIndex`.
-- Each read re-scans from the cursor time minus the lookback (default `24h`; `--lookback 90m`, `2h`, `1d`) and drops the keys already delivered. An event stamped before the cursor that reaches the board later (a `git merge` from another clone) is therefore returned exactly once. One that arrives later than the lookback is not returned; keep the same `--lookback` on every read of a cursor.
+- The cursor is opaque and small (base64 of the last event time and the keys delivered at exactly that time; under 512 characters typically, whatever the board size). An event's key is `tenant/item/H`, H being 12 hex digits of a hash of the event's stamp, action, actor and note, so a `git merge` that reorders events never moves a key.
+- Each read returns the events stamped after the cursor time, plus those stamped at it whose key was not delivered. An event from another clone that is stamped after the cursor time is returned exactly once when a `git merge` brings it in. One stamped before the cursor time is not returned: read from `start` to see it (there is no lookback).
 - `mw archive` removes whole items from the feed; their keys fall out of the cursor and nothing is replayed.
 
 ## Per-user config

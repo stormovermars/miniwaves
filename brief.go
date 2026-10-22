@@ -29,7 +29,7 @@ type logRow struct {
 	Action  string `json:"action" toon:"action"`
 	By      string `json:"by" toon:"by"`
 	Note    string `json:"note" toon:"note"`
-	Key     string `json:"key,omitempty" toon:"key,omitempty"` // tenant/item/index, set by log --since
+	Key     string `json:"key,omitempty" toon:"key,omitempty"` // tenant/item/content hash, set by log --since
 	sortKey time.Time
 }
 
@@ -112,13 +112,10 @@ func logCommand(w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "tenant", "session", "all", "limit", "json", "tag", "since", "lookback"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "all", "limit", "json", "tag", "since"); err != nil {
 		return err
 	}
 	_, since := o["since"]
-	if _, lb := o["lookback"]; lb && !since {
-		return errors.New("--lookback needs --since")
-	}
 	if since {
 		return logSinceCommand(w, o)
 	}
@@ -471,14 +468,6 @@ func logSinceCommand(w *Workspace, o map[string]string) error {
 			return errors.New("-n needs a positive number")
 		}
 	}
-	lookback := defaultLookback
-	if o["lookback"] != "" {
-		d, err := parseAge(o["lookback"])
-		if err != nil {
-			return fmt.Errorf("--lookback: %w", err)
-		}
-		lookback = d
-	}
 	var tenants []*Tenant
 	if o["all"] == "true" {
 		if o["tenant"] != "" {
@@ -495,7 +484,7 @@ func logSinceCommand(w *Workspace, o map[string]string) error {
 		}
 		tenants = []*Tenant{t}
 	}
-	rows, next, err := logSince(tenants, o["since"], lookback, limit)
+	rows, next, err := logSince(tenants, o["since"], limit)
 	if err != nil {
 		return err
 	}

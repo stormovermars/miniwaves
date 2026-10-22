@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -77,12 +79,14 @@ func TestLogSinceStartAndResume(t *testing.T) {
 	if len(d.Events) != 4 || d.Next == "" {
 		t.Fatalf("start: %+v", d)
 	}
-	for i := 1; i < len(d.Events); i++ {
-		if d.Events[i].At < d.Events[i-1].At {
+	for i := 1; i < len(d.Events); i++ { // parsed times: RFC3339Nano drops trailing zeros, so strings do not sort
+		a, _ := time.Parse(time.RFC3339Nano, d.Events[i-1].At)
+		b, _ := time.Parse(time.RFC3339Nano, d.Events[i].At)
+		if b.Before(a) {
 			t.Fatalf("not oldest first: %+v", d.Events)
 		}
 	}
-	if d.Events[0].Key != "cursor-app/TSK-001/0" {
+	if !regexp.MustCompile(`^cursor-app/TSK-00[12]/[0-9a-f]{12}$`).MatchString(d.Events[0].Key) {
 		t.Fatalf("key: %q", d.Events[0].Key)
 	}
 	if e := logSinceJ(t, ""); len(e.Events) != 4 {
@@ -94,7 +98,7 @@ func TestLogSinceStartAndResume(t *testing.T) {
 	}
 	runAll(t, []string{"note", "TSK-001", "hello"})
 	n := logSinceJ(t, again.Next)
-	if len(n.Events) != 1 || n.Events[0].Action != "note" || n.Events[0].Key != "cursor-app/TSK-001/2" {
+	if len(n.Events) != 1 || n.Events[0].Action != "note" || !strings.HasPrefix(n.Events[0].Key, "cursor-app/TSK-001/") {
 		t.Fatalf("new event: %+v", n.Events)
 	}
 	if len(logSinceJ(t, n.Next).Events) != 0 {
@@ -105,38 +109,81 @@ func TestLogSinceStartAndResume(t *testing.T) {
 func TestLogSinceLateGitMergedEventOnce(t *testing.T) {
 	path := cursorBoard(t)
 	d := logSinceJ(t, "start")
-	// the late event is stamped before the cursor time (an hour before "now"), and arrives afterwards
-	addLateEvent(t, path, "cursor-app", "TSK-002", time.Now().Add(-time.Hour), "note", "from the other clone")
+	// an event from another clone, stamped after the cursor time, arrives with a merge: once
+	addLateEvent(t, path, "cursor-app", "TSK-002", time.Now().Add(time.Minute), "note", "from the other clone")
 	n := logSinceJ(t, d.Next)
 	if len(n.Events) != 1 || n.Events[0].Note != "from the other clone" || n.Events[0].By != "other-machine" {
-		t.Fatalf("late event must be returned: %+v", n.Events)
+		t.Fatalf("merged event must be returned: %+v", n.Events)
 	}
-	// exactly once: again from the new cursor and again from the old one's successor
 	if m := logSinceJ(t, n.Next); len(m.Events) != 0 {
-		t.Fatalf("late event returned twice: %+v", m.Events)
+		t.Fatalf("merged event returned twice: %+v", m.Events)
 	}
-	// a second late event and a fresh one in the same read
-	addLateEvent(t, path, "cursor-app", "TSK-001", time.Now().Add(-90*time.Minute), "note", "late 2")
-	runAll(t, []string{"note", "TSK-002", "fresh"})
-	r := logSinceJ(t, n.Next)
-	if len(r.Events) != 2 {
-		t.Fatalf("late 2 + fresh: %+v", r.Events)
+	// two more events at one timestamp, delivered one per read (-n 1): neither lost nor repeated
+	at := time.Now().Add(2 * time.Minute)
+	addLateEvent(t, path, "cursor-app", "TSK-001", at, "note", "same stamp a")
+	addLateEvent(t, path, "cursor-app", "TSK-002", at, "note", "same stamp b")
+	a := logSinceJ(t, n.Next, "-n", "1")
+	b := logSinceJ(t, a.Next, "-n", "1")
+	if len(a.Events) != 1 || len(b.Events) != 1 || a.Events[0].Key == b.Events[0].Key {
+		t.Fatalf("same-stamp events: %+v %+v", a.Events, b.Events)
 	}
-	if m := logSinceJ(t, r.Next); len(m.Events) != 0 {
+	if m := logSinceJ(t, b.Next); len(m.Events) != 0 {
 		t.Fatalf("returned twice: %+v", m.Events)
 	}
-	// an event older than the lookback is not returned (documented limit); a wider lookback does return it
+	// an event stamped before the cursor time is not returned (documented limit); start returns it
 	addLateEvent(t, path, "cursor-app", "TSK-001", time.Now().Add(-48*time.Hour), "note", "ancient")
-	if m := logSinceJ(t, r.Next); len(m.Events) != 0 {
-		t.Fatalf("outside the lookback: %+v", m.Events)
+	if m := logSinceJ(t, b.Next); len(m.Events) != 0 {
+		t.Fatalf("before the cursor: %+v", m.Events)
 	}
-	if m := logSinceJ(t, r.Next, "--lookback", "3d"); len(m.Events) != 1 || m.Events[0].Note != "ancient" {
-		t.Fatalf("--lookback 3d: %+v", m.Events)
+}
+
+// A git merge that reorders an item's events (a foreign event lands at an old index) must neither lose the
+// foreign event nor repeat any other: keys follow content, not position.
+func TestLogSinceMergeReorder(t *testing.T) {
+	path := cursorBoard(t)
+	runAll(t, []string{"note", "TSK-001", "a"}, []string{"note", "TSK-001", "b"})
+	d := logSinceJ(t, "start")
+	w, _ := load(path)
+	it, _ := itemByID(&w.Tenants[0], "TSK-001")
+	ev := it.Events
+	last := ev[len(ev)-1].At
+	lt, _ := time.Parse(time.RFC3339Nano, last)
+	foreign := Event{At: lt.Add(time.Second).UTC().Format(time.RFC3339Nano), Action: "note", By: "other", Note: "foreign"}
+	n := len(ev)
+	// swap the last two and insert the foreign event at the old index of the second to last
+	it.Events = append(append(append([]Event{}, ev[:n-2]...), foreign), ev[n-1], ev[n-2])
+	if err := save(path, w); err != nil {
+		t.Fatal(err)
 	}
-	// a short lookback misses what a long one would see
-	addLateEvent(t, path, "cursor-app", "TSK-002", time.Now().Add(-3*time.Hour), "note", "three hours")
-	if m := logSinceJ(t, r.Next, "--lookback", "1h"); len(m.Events) != 0 {
-		t.Fatalf("1h lookback: %+v", m.Events)
+	m := logSinceJ(t, d.Next)
+	if len(m.Events) != 1 || m.Events[0].Note != "foreign" {
+		t.Fatalf("want only the foreign event once: %+v", m.Events)
+	}
+	if x := logSinceJ(t, m.Next); len(x.Events) != 0 {
+		t.Fatalf("repeat: %+v", x.Events)
+	}
+}
+
+// The cursor holds the last timestamp and the keys at it only: small however many events the board has.
+func TestLogSinceCursorSize(t *testing.T) {
+	tn := &Tenant{Slug: "big"}
+	base := time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 100; i++ {
+		it := Item{ID: "TSK-" + strconv.Itoa(i)}
+		for j := 0; j < 100; j++ {
+			it.Events = append(it.Events, Event{At: base.Add(time.Duration(i*100+j) * time.Second).Format(time.RFC3339Nano), Action: "note", Note: strconv.Itoa(j)})
+		}
+		tn.Items = append(tn.Items, it)
+	}
+	rows, next, err := logSince([]*Tenant{tn}, "start", 0)
+	if err != nil || len(rows) != 10000 {
+		t.Fatalf("%d rows, %v", len(rows), err)
+	}
+	if len(next) >= 512 {
+		t.Fatalf("cursor is %d chars", len(next))
+	}
+	if rows, _, _ := logSince([]*Tenant{tn}, next, 0); len(rows) != 0 {
+		t.Fatalf("replay: %d", len(rows))
 	}
 }
 
@@ -166,8 +213,7 @@ func TestLogSinceArchivePruning(t *testing.T) {
 	path := cursorBoard(t)
 	runAll(t, []string{"start", "TSK-001"}, []string{"done", "TSK-001", "ok", "--no-evidence", "x"})
 	d := logSinceJ(t, "start")
-	c, err := decodeCursor(d.Next)
-	if err != nil || len(c.Seen) != len(d.Events) {
+	if c, err := decodeCursor(d.Next); err != nil || len(c.Seen) == 0 || len(c.Seen) > len(d.Events) {
 		t.Fatalf("cursor: %+v %v", c, err)
 	}
 	// archive TSK-001 (done, any age): its events leave the board
@@ -188,7 +234,7 @@ func TestLogSinceArchivePruning(t *testing.T) {
 	}
 	// the cursor keeps working: a new event and a late one on the surviving item are each returned once
 	runAll(t, []string{"note", "TSK-002", "after archive"})
-	addLateEvent(t, path, "cursor-app", "TSK-002", time.Now().Add(-time.Hour), "note", "late after archive")
+	addLateEvent(t, path, "cursor-app", "TSK-002", time.Now().Add(time.Minute), "note", "late after archive")
 	r := logSinceJ(t, n.Next)
 	if len(r.Events) != 2 {
 		t.Fatalf("after archive: %+v", r.Events)
@@ -249,6 +295,7 @@ func TestGoldenLogSince(t *testing.T) {
 	d.Next = "<CURSOR>"
 	for i := range d.Events {
 		d.Events[i].At = "<TS>"
+		d.Events[i].Key = "<KEY>" // a content hash of the stamp
 	}
 	b, _ := json.MarshalIndent(d, "", "  ")
 	checkGolden(t, "log-since-j", string(b)+"\n")

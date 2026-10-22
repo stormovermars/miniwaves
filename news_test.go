@@ -63,12 +63,19 @@ func newsBoard(t *testing.T) string {
 	return path
 }
 
+// nowMasked replaces the minute the run started in, and the next one, so a minute boundary cannot flake a golden.
+func nowMasked(s string, before time.Time) string {
+	s = strings.ReplaceAll(s, before.Format("2006-01-02 15:04"), "<NOW>")
+	return strings.ReplaceAll(s, before.Add(time.Minute).Format("2006-01-02 15:04"), "<NOW>")
+}
+
 func TestNewsGoldens(t *testing.T) {
 	newsBoard(t)
+	before := time.Now()
 	for _, f := range []string{"md", "html"} {
 		got := ""
 		got = captureOutput(t, func() { runAll(t, []string{"news", "--job", "tiny", "--format", f, "-o", "-"}) })
-		got = strings.ReplaceAll(got, time.Now().Format("2006-01-02 15:04"), "<NOW>")
+		got = nowMasked(got, before)
 		checkGolden(t, "news-"+f, got)
 		if head, _, _ := strings.Cut(got, "## Summary"); strings.Contains(head, "<script>") || strings.Contains(got, "\r") {
 			t.Fatalf("%s: raw <script> or CR in output", f)
@@ -249,8 +256,8 @@ func newsTextOutput(t *testing.T, width string) string {
 func TestNewsTextGolden(t *testing.T) {
 	newsBoard(t)
 	t.Setenv("COLUMNS", "")
-	got := newsTextOutput(t, "80")
-	got = strings.ReplaceAll(got, time.Now().Format("2006-01-02 15:04"), "<NOW>")
+	before := time.Now()
+	got := nowMasked(newsTextOutput(t, "80"), before)
 	checkGolden(t, "news-text", got)
 	for _, bad := range []string{"\x1b", "\r", "\\|", "&lt;", "&amp;"} {
 		if strings.Contains(got, bad) {
