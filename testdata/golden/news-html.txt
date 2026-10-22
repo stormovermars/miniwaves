@@ -1,59 +1,49 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>News app</title>
+<title>Tiny &lt;job&gt; bulletin</title>
 <style>
-:root{--bg:#fff;--fg:#1b1f24;--mut:#6b7280;--line:#e5e7eb;--bar:#2563eb;--card:#f8fafc}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1317;--fg:#e6e8eb;--mut:#9aa3ad;--line:#2a313a;--bar:#60a5fa;--card:#161b21}}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
-main{max-width:860px;margin:0 auto;padding:16px}
-h1{font-size:20px;margin:0 0 12px}h2{font-size:16px;margin:0}h3{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:12px 0 4px}
-section{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin:0 0 12px}
-.bar{height:6px;background:var(--line);border-radius:3px;margin:6px 0}.bar i{display:block;height:6px;background:var(--bar);border-radius:3px}
-.mut{color:var(--mut);font-size:13px}.tag{font-size:11px;font-weight:400;border:1px solid var(--mut);border-radius:8px;padding:0 6px;margin-left:4px}.archived{opacity:.5}ul{list-style:none;margin:0;padding:0}li{padding:2px 0}
-code{font:13px ui-monospace,monospace}
-</style></head><body><main>
-<h1>News app</h1>
-<div class=mut>Updated <NOW> +0000</div>
-<section><h2>Tiny &lt;job&gt;</h2>
-<div class=mut>https://example.com/news?a=1&amp;b=2</div>
-<h3>Headline</h3><div>1 need you; 1 blocked; 1 in progress; 2 of 5 done.</div>
-<h3>Needs you (1)</h3><ul>
-<li>TSK-001 Doc work (doc): Keep | or cut `X`? @carol</li>
-</ul>
-<h3>Blocked (1)</h3><ul>
-<li>TSK-003 Wait for keys (news-app): needs &lt;b&gt;keys&lt;/b&gt; second line</li>
-</ul>
-<h3>In progress (1)</h3><ul>
-<li>TSK-001 Doc work (doc): @carol</li>
-</ul>
-<h3>Milestones</h3><ul>
-<li><code>WAV-001</code> First | milestone <span class=mut>news-app &middot; 1/2 &middot; ready</span></li>
-</ul>
-<h3>Decisions</h3><ul>
-<li><span class=mut>10-22 11:13</span> decide: CHR-001 Decisions (doc) @sir - Ship &lt;it&gt; (why: cheap)</li>
-</ul>
-<h3>Last events</h3><ul>
-<li><span class=mut>10-22 11:13</span> decide: CHR-001 Decisions (doc) @sir - Ship &lt;it&gt; (why: cheap)</li>
-<li><span class=mut>10-22 11:06</span> created: CHR-001 Decisions (doc)</li>
-<li><span class=mut>10-22 10:59</span> ask: TSK-001 Doc work (doc) @carol - Keep | or cut `X`?</li>
-<li><span class=mut>10-22 10:52</span> start: TSK-001 Doc work (doc) @carol</li>
-<li><span class=mut>10-22 10:45</span> ready: TSK-001 Doc work (doc)</li>
-<li><span class=mut>10-22 10:38</span> created: TSK-001 Doc work (doc)</li>
-<li><span class=mut>10-22 10:31</span> block: TSK-003 Wait for keys (news-app) @bob - needs &lt;b&gt;keys&lt;/b&gt; second line</li>
-<li><span class=mut>10-22 10:24</span> start: TSK-003 Wait for keys (news-app) @bob</li>
-<li><span class=mut>10-22 10:17</span> ready: TSK-003 Wait for keys (news-app)</li>
-<li><span class=mut>10-22 10:10</span> created: TSK-003 Wait for keys (news-app)</li>
-<li><span class=mut>10-22 10:03</span> wave-add: TSK-002 Pipe | in `title` &amp; more (news-app) - WAV-001</li>
-<li><span class=mut>10-22 09:56</span> ready: TSK-002 Pipe | in `title` &amp; more (news-app)</li>
-<li><span class=mut>10-22 09:49</span> created: TSK-002 Pipe | in `title` &amp; more (news-app)</li>
-<li><span class=mut>10-22 09:42</span> done: TSK-001 Fix &lt;script&gt;alert(1)&lt;/script&gt; now (news-app) @alice - checked</li>
-<li><span class=mut>10-22 09:35</span> start: TSK-001 Fix &lt;script&gt;alert(1)&lt;/script&gt; now (news-app) @alice</li>
-<li><span class=mut>10-22 09:28</span> wave-add: TSK-001 Fix &lt;script&gt;alert(1)&lt;/script&gt; now (news-app) - WAV-001</li>
-<li><span class=mut>10-22 09:21</span> ready: TSK-001 Fix &lt;script&gt;alert(1)&lt;/script&gt; now (news-app)</li>
-<li><span class=mut>10-22 09:14</span> created: TSK-001 Fix &lt;script&gt;alert(1)&lt;/script&gt; now (news-app)</li>
-<li><span class=mut>10-22 09:07</span> created: WAV-001 First | milestone (news-app)</li>
-</ul>
-<h3>Summary</h3><pre><code>Harness: 3 pass
-&lt;script&gt;alert(1)&lt;/script&gt; | ``` fence</code></pre>
-</section>
-</main></body></html>
+body{margin:0;background:#000;color:#33ff33;font:15px/1.3 ui-monospace,Menlo,Consolas,monospace}
+pre{margin:0 auto;padding:16px;max-width:72ch;white-space:pre;overflow-x:auto}
+a{color:#ffb000}a:visited{color:#cc8a00}
+@media (prefers-color-scheme:light){body{background:#fffbe6;color:#1a4d1a}a{color:#8a5a00}}
+</style></head><body>
+<pre>
+======================================================================
+ TINY &lt;JOB&gt; BULLETIN                             DRAFT - NOT RELEASED
+ since the start - 19 changes       gopher://example.com/news?a=1&amp;b=2
+======================================================================
+
+1. IN SHORT
+-----------
+  Harness: 3 pass
+  &lt;script&gt;alert(1)&lt;/script&gt; | ``` fence
+
+2. WHAT HAPPENED
+----------------
+0 news-app/TSK-001  Fix &lt;script&gt;alert(1)&lt;/script&gt; now ........... done
+0 doc/CHR-001  Decisions ..................................... decided
+    Ship &lt;it&gt; (why: cheap)
+
+3. ONGOING
+----------
+  2 of 5 done, 1 ready
+! doc/TSK-001  Doc work .................................... needs you
+    Keep | or cut `X`?
+- news-app/TSK-003  Wait for keys ............................ blocked
+    needs &lt;b&gt;keys&lt;/b&gt; second line
++ doc/TSK-001  Doc work ........................................ doing
+
+4. WHAT&#39;S NEXT
+--------------
+&gt; news-app/TSK-002  Pipe | in `title` &amp; more ................... ready
+1 news-app/WAV-001  First | milestone ............................ 1/2
+
+5. METRICS
+----------
+  (no metrics)
+
+----------------------------------------------------------------------
+ releases: none                                       end of bulletin
+======================================================================
+</pre>
+</body></html>

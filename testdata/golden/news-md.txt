@@ -1,50 +1,39 @@
-# Tiny &lt;job&gt;
-Updated <NOW> +0000
-Page: [https\:\/\/example\.com\/news\?a\=1&amp;b\=2](https://example.com/news?a=1&amp;b=2)
-
-## Headline
-1 need you\; 1 blocked\; 1 in progress\; 2 of 5 done.
-
-## Needs you
-- TSK\-001 Doc work \(doc\)\: Keep \| or cut \`X\`\? \@carol
-
-## Blocked
-- TSK\-003 Wait for keys \(news\-app\)\: needs &lt;b&gt;keys&lt;\/b&gt; second line
-
-## In progress
-- TSK\-001 Doc work \(doc\)\: \@carol
-
-## Milestones
-| Milestone | Tenant | Done/total | State |
-|---|---|---|---|
-| WAV\-001 First \| milestone | news\-app | 1/2 | ready |
-
-## Decisions
-- 10\-22 11\:13 decide\: CHR\-001 Decisions \(doc\) \@sir \- Ship &lt;it&gt; \(why\: cheap\)
-
-## Last events
-- 10\-22 11\:13 decide\: CHR\-001 Decisions \(doc\) \@sir \- Ship &lt;it&gt; \(why\: cheap\)
-- 10\-22 11\:06 created\: CHR\-001 Decisions \(doc\)
-- 10\-22 10\:59 ask\: TSK\-001 Doc work \(doc\) \@carol \- Keep \| or cut \`X\`\?
-- 10\-22 10\:52 start\: TSK\-001 Doc work \(doc\) \@carol
-- 10\-22 10\:45 ready\: TSK\-001 Doc work \(doc\)
-- 10\-22 10\:38 created\: TSK\-001 Doc work \(doc\)
-- 10\-22 10\:31 block\: TSK\-003 Wait for keys \(news\-app\) \@bob \- needs &lt;b&gt;keys&lt;\/b&gt; second line
-- 10\-22 10\:24 start\: TSK\-003 Wait for keys \(news\-app\) \@bob
-- 10\-22 10\:17 ready\: TSK\-003 Wait for keys \(news\-app\)
-- 10\-22 10\:10 created\: TSK\-003 Wait for keys \(news\-app\)
-- 10\-22 10\:03 wave\-add\: TSK\-002 Pipe \| in \`title\` &amp; more \(news\-app\) \- WAV\-001
-- 10\-22 09\:56 ready\: TSK\-002 Pipe \| in \`title\` &amp; more \(news\-app\)
-- 10\-22 09\:49 created\: TSK\-002 Pipe \| in \`title\` &amp; more \(news\-app\)
-- 10\-22 09\:42 done\: TSK\-001 Fix &lt;script&gt;alert\(1\)&lt;\/script&gt; now \(news\-app\) \@alice \- checked
-- 10\-22 09\:35 start\: TSK\-001 Fix &lt;script&gt;alert\(1\)&lt;\/script&gt; now \(news\-app\) \@alice
-- 10\-22 09\:28 wave\-add\: TSK\-001 Fix &lt;script&gt;alert\(1\)&lt;\/script&gt; now \(news\-app\) \- WAV\-001
-- 10\-22 09\:21 ready\: TSK\-001 Fix &lt;script&gt;alert\(1\)&lt;\/script&gt; now \(news\-app\)
-- 10\-22 09\:14 created\: TSK\-001 Fix &lt;script&gt;alert\(1\)&lt;\/script&gt; now \(news\-app\)
-- 10\-22 09\:07 created\: WAV\-001 First \| milestone \(news\-app\)
-
-## Summary
 ````text
-Harness: 3 pass
-<script>alert(1)</script> | ``` fence
+======================================================================
+ TINY <JOB> BULLETIN                             DRAFT - NOT RELEASED
+ since the start - 19 changes       gopher://example.com/news?a=1&b=2
+======================================================================
+
+1. IN SHORT
+-----------
+  Harness: 3 pass
+  <script>alert(1)</script> | ``` fence
+
+2. WHAT HAPPENED
+----------------
+0 news-app/TSK-001  Fix <script>alert(1)</script> now ........... done
+0 doc/CHR-001  Decisions ..................................... decided
+    Ship <it> (why: cheap)
+
+3. ONGOING
+----------
+  2 of 5 done, 1 ready
+! doc/TSK-001  Doc work .................................... needs you
+    Keep | or cut `X`?
+- news-app/TSK-003  Wait for keys ............................ blocked
+    needs <b>keys</b> second line
++ doc/TSK-001  Doc work ........................................ doing
+
+4. WHAT'S NEXT
+--------------
+> news-app/TSK-002  Pipe | in `title` & more ................... ready
+1 news-app/WAV-001  First | milestone ............................ 1/2
+
+5. METRICS
+----------
+  (no metrics)
+
+----------------------------------------------------------------------
+ releases: none                                       end of bulletin
+======================================================================
 ````

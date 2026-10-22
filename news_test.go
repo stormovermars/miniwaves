@@ -1,11 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +12,12 @@ import (
 // newsBoard builds a fixed two-tenant job board with hostile titles and rewrites every event stamp to a
 // fixed, increasing time so the output is reproducible (and local time is UTC).
 func newsBoard(t *testing.T) string {
+	return newsBoardAt(t, time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC))
+}
+
+// newsBoardAt is newsBoard with its event stamps starting at base (a release test uses a past base, so
+// every event lies before the release time).
+func newsBoardAt(t *testing.T, base time.Time) string {
 	t.Helper()
 	old := time.Local
 	time.Local = time.UTC
@@ -48,7 +52,7 @@ func newsBoard(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	at := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
+	at := base
 	for ti := range w.Tenants {
 		for ii := range w.Tenants[ti].Items {
 			for ei := range w.Tenants[ti].Items[ii].Events {
@@ -67,69 +71,6 @@ func newsBoard(t *testing.T) string {
 func nowMasked(s string, before time.Time) string {
 	s = strings.ReplaceAll(s, before.Format("2006-01-02 15:04"), "<NOW>")
 	return strings.ReplaceAll(s, before.Add(time.Minute).Format("2006-01-02 15:04"), "<NOW>")
-}
-
-func TestNewsGoldens(t *testing.T) {
-	newsBoard(t)
-	before := time.Now()
-	for _, f := range []string{"md", "html"} {
-		got := ""
-		got = captureOutput(t, func() { runAll(t, []string{"news", "--job", "tiny", "--format", f, "-o", "-"}) })
-		got = nowMasked(got, before)
-		checkGolden(t, "news-"+f, got)
-		if head, _, _ := strings.Cut(got, "## Summary"); strings.Contains(head, "<script>") || strings.Contains(got, "\r") {
-			t.Fatalf("%s: raw <script> or CR in output", f)
-		}
-	}
-}
-
-func TestNewsDefaultPathAndUnchanged(t *testing.T) {
-	path := newsBoard(t)
-	root := filepath.Dir(path)
-	out := captureOutput(t, func() { runAll(t, []string{"news"}) })
-	file := filepath.Join(root, "docs", "news", "status.md")
-	b, err := os.ReadFile(file)
-	if err != nil || !strings.HasPrefix(out, "wrote ") {
-		t.Fatalf("first run: %q %v", out, err)
-	}
-	if strings.Contains(string(b), "first run") == false {
-		t.Fatalf("first run marker missing:\n%s", b)
-	}
-	if out = captureOutput(t, func() { runAll(t, []string{"news"}) }); !strings.HasPrefix(out, "unchanged ") {
-		t.Fatalf("second run: %q", out)
-	}
-	// a board change writes again, and reports the moved events
-	runAll(t, []string{"note", "TSK-002", "progress", "-t", "news-app"})
-	if out = captureOutput(t, func() { runAll(t, []string{"news"}) }); !strings.HasPrefix(out, "wrote ") {
-		t.Fatalf("after change: %q", out)
-	}
-	if b, _ = os.ReadFile(file); !strings.Contains(string(b), "moved since the last run") || !strings.Contains(string(b), "note\\: TSK\\-002") {
-		t.Fatalf("change not shown:\n%s", b)
-	}
-	// deleting the page rewrites it even though the hash matches
-	_ = os.Remove(file)
-	if out = captureOutput(t, func() { runAll(t, []string{"news"}) }); !strings.HasPrefix(out, "wrote ") {
-		t.Fatalf("after delete: %q", out)
-	}
-	// the hash ignores the stamp lines
-	a := newsFill("x\x00stamp\x00 y\x00moved\x00", time.Now(), 1, true, true)
-	if a != "x y" {
-		t.Fatalf("hash form: %q", a)
-	}
-}
-
-func TestNewsEscapingMD(t *testing.T) {
-	if got := newsMD("a<b>&`c`|d\\e\nf"); got != "a&lt;b&gt;&amp;\\`c\\`\\|d\\\\e f" {
-		t.Fatalf("escape: %q", got)
-	}
-	// no link, image, autolink or raw ESC survives (CommonMark: every ASCII punctuation may be escaped)
-	for _, in := range []string{"![](http://track.example/p.png) [click](https://evil.example) *bold*", "<https://e> www.e.com https://e.com", "q \x1b[31mRED\x1b[0m"} {
-		got := newsMD(in)
-		if strings.Contains(got, "](") || strings.Contains(got, "![") || strings.Contains(got, "\x1b") || strings.Contains(strings.ReplaceAll(got, "\\:", ""), "://") ||
-			strings.Contains(got, "<") || strings.Contains(strings.ReplaceAll(got, "\\:", ""), ":") {
-			t.Fatalf("unsafe: %q -> %q", in, got)
-		}
-	}
 }
 
 func TestNewsConfinement(t *testing.T) {
@@ -196,268 +137,8 @@ func TestNewsDashOElsewhere(t *testing.T) {
 	}
 }
 
-func TestNewsMDCap(t *testing.T) {
-	path := inTempDir(t)
-	t.Setenv("MW_SESSION", "")
-	t.Setenv("MW_TENANT", "")
-	runAll(t, []string{"init", "Big"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"},
-		[]string{"jobs", "enable", "big", "-t", "big"}, []string{"jobs", "set", "big", "summary=sum.txt"})
-	long := strings.Repeat("word ", 18)
-	w, _ := load(path)
-	tn := &w.Tenants[0]
-	for i := 0; i < 60; i++ {
-		id := fmt.Sprintf("TSK-%03d", i+1)
-		tn.Items = append(tn.Items, Item{ID: id, Kind: "task", Title: long + strconv.Itoa(i), Status: "doing", Created: "2026-10-22T09:00:00Z", Updated: "2026-10-22T09:00:00Z",
-			Events: []Event{{At: "2026-10-22T09:00:00Z", Action: "ask", By: "s", Note: long}}})
-	}
-	if err := save(path, w); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile("sum.txt", []byte(strings.Repeat("S", 30000)), 0644); err != nil {
-		t.Fatal(err)
-	}
-	out := captureOutput(t, func() { runAll(t, []string{"news", "-o", "-"}) })
-	if n := len([]rune(out)); n > 9500 {
-		t.Fatalf("md is %d chars", n)
-	}
-	if strings.Contains(out, "## Last events") {
-		t.Fatal("events were not trimmed first")
-	}
-	if lines := strings.Count(out, "\n"); lines > 300 {
-		t.Fatalf("%d lines", lines)
-	}
-	// the summary is capped at 20 KB when read
-	s, err := newsSummary(filepath.Dir(path), "sum.txt")
-	if err != nil || len(s) > newsSummaryCap+40 || !strings.Contains(s, "[truncated at 20 KB]") {
-		t.Fatalf("summary cap: %d %v", len(s), err)
-	}
-	// html keeps everything within the same list caps
-	html := captureOutput(t, func() { runAll(t, []string{"news", "-o", "-", "--format", "html"}) })
-	if !strings.Contains(html, "... 35 more") {
-		t.Fatalf("html list cap missing")
-	}
-}
-
 func TestNewsIsAWrite(t *testing.T) {
 	if readOnly([]string{"news"}) || readOnly([]string{"news", "--job", "x"}) {
 		t.Fatal("news must take the write lock")
-	}
-}
-
-func newsTextOutput(t *testing.T, width string) string {
-	t.Helper()
-	args := []string{"news", "--job", "tiny", "--format", "text"}
-	if width != "" {
-		args = append(args, "--width", width)
-	}
-	return captureOutput(t, func() { runAll(t, args) })
-}
-
-func TestNewsTextGolden(t *testing.T) {
-	newsBoard(t)
-	t.Setenv("COLUMNS", "")
-	before := time.Now()
-	got := nowMasked(newsTextOutput(t, "80"), before)
-	checkGolden(t, "news-text", got)
-	for _, bad := range []string{"\x1b", "\r", "\\|", "&lt;", "&amp;"} {
-		if strings.Contains(got, bad) {
-			t.Fatalf("text output contains %q", bad)
-		}
-	}
-	for _, l := range strings.Split(got, "\n") {
-		if newsStrWidth(l) > 80 {
-			t.Fatalf("line wider than 80: %q", l)
-		}
-	}
-	if _, err := os.Stat("docs"); err == nil {
-		t.Fatal("text wrote the news.out default")
-	}
-}
-
-func TestNewsTextWidthClamp(t *testing.T) {
-	for _, c := range []struct {
-		flag, env string
-		want      int
-	}{
-		{"", "", 80}, {"10", "", 40}, {"500", "", 160}, {"", "100", 80}, {"60", "100", 60}, {"", "abc", 80},
-	} {
-		t.Setenv("COLUMNS", c.env)
-		if got, err := newsTextWidth(c.flag); err != nil || got != c.want {
-			t.Fatalf("%+v: %d %v", c, got, err)
-		}
-	}
-	if _, err := newsTextWidth("x"); err == nil {
-		t.Fatal("bad width accepted")
-	}
-	newsBoard(t)
-	for _, w := range []string{"10", "500"} {
-		max := map[string]int{"10": 40, "500": 160}[w]
-		for _, l := range strings.Split(newsTextOutput(t, w), "\n") {
-			if n := newsStrWidth(l); n > max {
-				t.Fatalf("width %s: %d cells: %q", w, n, l)
-			}
-		}
-	}
-}
-
-func TestNewsTextControlStripped(t *testing.T) {
-	if got := newsClean("a\x1b[31mred\x07\x00b‮c\tz\nq", false); got != "a[31mredbc z q" {
-		t.Fatalf("clean: %q", got)
-	}
-	p := newsPart{title: "T\x1b]0;x\x07itle", summary: "s\x1b[2Jum\nline"}
-	d := newsData{needs: []newsLine{{"A-1", "t", "evil \x1b[31m title", "d\x9bx"}}}
-	out := strings.ReplaceAll(renderNewsText(p, d, 80), newsStampMarker, "now")
-	for _, r := range out {
-		if r != '\n' && (r < 0x20 || (r >= 0x7f && r <= 0x9f) || r == 0x202e) {
-			t.Fatalf("control rune %U in output:\n%q", r, out)
-		}
-	}
-}
-
-func TestNewsTextWideRunes(t *testing.T) {
-	if newsStrWidth("日本語") != 6 || newsStrWidth("abc") != 3 || newsStrWidth("é") != 1 {
-		t.Fatal("rune widths")
-	}
-	if got := newsCut("日本語abc", 5); got != "日本" {
-		t.Fatalf("cut: %q", got)
-	}
-	d := newsData{needs: []newsLine{{"A-1", "t", strings.Repeat("日本語", 40), ""}}}
-	for _, l := range strings.Split(renderNewsText(newsPart{title: "日本語"}, d, 60), "\n") {
-		if newsStrWidth(l) > 60 {
-			t.Fatalf("wide line over 60 cells: %q", l)
-		}
-	}
-}
-
-func TestNewsTextTableAlignsSlash(t *testing.T) {
-	d := newsData{miles: []newsMile{
-		{"WAV-001", "a", "First", "1/2", "ready"}, {"WAV-002", "bb", "Second", "10/100", "doing"}, {"WAV-003", "c", "Third", "100/100", "done"},
-	}}
-	out := renderNewsText(newsPart{title: "J"}, d, 100)
-	slash, bar := -1, -1
-	n := 0
-	for _, l := range strings.Split(out, "\n") {
-		if !strings.HasPrefix(l, "│ WAV-") {
-			continue
-		}
-		n++
-		rs := []rune(l)
-		si := -1
-		for i, r := range rs {
-			if r == '/' {
-				si = i
-			}
-		}
-		bi := strings.IndexAny(l, "█░")
-		bi = len([]rune(l[:bi]))
-		if slash == -1 {
-			slash, bar = si, bi
-		}
-		if si != slash || bi != bar {
-			t.Fatalf("misaligned (slash %d vs %d, bar %d vs %d): %q", si, slash, bi, bar, l)
-		}
-	}
-	if n != 3 {
-		t.Fatalf("rows: %d", n)
-	}
-}
-
-func TestNewsTextTableNarrow(t *testing.T) {
-	mk := func(tenants ...string) newsData {
-		var d newsData
-		for i, tn := range tenants {
-			d.miles = append(d.miles, newsMile{fmt.Sprintf("WAV-%03d", i+1), tn, "A very long milestone title for narrow terminals", "3/4", "ready"})
-		}
-		return d
-	}
-	for _, w := range []int{40, 50, 60, 80} {
-		for _, d := range []newsData{mk("one", "one"), mk("one", "two")} {
-			out := renderNewsText(newsPart{title: "J"}, d, w)
-			rows := 0
-			for _, l := range strings.Split(out, "\n") {
-				if newsStrWidth(l) > w {
-					t.Fatalf("w=%d over: %q", w, l)
-				}
-				if strings.HasPrefix(l, "│ WAV-") || strings.HasPrefix(l, "│ MILE") {
-					rows++
-					if !strings.Contains(l, "ready") && !strings.Contains(l, "STATE") {
-						t.Fatalf("w=%d state lost: %q", w, l)
-					}
-					if strings.Contains(l, "…") {
-						t.Fatalf("ellipsis: %q", l)
-					}
-				}
-			}
-			if rows != 3 {
-				t.Fatalf("w=%d rows %d:\n%s", w, rows, out)
-			}
-			if single := d.miles[0].Tenant == d.miles[1].Tenant; single == (strings.Count(strings.SplitN(out[strings.Index(out, "│ MILE"):], "\n", 2)[0], "│") == 6) {
-				t.Fatalf("w=%d tenant column wrong (single=%v)", w, single)
-			}
-		}
-	}
-}
-
-func TestNewsTextTableAlignsSlashMixedWidths(t *testing.T) {
-	d := newsData{miles: []newsMile{
-		{"WAV-001", "a", "First", "1/16", "ready"}, {"WAV-002", "bb", "Second", "2/2", "done"},
-		{"WAV-003", "c", "Third", "12/4", "doing"}, {"WAV-004", "c", "Empty", "0/0", "ready"},
-	}}
-	out := renderNewsText(newsPart{title: "J"}, d, 80)
-	t.Log("\n" + out)
-	slash, n := -1, 0
-	for _, l := range strings.Split(out, "\n") {
-		if !strings.HasPrefix(l, "│ WAV-") {
-			continue
-		}
-		n++
-		si := len([]rune(l[:strings.Index(l, "/")]))
-		if slash == -1 {
-			slash = si
-		}
-		if si != slash {
-			t.Fatalf("slash misaligned (%d vs %d): %q", si, slash, l)
-		}
-		cell := strings.Split(l, "│")[3]
-		if !strings.HasSuffix(cell, "/16 ") && !strings.HasSuffix(cell, "/2  ") && !strings.HasSuffix(cell, "/4  ") && !strings.HasSuffix(cell, "/0  ") {
-			t.Fatalf("cell not right-aligned padded: %q", cell)
-		}
-		if strings.HasPrefix(strings.TrimSpace(l[strings.LastIndex(l[:len(l)-3], "│"):]), "│ ░") {
-			t.Fatalf("empty bar uses ░: %q", l)
-		}
-	}
-	if n != 4 {
-		t.Fatalf("rows: %d", n)
-	}
-	if !strings.Contains(out, "│ – ") && !strings.Contains(out, "–") {
-		t.Fatalf("no dash bar for 0/0")
-	}
-}
-
-func TestNewsTextShortHeaderBeforeCuttingName(t *testing.T) {
-	d := newsData{miles: []newsMile{{"WAV-004", "tinysheet", "Consolidation by feature area", "1/16", "ready"}, {"WAV-001", "tinydoc", "Feature matrix", "2/2", "done"}}}
-	out := renderNewsText(newsPart{title: "J"}, d, 80)
-	t.Log("\n" + out)
-	if !strings.Contains(out, "Consolidation by feature area") {
-		t.Fatalf("name truncated")
-	}
-}
-
-func TestNewsDescription(t *testing.T) {
-	p := newsPart{title: "T", desc: "Hi <b>|x * _y_ \x1b[31m"}
-	var d newsData
-	md := renderNewsMD(p, d, 10, 1000)
-	if !strings.Contains(md, "# T\n_Hi &lt;b&gt;\\|x \\* \\_y\\_ \\[31m_\n") {
-		t.Fatalf("md: %q", md)
-	}
-	if !strings.Contains(renderNewsHTML([]newsPart{p}, []newsData{d}, "T"), "<em>Hi &lt;b&gt;|x * _y_ \x1b[31m</em>") {
-		t.Fatal("html")
-	}
-	txt := renderNewsText(p, d, 80)
-	if !strings.Contains(txt, "\nHi <b>|x * _y_ [31m\n") {
-		t.Fatalf("text: %q", txt)
-	}
-	if strings.Contains(renderNewsMD(newsPart{title: "T"}, d, 10, 1000), "__") {
-		t.Fatal("empty description rendered")
 	}
 }

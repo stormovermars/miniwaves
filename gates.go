@@ -478,17 +478,26 @@ func editCommand(path string, w *Workspace, args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 {
-		return errors.New("usage: mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [-t SLUG]")
+	if len(pos) < 1 {
+		return errors.New("usage: mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY] [-t SLUG]")
 	}
+	ticket, hasT := "", false
+	for _, kv := range pos[1:] {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || k != "ticket" {
+			return fmt.Errorf("unexpected argument %q (only ticket=KEY; ticket= clears it)", kv)
+		}
+		ticket, hasT = strings.TrimSpace(v), true
+	}
+	pos = pos[:1]
 	if err := allowOptions(o, "tenant", "session", "acceptance", "body", "parent"); err != nil {
 		return err
 	}
 	_, hasC := o["acceptance"]
 	_, hasB := o["body"]
 	_, hasP := o["parent"]
-	if !hasC && !hasB && !hasP {
-		return errors.New("mw edit needs -c TEXT (acceptance), -b TEXT (body) and/or -p PARENT|- (parent)")
+	if !hasC && !hasB && !hasP && !hasT {
+		return errors.New("mw edit needs -c TEXT (acceptance), -b TEXT (body), -p PARENT|- (parent) and/or ticket=KEY")
 	}
 	t, err := selectTenant(w, o)
 	if err != nil {
@@ -516,6 +525,18 @@ func editCommand(path string, w *Workspace, args []string) error {
 		}
 		it.Parent = parent
 		what = append(what, "parent="+orDash(parent))
+	}
+	if hasT {
+		if it.Kind == "wave" {
+			return errors.New("a milestone cannot carry a ticket")
+		}
+		if ticket != "" {
+			if ticket, err = ticketForItem(w, t, ticket); err != nil {
+				return err
+			}
+		}
+		it.Ticket = ticket
+		what = append(what, "ticket="+orDash(ticket))
 	}
 	if hasC {
 		it.Acceptance = o["acceptance"]

@@ -9,21 +9,12 @@ import (
 
 func TestNewsReadOnlyTable(t *testing.T) {
 	for args, want := range map[string]bool{
-		"news -o -": true, "news --out -": true, "news --format text": true, "news": false, "news -o x.md": false,
+		"news -o -": true, "news --out -": true, "news --format text": true, "news --format json": true, "news --job j --release": false, "news --format json --release": false, "news --release -o -": false, "news --format json -o x.json": false, "news": false, "news -o x.md": false,
 		"news --format text -o x.txt": false, "news --job j -o -": true,
 	} {
 		if got := readOnly(strings.Fields(args)); got != want {
 			t.Errorf("%s: readOnly=%v", args, got)
 		}
-	}
-}
-
-func TestNewsStdoutNoFirstRun(t *testing.T) {
-	newsBoard(t)
-	os.WriteFile(".hash", []byte("1 x"), 0o644)
-	out := captureOutput(t, func() { runAll(t, []string{"news", "--job", "tiny", "-o", "-"}) })
-	if strings.Contains(out, "first run") || strings.Contains(out, "moved") {
-		t.Fatalf("stdout headline has a moved segment:\n%s", out)
 	}
 }
 

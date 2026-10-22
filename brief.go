@@ -176,6 +176,7 @@ type briefDoc struct {
 	Type           string      `json:"type"`
 	State          string      `json:"state"`
 	Title          string      `json:"title"`
+	Ticket         string      `json:"ticket,omitempty"`
 	Parent         string      `json:"parent,omitempty"`
 	Wave           string      `json:"wave,omitempty"`
 	Session        string      `json:"session,omitempty"`
@@ -225,7 +226,7 @@ func countEvidence(dir string) int {
 
 func briefOf(w *Workspace, t *Tenant, it Item, verbose bool) briefDoc {
 	a, src := acceptanceSource(t, it)
-	d := briefDoc{ID: it.ID, Type: it.Kind, State: it.Status, Title: compactText(it.Title, 72), Parent: it.Parent,
+	d := briefDoc{ID: it.ID, Type: it.Kind, State: it.Status, Title: compactText(it.Title, 72), Ticket: it.Ticket, Parent: it.Parent,
 		Wave: it.Wave, Session: it.Assignee, Body: it.Body, Acceptance: strings.TrimSpace(a),
 		Children: []itemBrief{}, Note: it.Note, Notes: []string{}, Judged: it.Judged, By: it.By, JudgedBy: it.JudgedBy,
 		Attempts: it.Attempts, Evidence: it.Evidence}
@@ -236,7 +237,7 @@ func briefOf(w *Workspace, t *Tenant, it Item, verbose bool) briefDoc {
 	d.EvidenceFiles = countEvidence(d.EvidenceDir)
 	for _, c := range t.Items {
 		if c.Parent == it.ID || (it.Kind == "wave" && c.Wave == it.ID) {
-			d.Children = append(d.Children, itemBrief{c.ID, c.Kind, c.Status, compactText(c.Title, 72)})
+			d.Children = append(d.Children, itemBrief{c.ID, c.Kind, c.Status, compactText(c.Title, 72), c.Ticket})
 		}
 	}
 	d.Notes = append(d.Notes, it.Notes...)

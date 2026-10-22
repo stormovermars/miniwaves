@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "job": {
+    "id": "tiny",
+    "title": "Tiny \u003cjob\u003e",
+    "description": "",
+    "url": "https://example.com/news?a=1\u0026b=2"
+  },
+  "release": {
+    "number": null,
+    "at": "2026-10-22T11:13:00Z",
+    "since": "",
+    "previous": null,
+    "changes": 19
+  },
+  "now": {
+    "counts": {
+      "needs": 1,
+      "review": 0,
+      "blocked": 1,
+      "doing": 1,
+      "ready": 1,
+      "done": 2,
+      "total": 5
+    },
+    "needs": [
+      {
+        "tenant": "doc",
+        "id": "TSK-001",
+        "title": "Doc work",
+        "note": "Keep | or cut `X`?",
+        "since": "2026-10-22T10:59:00Z",
+        "by": "carol"
+      }
+    ],
+    "review": [],
+    "blocked": [
+      {
+        "tenant": "news-app",
+        "id": "TSK-003",
+        "title": "Wait for keys",
+        "note": "needs \u003cb\u003ekeys\u003c/b\u003e second line",
+        "since": "2026-10-22T10:31:00Z",
+        "by": "bob"
+      }
+    ],
+    "doing": [
+      {
+        "tenant": "doc",
+        "id": "TSK-001",
+        "title": "Doc work",
+        "note": "",
+        "since": "2026-10-22T10:52:00Z",
+        "by": "carol"
+      }
+    ],
+    "milestones": {
+      "open": [
+        {
+          "tenant": "news-app",
+          "id": "WAV-001",
+          "title": "First | milestone",
+          "done": 1,
+          "total": 2
+        }
+      ],
+      "closed_count": 0
+    },
+    "caps": {
+      "blocked": 50,
+      "doing": 50,
+      "milestones": 200,
+      "needs": 50,
+      "review": 50
+    },
+    "more": {
+      "blocked": 0,
+      "doing": 0,
+      "milestones": 0,
+      "needs": 0,
+      "review": 0
+    }
+  },
+  "happened": {
+    "closed_milestones": [],
+    "done": [
+      {
+        "tenant": "news-app",
+        "id": "TSK-001",
+        "title": "Fix \u003cscript\u003ealert(1)\u003c/script\u003e now",
+        "note": "checked",
+        "since": "2026-10-22T09:42:00Z",
+        "by": "alice"
+      }
+    ],
+    "accepted": [],
+    "sent_back": [],
+    "answers": [],
+    "decisions": [
+      {
+        "tenant": "doc",
+        "id": "CHR-001",
+        "title": "Decisions",
+        "note": "Ship \u003cit\u003e (why: cheap)",
+        "since": "2026-10-22T11:13:00Z",
+        "by": "sir"
+      }
+    ],
+    "new_items": [
+      {
+        "tenant": "doc",
+        "id": "CHR-001",
+        "title": "Decisions",
+        "note": "",
+        "since": "2026-10-22T11:06:00Z",
+        "by": ""
+      },
+      {
+        "tenant": "doc",
+        "id": "TSK-001",
+        "title": "Doc work",
+        "note": "",
+        "since": "2026-10-22T10:38:00Z",
+        "by": ""
+      },
+      {
+        "tenant": "news-app",
+        "id": "TSK-003",
+        "title": "Wait for keys",
+        "note": "",
+        "since": "2026-10-22T10:10:00Z",
+        "by": ""
+      },
+      {
+        "tenant": "news-app",
+        "id": "TSK-002",
+        "title": "Pipe | in `title` \u0026 more",
+        "note": "",
+        "since": "2026-10-22T09:49:00Z",
+        "by": ""
+      },
+      {
+        "tenant": "news-app",
+        "id": "TSK-001",
+        "title": "Fix \u003cscript\u003ealert(1)\u003c/script\u003e now",
+        "note": "",
+        "since": "2026-10-22T09:14:00Z",
+        "by": ""
+      }
+    ],
+    "counts": {
+      "accepted": 0,
+      "answers": 0,
+      "closed_milestones": 0,
+      "decisions": 1,
+      "done": 1,
+      "new_items": 5,
+      "sent_back": 0
+    },
+    "caps": {
+      "accepted": 100,
+      "answers": 100,
+      "closed_milestones": 100,
+      "decisions": 100,
+      "done": 100,
+      "new_items": 100,
+      "sent_back": 100
+    },
+    "more": {
+      "accepted": 0,
+      "answers": 0,
+      "closed_milestones": 0,
+      "decisions": 0,
+      "done": 0,
+      "new_items": 0,
+      "sent_back": 0
+    }
+  },
+  "next": {
+    "ready": [
+      {
+        "tenant": "news-app",
+        "id": "TSK-002",
+        "title": "Pipe | in `title` \u0026 more",
+        "note": "",
+        "since": "2026-10-22T09:56:00Z",
+        "by": ""
+      }
+    ],
+    "next_milestones": [
+      {
+        "tenant": "news-app",
+        "id": "WAV-001",
+        "title": "First | milestone",
+        "done": 1,
+        "total": 2
+      }
+    ],
+    "caps": {
+      "next_milestones": 5,
+      "ready": 10
+    },
+    "more": {
+      "next_milestones": 0,
+      "ready": 0
+    }
+  },
+  "metrics": null,
+  "summary": "Harness: 3 pass\n\u003cscript\u003ealert(1)\u003c/script\u003e | ``` fence"
+}

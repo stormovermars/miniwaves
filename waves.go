@@ -429,7 +429,7 @@ func waveCommand(path string, w *Workspace, args []string) error {
 		members := waveMembers(t, wv.ID)
 		briefs := make([]itemBrief, 0, len(members))
 		for _, m := range members {
-			briefs = append(briefs, itemBrief{m.ID, m.Kind, m.Status, compactText(m.Title, 72)})
+			briefs = append(briefs, itemBrief{m.ID, m.Kind, m.Status, compactText(m.Title, 72), m.Ticket})
 		}
 		r := waveRowOf(t, *wv)
 		if o["json"] == "true" {

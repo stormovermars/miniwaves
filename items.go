@@ -277,7 +277,7 @@ func addItem(path string, w *Workspace, args []string) error {
 	if len(pos) < 2 {
 		return errors.New("usage: mw add KIND TITLE...")
 	}
-	if err := allowOptions(o, "tenant", "session", "parent", "wave", "body", "acceptance", "status"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "parent", "wave", "body", "acceptance", "status", "ticket"); err != nil {
 		return err
 	}
 	t, err := selectTenant(w, o)
@@ -313,9 +313,15 @@ func addItem(path string, w *Workspace, args []string) error {
 	if status == "done" && (byName(gs, "evidence").Effective || byName(gs, "judge").Effective) {
 		return errors.New("add -S done is refused while the evidence or judge gate is on: add it, then mw done ID CHECK")
 	}
+	ticket := ""
+	if o["ticket"] != "" {
+		if ticket, err = ticketForItem(w, t, o["ticket"]); err != nil {
+			return err
+		}
+	}
 	t.Next[prefix]++
 	now := time.Now().UTC().Format(time.RFC3339)
-	it := Item{ID: fmt.Sprintf("%s-%03d", prefix, t.Next[prefix]), Kind: kind,
+	it := Item{Ticket: ticket, ID: fmt.Sprintf("%s-%03d", prefix, t.Next[prefix]), Kind: kind,
 		Title: strings.Join(pos[1:], " "), Status: status, Parent: parent,
 		Body: o["body"], Acceptance: o["acceptance"], Created: now, Updated: now}
 	if status == "done" && kind != "prompt" {
@@ -417,7 +423,7 @@ func listItems(w *Workspace, args []string) error {
 	} else {
 		out := make([]itemBrief, 0, len(plain))
 		for _, it := range plain {
-			out = append(out, itemBrief{it.ID, it.Kind, it.Status, compactText(it.Title, 72)})
+			out = append(out, itemBrief{it.ID, it.Kind, it.Status, compactText(it.Title, 72), it.Ticket})
 		}
 		list = out
 	}
@@ -437,6 +443,7 @@ type itemRow struct {
 	Type   string `json:"type" toon:"type"`
 	State  string `json:"state" toon:"state"`
 	Title  string `json:"title" toon:"title"`
+	Ticket string `json:"ticket,omitempty" toon:"ticket,omitempty"`
 }
 
 type itemDetailRow struct {
@@ -462,7 +469,7 @@ func listAll(w *Workspace, o map[string]string, limit int) error {
 			if limit > 0 && len(brief) >= limit {
 				break
 			}
-			brief = append(brief, itemRow{t.Slug, it.ID, it.Kind, it.Status, compactText(it.Title, 72)})
+			brief = append(brief, itemRow{t.Slug, it.ID, it.Kind, it.Status, compactText(it.Title, 72), it.Ticket})
 			if o["verbose"] == "true" {
 				detail = append(detail, itemDetailRow{t.Slug, detailOf(it, true)})
 			}
@@ -943,7 +950,7 @@ func detailOf(it Item, listed bool) itemDetail {
 		}
 	}
 	return itemDetail{it.ID, it.Kind, it.Status, it.Title, it.Parent, it.Wave, it.Assignee, it.Body, it.Acceptance, "", it.Note, it.Notes,
-		files, mark, it.Judged, it.By, it.JudgedBy, it.Attempts, it.Created, it.Updated}
+		files, mark, it.Judged, it.By, it.JudgedBy, it.Attempts, it.Created, it.Updated, it.Ticket}
 }
 
 func boardCommand(path string, w *Workspace, args []string) error {
@@ -1067,7 +1074,7 @@ func boardData(t *Tenant, sessions []Session, full bool, gs []gateInfo) boardDoc
 			continue
 		}
 		if full || it.Status == "doing" || it.Status == "blocked" || it.Status == "ready" {
-			d.States[it.Status] = append(d.States[it.Status], itemBrief{it.ID, it.Kind, it.Status, compactText(it.Title, 72)})
+			d.States[it.Status] = append(d.States[it.Status], itemBrief{it.ID, it.Kind, it.Status, compactText(it.Title, 72), it.Ticket})
 		}
 	}
 	if at != "" {

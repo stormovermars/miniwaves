@@ -427,7 +427,7 @@ func TestShortOptionAliases(t *testing.T) {
 }
 
 func TestTOONDefaultJSONAndVerboseShapes(t *testing.T) {
-	brief := []itemBrief{{"TSK-001", "task", "ready", "Build"}}
+	brief := []itemBrief{{"TSK-001", "task", "ready", "Build", ""}}
 	toonOut := captureOutput(t, func() {
 		if err := printData(brief, map[string]string{}); err != nil {
 			t.Fatal(err)
@@ -473,7 +473,7 @@ func TestCompactTextBoundsDefaultOutput(t *testing.T) {
 	if strings.Contains(got, "\n") || len([]rune(got)) != 20 || !strings.HasSuffix(got, "…") {
 		t.Fatalf("not compact: %q", got)
 	}
-	brief := itemBrief{"TSK-001", "task", "ready", compactText(raw, 20)}
+	brief := itemBrief{"TSK-001", "task", "ready", compactText(raw, 20), ""}
 	out := captureOutput(t, func() {
 		if err := printData(brief, map[string]string{}); err != nil {
 			t.Fatal(err)

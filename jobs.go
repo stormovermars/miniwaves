@@ -23,16 +23,20 @@ var (
 
 // JobConfig holds the explicitly set keys of one job; zero values mean "default".
 type JobConfig struct {
-	Title       string `json:"title,omitempty"`
-	Description string `json:"description,omitempty"`
-	MaxWorkers  int    `json:"max_workers,omitempty"`
-	Worktrees   string `json:"worktrees,omitempty"`
-	Lock        string `json:"lock,omitempty"`
-	NewsOut     string `json:"news_out,omitempty"`
-	NewsURL     string `json:"news_url,omitempty"`
-	Summary     string `json:"summary,omitempty"`
-	Pane        string `json:"pane,omitempty"`
-	PaneStyle   string `json:"pane_style,omitempty"`
+	Title        string `json:"title,omitempty"`
+	Description  string `json:"description,omitempty"`
+	MaxWorkers   int    `json:"max_workers,omitempty"`
+	Worktrees    string `json:"worktrees,omitempty"`
+	Lock         string `json:"lock,omitempty"`
+	NewsOut      string `json:"news_out,omitempty"`
+	NewsURL      string `json:"news_url,omitempty"`
+	NewsReleases string `json:"news_releases,omitempty"`
+	Tracker      string `json:"tracker,omitempty"`
+	TrackerURL   string `json:"tracker_url,omitempty"`
+	Metrics      string `json:"metrics,omitempty"`
+	Summary      string `json:"summary,omitempty"`
+	Pane         string `json:"pane,omitempty"`
+	PaneStyle    string `json:"pane_style,omitempty"`
 
 	extra map[string]json.RawMessage // keys this mw does not know: kept, written back
 }
@@ -53,7 +57,7 @@ func (c *JobConfig) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	known := map[string]bool{}
-	for _, k := range []string{"title", "description", "max_workers", "worktrees", "lock", "news_out", "news_url", "summary", "pane", "pane_style"} {
+	for _, k := range []string{"title", "description", "max_workers", "worktrees", "lock", "news_out", "news_url", "news_releases", "tracker", "tracker_url", "metrics", "summary", "pane", "pane_style"} {
 		known[k] = true
 	}
 	for old, nw := range jobDotted {
@@ -105,27 +109,31 @@ func (c JobConfig) MarshalJSON() ([]byte, error) {
 
 // JobView is a job with its defaults applied and its tenants listed.
 type JobView struct {
-	ID          string   `json:"id" toon:"id"`
-	Title       string   `json:"title" toon:"title"`
-	Description string   `json:"description" toon:"description"`
-	Tenants     []string `json:"tenants" toon:"tenants"`
-	MaxWorkers  int      `json:"max_workers" toon:"max_workers"`
-	Worktrees   string   `json:"worktrees" toon:"worktrees"`
-	Lock        string   `json:"lock" toon:"lock"`
-	NewsOut     string   `json:"news_out" toon:"news_out"`
-	NewsURL     string   `json:"news_url" toon:"news_url"`
-	Summary     string   `json:"summary" toon:"summary"`
-	Pane        string   `json:"pane" toon:"pane"`
-	PaneStyle   string   `json:"pane_style" toon:"pane_style"`
+	ID           string   `json:"id" toon:"id"`
+	Title        string   `json:"title" toon:"title"`
+	Description  string   `json:"description" toon:"description"`
+	Tenants      []string `json:"tenants" toon:"tenants"`
+	MaxWorkers   int      `json:"max_workers" toon:"max_workers"`
+	Worktrees    string   `json:"worktrees" toon:"worktrees"`
+	Lock         string   `json:"lock" toon:"lock"`
+	NewsOut      string   `json:"news_out" toon:"news_out"`
+	NewsURL      string   `json:"news_url" toon:"news_url"`
+	NewsReleases string   `json:"news_releases" toon:"news_releases"`
+	Metrics      string   `json:"metrics" toon:"metrics"`
+	Tracker      string   `json:"tracker,omitempty" toon:"tracker,omitempty"`
+	TrackerURL   string   `json:"tracker_url,omitempty" toon:"tracker_url,omitempty"`
+	Summary      string   `json:"summary" toon:"summary"`
+	Pane         string   `json:"pane" toon:"pane"`
+	PaneStyle    string   `json:"pane_style" toon:"pane_style"`
 }
 
-var jobKeys = []string{"title", "description", "max_workers", "worktrees", "lock", "news.out", "news.url", "summary", "pane", "pane.style"}
+var jobKeys = []string{"title", "description", "max_workers", "worktrees", "lock", "news.out", "news.url", "news_releases", "metrics", "tracker", "tracker_url", "summary", "pane", "pane.style"}
 
 // jobView applies the defaults.
 func jobView(w *Workspace, id string) JobView {
 	c := w.Jobs[id]
 	v := JobView{ID: id, Title: c.Title, Description: c.Description, Tenants: []string{}, MaxWorkers: c.MaxWorkers, Worktrees: c.Worktrees, Lock: c.Lock,
-		NewsOut: c.NewsOut, NewsURL: c.NewsURL, Summary: c.Summary, Pane: c.Pane, PaneStyle: c.PaneStyle}
+		NewsOut: c.NewsOut, NewsURL: c.NewsURL, NewsReleases: c.NewsReleases, Metrics: c.Metrics, Tracker: c.Tracker, TrackerURL: c.TrackerURL, Summary: c.Summary, Pane: c.Pane, PaneStyle: c.PaneStyle}
 	if v.Title == "" {
 		v.Title = id
 	}
@@ -189,6 +197,14 @@ func setJobKey(c *JobConfig, key, val string) error {
 	if val != "" && !noControl(val) {
 		return fmt.Errorf("%s: no control characters", key)
 	}
+	switch key { // the snake_case storage names work too
+	case "news_out":
+		key = "news.out"
+	case "news_url":
+		key = "news.url"
+	case "pane_style":
+		key = "pane.style"
+	}
 	switch key {
 	case "title":
 		if len([]rune(val)) > 120 {
@@ -224,16 +240,21 @@ func setJobKey(c *JobConfig, key, val string) error {
 			return fmt.Errorf("lock: %q must be a command name the kit provides (letters, digits, . _ -), not a command line", val)
 		}
 		c.Lock = val
-	case "news.out", "summary":
+	case "news.out", "summary", "news_releases", "metrics":
 		if val != "" {
 			var err error
 			if val, err = workspaceRelPath(key, val); err != nil {
 				return err
 			}
 		}
-		if key == "summary" {
+		switch key {
+		case "summary":
 			c.Summary = val
-		} else {
+		case "news_releases":
+			c.NewsReleases = val
+		case "metrics":
+			c.Metrics = val
+		default:
 			c.NewsOut = val
 		}
 	case "news.url":
@@ -241,6 +262,20 @@ func setJobKey(c *JobConfig, key, val string) error {
 			return fmt.Errorf("news.url: %q must be an http(s) URL", val)
 		}
 		c.NewsURL = val
+	case "tracker":
+		if val != "" && !knownTracker(val) {
+			return fmt.Errorf("tracker: %q is not one of %s", val, strings.Join(trackerKinds, ", "))
+		}
+		c.Tracker = val
+	case "tracker_url":
+		if val != "" {
+			u, err := validTrackerURL(val)
+			if err != nil {
+				return fmt.Errorf("tracker_url: %q %v", compactText(val, 60), err)
+			}
+			val = u
+		}
+		c.TrackerURL = val
 	case "pane.style":
 		if val != "" && !paneStylePattern.MatchString(val) {
 			return fmt.Errorf("pane.style: %q must match ^[a-z0-9-]{1,32}$", val)

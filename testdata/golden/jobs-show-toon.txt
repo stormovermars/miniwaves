@@ -7,6 +7,8 @@ worktrees: on
 lock: ""
 news_out: docs/news/
 news_url: "https://example.com/news"
+news_releases: ""
+metrics: ""
 summary: ""
 pane: on
 pane_style: ""

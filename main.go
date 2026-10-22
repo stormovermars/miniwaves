@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "format": true, "width": true,
+	"since": true, "since-file": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "ticket": true, "format": true, "width": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -302,9 +302,9 @@ func readOnly(args []string) bool {
 		return sub != "set" && sub != "use" && !(sub == "sets" && (has("add") || has("drop")))
 	case "jobs":
 		return sub == "show"
-	case "news": // stdout only (-o - or --format text without -o) writes no file and no sidecar
+	case "news": // stdout only (-o -, or --format text|json without -o; never --release) writes no file and no sidecar
 		o, _, err := options(args[1:])
-		return err == nil && (o["out"] == "-" || o["format"] == "text" && o["out"] == "")
+		return err == nil && o["release"] == "" && (o["out"] == "-" || (o["format"] == "text" || o["format"] == "json") && o["out"] == "")
 	}
 	return false
 }
@@ -371,12 +371,12 @@ Print a minimal embedded prompt to paste into an assistant. Retrieval changes no
 session: exit code 3 when the session NAME already exists (-j prints {"error":"session_exists","session":NAME}).
 --headless drops the Setup block, Loop, folders hint and reply format (a runner handles those) and
 says the item is already claimed.`,
-		"add": `mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [-S STATUS]
+		"add": `mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [-S STATUS] [--ticket KEY]
 Add work in inbox. KIND: prompt, story, task, spike, bug, or chore. -c is the
 acceptance check (long form --acceptance). -S done is
 refused while the evidence or judge gate is on.
 Example: mw add task "Build index" -p STR-001`,
-		"edit": `mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [-t SLUG]
+		"edit": `mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY] [-t SLUG]
 Change an item's acceptance (-c), body (-b) and/or parent (-p; "-" clears; kind hierarchy and
 cycles are enforced, waves are not parents: use mw wave add). A session may set -c only while
 the acceptance is empty (drafting); changing a non-empty acceptance is humans only.`,
@@ -393,14 +393,18 @@ mw fanfare stop
 Play a short clip when a wave closes and a longer finale when a tenant is finished (items exist, none inbox/ready/doing/blocked, no open wave; once per transition).
 Playback is a detached player (afplay, ffplay, mpv, paplay, Windows .wav) and never fails a board command. "fetch" downloads public-domain, CC0 and CC-BY pairs; the
 bring-your-own pair folders stay empty until you add fanfare.<ext> and finale.<ext>. Example: mw fanfare set enabled=true`,
-		"news": `mw news [--job ID] [--format md|html|text] [--width N] [-o PATH|-] [-j]
-Write a status page from board data: headline, milestones, needs you, blocked, in progress, last 20 events,
-decisions, and the job's summary file (key summary, read as data, at most 20 KB). Default: every job, one file each at
-<news.out>/status.md (.html), or the workspace when no job exists (docs/news/). news.out must stay inside the workspace;
-only -o may point elsewhere (-o - prints to stdout). Markdown is kept under 9,500 characters per job, trimming events first.
-The file is rewritten only when the content changed (the generated-at line is not hashed; the hash is kept in PATH.hash);
-otherwise it prints "unchanged". --format text is plain text for terminals (no colour codes; stdout by default, a file only with -o PATH;
-80 columns, or --width N clamped 40..160). No network. Example: mw news --job tiny`,
+		"news": `mw news [--job ID] [--format md|html|text|json] [-o PATH|-] [-j]
+mw news --job ID --release [--force] [--format ...] [-j]
+The news bulletin of a job: one model (version 1: job, release, now, happened, next, metrics, summary) drawn as a
+70-column gopher-style bulletin (md = one fenced text block, html = <pre>, text) or printed as json. Without --release it
+is the draft since the latest release (release.number null). Default: every job, one file each at <news.out>/status.md
+(.html), or the workspace when no job exists (docs/news/); the file is rewritten only when the content changed (hash in
+PATH.hash), otherwise it prints "unchanged". text and json print to stdout (a file only with -o PATH). -o - prints to stdout.
+--release cuts release N+1 under the board lock: N.json (frozen model), N.md, N.html and latest in the releases folder
+(job key news_releases, default <news.out dir>/releases). Release N compares with release N-1 (release 1 with the start).
+Nothing new since the last release is refused with exit 0 ("nothing new since release N") unless --force.
+The job's metrics file (key metrics, see USAGE.md) and summary file (key summary, at most 20 KB) are read as data.
+--width (text only) is accepted and ignored: bulletins are 70 columns. No network. Example: mw news --job tiny --release`,
 		"jobs": `mw jobs enable ID -t SLUG...
 mw jobs disable ID [-t SLUG]
 mw jobs set ID KEY=VALUE...
@@ -408,8 +412,8 @@ mw jobs show [ID] [-j]
 Coordinated-job config (data only; mw starts no sessions). Jobs live in .miniwaves.json, a tenant joins one with enable.
 -t repeats or takes a comma list. disable clears the tenants (all, or -t SLUG) and keeps the job's data.
 Keys (defaults): title (the id), description (none, one line ≤120), max_workers 1..32 (4), worktrees on|off (on), lock (a command name, none),
-news.out (docs/news/), news.url (http/https), summary (none), pane on|off (on), pane.style ([a-z0-9-]{1,32}).
-news.out and summary must be relative, inside the workspace (no .., no absolute path, no ~). An empty VALUE resets a key.
+news.out (docs/news/), news.url (http/https), news_releases (<news.out>/releases), metrics (none), tracker (none; jira linear youtrack github gitlab azure shortcut clickup asana), tracker_url (https base URL), summary (none), pane on|off (on), pane.style ([a-z0-9-]{1,32}).
+news.out, news_releases, metrics and summary must be relative, inside the workspace (no .., no absolute path, no ~). An empty VALUE resets a key.
 Job ids match ^[a-z0-9][a-z0-9-]{0,31}$. Example: mw jobs enable tiny -t sheet,doc && mw jobs set tiny max_workers=3`,
 		"ask": `mw ask ID QUESTION... [-t SLUG] [-s NAME]
 Record a question that needs a human, as an "ask" event on the item (any board, no gate; the status is unchanged).
@@ -568,7 +572,7 @@ Usage:
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]
   mw user show [-j] | mw user set KEY=VALUE...
   mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]
-  mw news [--job ID] [--format md|html|text] [--width N] [-o PATH] [-j]
+  mw news [--job ID] [--format md|html|text|json] [--release [--force]] [-o PATH] [-j]
   mw ask ID QUESTION... [-s NAME] | mw answer ID TEXT... --by NAME | mw decide TEXT... [--by NAME] [-b WHY] [-p ID]
   mw gate [-t SLUG] [-j] | gate level trust|proof|spec|judged | gate evidence|acceptance|judge on|off|auto [--by NAME]
   mw review [-t SLUG] [-j]
@@ -843,7 +847,7 @@ func options(args []string) (map[string]string, []string, error) {
 		if key == "" || !validOptions[key] {
 			return nil, nil, fmt.Errorf("unknown option %s", a)
 		}
-		if key == "json" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "archived" {
+		if key == "json" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "archived" {
 			o[key] = "true"
 			continue
 		}

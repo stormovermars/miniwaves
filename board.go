@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -42,8 +43,54 @@ type Item struct {
 	JudgedBy   string   `json:"judged_by,omitempty"` // human at accept
 	Attempts   int      `json:"attempts,omitempty"`
 	Events     []Event  `json:"events,omitempty"` // activity log, appended by every state-changing command
+	Ticket     string   `json:"ticket,omitempty"` // optional tracker ticket in canonical form (see tracker.go)
 	Created    string   `json:"created"`
 	Updated    string   `json:"updated"`
+
+	extra map[string]json.RawMessage // fields this mw does not know: kept, written back
+}
+
+// UnmarshalJSON reads the known fields and keeps unknown ones, so an older or newer mw's fields survive a save.
+func (it *Item) UnmarshalJSON(b []byte) error {
+	type plain Item
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	for _, k := range itemJSONKeys {
+		delete(raw, k)
+	}
+	p.extra = nil
+	if len(raw) > 0 {
+		p.extra = raw
+	}
+	*it = Item(p)
+	return nil
+}
+
+var itemJSONKeys = []string{"id", "kind", "title", "status", "parent", "wave", "session", "body", "acceptance", "note", "notes", "steps", "evidence", "judged", "by", "judged_by", "attempts", "events", "ticket", "created", "updated"}
+
+// MarshalJSON writes the known fields, then the kept unknown ones.
+func (it Item) MarshalJSON() ([]byte, error) {
+	type plain Item
+	b, err := json.Marshal(plain(it))
+	if err != nil || len(it.extra) == 0 {
+		return b, err
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	for k, v := range it.extra {
+		if _, ok := m[k]; !ok {
+			m[k] = v
+		}
+	}
+	return json.Marshal(m)
 }
 
 // Event is one activity-log entry of an item.
@@ -114,10 +161,11 @@ type Workspace struct {
 }
 
 type itemBrief struct {
-	ID    string `json:"id" toon:"id"`
-	Type  string `json:"type" toon:"type"`
-	State string `json:"state" toon:"state"`
-	Title string `json:"title" toon:"title"`
+	ID     string `json:"id" toon:"id"`
+	Type   string `json:"type" toon:"type"`
+	State  string `json:"state" toon:"state"`
+	Title  string `json:"title" toon:"title"`
+	Ticket string `json:"ticket,omitempty" toon:"ticket,omitempty"`
 }
 
 type itemDetail struct {
@@ -141,6 +189,7 @@ type itemDetail struct {
 	Attempts       int      `json:"attempts,omitempty" toon:"attempts,omitempty"`
 	Created        string   `json:"created" toon:"created"`
 	Updated        string   `json:"updated" toon:"updated"`
+	Ticket         string   `json:"ticket,omitempty" toon:"ticket,omitempty"`
 }
 
 type tenantBrief struct {
