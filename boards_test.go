@@ -219,13 +219,24 @@ func TestBoardsDefaultDepthFromConfig(t *testing.T) {
 	root := t.TempDir()
 	mkBoard(t, filepath.Join(root, "a", "b", "c"), okIndex)
 	mkBoard(t, filepath.Join(root, "a"), okIndex)
-	o := captureOutput(t, func() { runAll(t, []string{"boards", root, "-j"}) })
-	if strings.Contains(o, filepath.Join("a", "b", "c")) || !strings.Contains(o, filepath.Join(root, "a")) {
+	// JSON escapes Windows backslashes, so compare the decoded dirs, not the raw text
+	dirs := func() string {
+		var r struct{ Boards []struct{ Dir string } }
+		o := captureOutput(t, func() { runAll(t, []string{"boards", root, "-j"}) })
+		if err := json.Unmarshal([]byte(o), &r); err != nil {
+			t.Fatalf("%v: %s", err, o)
+		}
+		var ds []string
+		for _, b := range r.Boards {
+			ds = append(ds, b.Dir)
+		}
+		return strings.Join(ds, "\n")
+	}
+	if o := dirs(); strings.Contains(o, filepath.Join("a", "b", "c")) || !strings.Contains(o, filepath.Join(root, "a")) {
 		t.Fatalf("depth 2 scan: %s", o)
 	}
 	runAll(t, []string{"user", "set", "discover.depth=4"})
-	o = captureOutput(t, func() { runAll(t, []string{"boards", root, "-j"}) })
-	if !strings.Contains(o, filepath.Join("a", "b", "c")) {
+	if o := dirs(); !strings.Contains(o, filepath.Join("a", "b", "c")) {
 		t.Fatalf("depth 4 scan: %s", o)
 	}
 }
