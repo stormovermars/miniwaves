@@ -1061,8 +1061,8 @@ test('every icon button has a hover tooltip card, hidden until hover', async ($,
   state.newsFiles.zeta = '# S\n\nx'
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const cases: Array<[any, Array<[string, string]>]> = [
-    [PANE, [['refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Blocks and gopher only'], ['mute', 'Mute alerts'], ['panel', 'Open status.md in editor'], ['page', 'Open news page']]],
-    [NEWS_PANE, [['news-refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Blocks and gopher only'], ['mute', 'Mute alerts'], ['panel', 'Open status.md in editor'], ['page', 'Open news page']]],
+    [PANE, [['refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Fill: every list in full'], ['mute', 'Mute alerts'], ['panel', 'Open status.md in editor'], ['page', 'Open news page']]],
+    [NEWS_PANE, [['news-refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Fill: every list in full'], ['mute', 'Mute alerts'], ['panel', 'Open status.md in editor'], ['page', 'Open news page']]],
   ]
   for (const [pane, items] of cases) {
     const ui = await $.ui.mount({ ...pane, surface: 'desktop' } as never)
@@ -2651,16 +2651,16 @@ test('TSK-054 fill: blocks stays at 80 columns; fill takes the pane width up to 
   await cmd($, 'style normal')
   let ui = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
   expect((await ui.find({ key: 'fill' }))?.props.dimColor).toBe(true)
-  expect(await allText(ui)).toContain('Blocks and gopher only')
+  expect(await allText(ui)).toContain('Fill: every list in full')
   await ui.unmount()
   await cmd($, 'style blocks')
   ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 175 }, surface: 'desktop' } as never)
   expect(String((await ui.find({ key: 'fill' }))?.props.label)).toBe('\u2194')
-  expect(await allText(ui)).toContain('Fill pane width (up to 160)')
+  expect(await allText(ui)).toContain('Fill: every list in full')
   await ui.press({ key: 'fill' })
   expect(state.store.get('blocksFill')).toEqual({ jobs: true, news: false })
   expect((await ui.find({ key: 'fill' }))?.props.variant).toBe('primary')
-  expect(await allText(ui)).toContain('Back to 80 characters')
+  expect(await allText(ui)).toContain('Back to the capped lists and 80 columns')
   await ui.unmount()
   // the news pane has its own switch; the blocks grid comes from the json model and gets wider with it (never from mw's text)
   state.draft = SMALL_DRAFT
@@ -4019,6 +4019,37 @@ const fullDrafts = () => {
 }
 const gopherText = async (ui: any) => [await svgText(ui), await codeText(ui), await allText(ui)].join('\n')
 
+for (const style of ['blocks']) {
+  test(`fill in ${style}: the pane's "+N more" is a link that turns fill on and shows every row`, { timeoutMs: 20000 }, async ($, on) => {
+    const { state } = rig($, on, true)
+    const mk = (n: number) => ({ tenant: 'zetasheet', id: `TSK-${100 + n}`, title: `Done row ${n}`, since: '2026-10-22T09:00:00', by: 's' })
+    const capped = JSON.parse(SMALL_DRAFT)
+    capped.happened.counts.done = 30
+    capped.happened.done = { items: Array.from({ length: 10 }, (_, i) => mk(i)), more: 20 }
+    const full = JSON.parse(SMALL_DRAFT)
+    full.happened.counts.done = 30
+    full.happened.done = { items: Array.from({ length: 30 }, (_, i) => mk(i)), more: 0 }
+    state.draft = JSON.stringify(capped)
+    state.fullDraft = JSON.stringify(full)
+    state.fullOk = true
+    state.newsFiles.zeta = '# S'
+    await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+    await cmd($, 'news zeta')
+    await cmd($, `style ${style}`)
+    const ui = await $.ui.mount({ ...NEWS_PANE, props: { ...NEWS_PANE.props, bodyColumns: 100 }, surface: 'desktop' } as never)
+    const before = await gopherText(ui)
+    expect(before).not.toContain('TSK-129')
+    expect(before).toMatch(/\+\d+ more/)
+    expect(await ui.find({ key: 'news-more' })).toBeDefined()
+    await ui.press({ key: 'news-more' })
+    expect(state.store.get('blocksFill')).toEqual({ jobs: false, news: true })
+    const after = await gopherText(ui)
+    expect(after).toContain('TSK-129')
+    expect(after).not.toMatch(/\+\d+ more/)
+    await ui.unmount()
+  })
+}
+
 for (const fullOk of [true, false]) {
   test(`gopher fill: ${fullOk ? 'mw with --full shows every row, no more lines, in both panes; fill off keeps the caps' : 'an mw without --full keeps the caps and says so in one line'}`, { timeoutMs: 20000 }, async ($, on) => {
     const { state } = rig($, on, true)
@@ -4037,7 +4068,7 @@ for (const fullOk of [true, false]) {
       expect(before).not.toContain('TSK-129')
       // the fill button is live in gopher, and says what it does
       const tip = JSON.stringify(await ui.find({ key: 'tip-fill' }))
-      expect(tip).toContain('Expand every list (no limits)')
+      expect(tip).toContain('Fill: every list in full')
       await ui.press({ key: 'fill' })
       expect(state.runs.some(r => r.startsWith('mw news') && r.includes('--full'))).toBe(true)
       const t = await gopherText(ui)

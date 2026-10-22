@@ -2638,10 +2638,10 @@ const alertText2 = (ui: any, $: any, r: MwJobsAlertRow) => {
   )
 }
 
-const alertBox = ($: any, e: any, rows: MwJobsAlertRow[]) => {
+const alertBox = ($: any, e: any, rows: MwJobsAlertRow[], pane: 'jobs' | 'news', fill = false) => {
   if (rows.length === 0) return null
   const { Box, Text, Button } = $.ui.resolve(e) as any
-  const shown = rows.slice(0, ALERT_ROWS_SHOWN)
+  const shown = fill ? rows : rows.slice(0, ALERT_ROWS_SHOWN)
   return (
     <Box key="alerts" flexDirection="column" borderStyle="round" borderColor="warning" paddingX={1}>
       {shown.map(r => (
@@ -2656,7 +2656,7 @@ const alertBox = ($: any, e: any, rows: MwJobsAlertRow[]) => {
       ))}
       {rows.length > 1 ? (
         <Box key="alerts-tail" gap={1}>
-          {rows.length > shown.length ? <Text dimColor>{`+${rows.length - shown.length} more`}</Text> : null}
+          {rows.length > shown.length ? <Button key="alert-more" plain dimColor label={`+${rows.length - shown.length} more`} onPress={() => void setFill($, pane, true)} /> : null}
           <Button key="alert-clear" plain dimColor label="Clear all" onPress={() => void dismissAlert($, null)} />
         </Box>
       ) : null}
@@ -2666,11 +2666,15 @@ const alertBox = ($: any, e: any, rows: MwJobsAlertRow[]) => {
 
 /** A pane hook that throws leaves the host's "has not drawn in this pane" placeholder: the pane draws a short fallback instead
  * (its title, the way to the other pane, Loading… and the reason), and the reason is logged once per pane and message. */
+/** The fill state guardDraw read just before the pane draws (drawing reads it here, with no extra await). */
+const drawFill = { jobs: false, news: false }
 const guardDraw = async (pane: 'jobs' | 'news' | 'detail' | 'settings', $: any, e: any, draw: () => Promise<any>) => {
   // the jobs and news panes carry the alert rows on top, whatever they draw below (a fallback included)
   const rows: MwJobsAlertRow[] = pane === 'jobs' || pane === 'news' ? await read($, alertRows) : []
+  const fillOn: boolean = pane === 'jobs' || pane === 'news' ? ((await read($, blocksFill)) as { jobs: boolean; news: boolean })[pane] : false
+  if (pane === 'jobs' || pane === 'news') drawFill[pane] = fillOn
   const withAlerts = (tree: any) => {
-    const box = alertBox($, e, rows)
+    const box = alertBox($, e, rows, pane === 'news' ? 'news' : 'jobs', fillOn)
     if (box === null) return tree
     const { Box } = $.ui.resolve(e) as any
     return (
@@ -2738,9 +2742,8 @@ const setFill = async ($: any, pane: 'jobs' | 'news', on: boolean) => {
   }
   await cfgWrite($, { 'pane.fit': on ? 'fill' : '80' })
   await reloadNewsOut($)
-  // gopher: the lists come from mw again, with --full when fill is on
-  const styleNow: string = pane === 'jobs' ? await read($, barStyle) : await read($, newsStyle)
-  if (styleNow === 'gopher') await refreshAll($)
+  // every style: the lists come from mw again, with --full when fill is on
+  await refreshAll($)
 }
 
 // ---- gopher + fill: every row (`mw news --full`); an older mw keeps the caps and says so ----
@@ -2748,10 +2751,10 @@ export const FULL_HINT = 'Full lists need mw 0.3.4+ (mw news --full); showing th
 const fullUnsupported = new Set<string>()
 /** mw's complaint about a flag it does not have (an older mw): the only failure that marks --full unsupported. */
 export const unknownOption = (stderr: string): boolean => /unknown (flag|option)|unrecognized (flag|option)|flag provided but not defined|bad flag/i.test(stderr)
-/** Whether either pane wants the job's lists uncapped: gopher with its fill (↔) on. */
+/** Whether either pane wants the job's lists uncapped: its fill (↔) is on, in any style. */
 const wantsFull = async ($: any): Promise<boolean> => {
   const f = (await read($, blocksFill)) as { jobs: boolean; news: boolean }
-  return ((await read($, barStyle)) === 'gopher' && f.jobs) || ((await read($, newsStyle)) === 'gopher' && f.news)
+  return f.jobs || f.news
 }
 
 type FillIn = { pane: 'jobs' | 'news'; on: boolean; blocks: boolean; gopher?: boolean }
@@ -2771,8 +2774,8 @@ const sizeButtons = (ui: any, $: any, minus: string, hash: string, plus: string,
       : tipped(
           ui,
           'fill',
-          <Button key="fill" plain label={'\u2194'} variant={fill.on && fill.blocks ? 'primary' : undefined} dimColor={!fill.blocks || !fill.on} onPress={() => { if (fill.blocks) void setFill($, fill.pane, !fill.on) }} />,
-          !fill.blocks ? 'Blocks and gopher only' : fill.gopher ? (fill.on ? 'Back to the capped lists' : 'Expand every list (no limits)') : fill.on ? 'Back to 80 characters' : 'Fill pane width (up to 160)',
+          <Button key="fill" plain label={'\u2194'} variant={fill.on ? 'primary' : undefined} dimColor={!fill.on} onPress={() => void setFill($, fill.pane, !fill.on)} />,
+          fill.on ? 'Back to the capped lists and 80 columns' : 'Fill: every list in full (no "+N more") and the pane width (up to 160)',
         ),
   ]
 }
@@ -3279,7 +3282,7 @@ const controlsRowInner = (ui: any, $: any, c: ControlsIn) => {
         ...(c.scan !== undefined ? [tipped(ui, 'scan', <Button key="scan" plain label="Scan" dimColor onPress={c.scan.onPress} />, c.scan.tip)] : []),
       ])}
       {styleGroup(ui, $, c.pane, c.wanted, c.canSvg, c.unavailable)}
-      {sizeGroup(ui, $, c.sizeOff, { pane: c.pane, on: c.fill, blocks: (c.wanted === 'blocks') || (c.wanted === 'normal' && !c.canSvg) || c.wanted === 'gopher', gopher: c.wanted === 'gopher' })}
+      {sizeGroup(ui, $, c.sizeOff, { pane: c.pane, on: c.fill, blocks: true, gopher: c.wanted === 'gopher' })}
       {group(ui, 'grp-alerts', [tipped(ui, 'mute', <Button key="mute" plain label={c.muted ? '🔕' : '🔔'} dimColor onPress={() => void toggleMute($)} />, c.muted ? 'Unmute alerts' : 'Mute alerts', 'right')], true)}
       {c.fanfare !== undefined ? group(ui, 'grp-fanfare', [tipped(ui, 'fanfare', <Button key="fanfare" plain label={c.fanfare.label} dimColor={!c.fanfare.on} onPress={c.fanfare.onPress} />, c.fanfare.tip, 'right')], true) : null}
       {group(ui, 'grp-open', [
@@ -3756,11 +3759,12 @@ const boardMileRow = (ui: any, k: string, r: MileRow, canSvg: boolean, open?: ()
 }
 
 /** The release notes of a page in the board style: Milestones closed / Done / Sent back / Ongoing / Next / Metrics. */
-const boardNotes = (ui: any, $: any, job: MwJobsJob, m: Model, labels: Record<string, string>, canSvg: boolean, views: MViewSection[], ask: (tenant: string, id: string) => void) => {
+const boardNotes = (ui: any, $: any, job: MwJobsJob, m: Model, labels: Record<string, string>, canSvg: boolean, views: MViewSection[], ask: (tenant: string, id: string) => void, fill = false) => {
   const { Box, Text, Button } = ui
+  const capOf = (n: number) => (fill ? Number.MAX_SAFE_INTEGER : n)
   const c = m.now.counts
   const rowsOf = (kind: Parameters<typeof itemRow>[0], l: MList, top: number, counted?: number) => {
-    const shown = topOf(l, top, counted)
+    const shown = topOf(l, capOf(top), counted)
     const rest = Math.max(total(l, counted) - shown.length, 0)
     return { rows: shown.map(i => itemRow(kind, { tenant: i.tenant, id: i.id, title: i.title, note: i.note, ticket: i.ticket, ticketUrl: i.ticket_url }, labels)), rest }
   }
@@ -3769,7 +3773,7 @@ const boardNotes = (ui: any, $: any, job: MwJobsJob, m: Model, labels: Record<st
       <Box key={key} flexDirection="column">
         <Text bold dimColor>{title.toUpperCase()}</Text>
         {nodes}
-        {rest > 0 && <Text dimColor>{`+${rest} more`}</Text>}
+        {rest > 0 && <Button key={`${key}-more`} plain dimColor label={`+${rest} more`} onPress={() => void setFill($, 'news', true)} />}
       </Box>
     )
   const itemSection = (key: string, title: string, kind: Parameters<typeof itemRow>[0], l: MList, top: number, counted?: number, withAsk = false) => {
@@ -3787,7 +3791,7 @@ const boardNotes = (ui: any, $: any, job: MwJobsJob, m: Model, labels: Record<st
     )
   }
   const mileSection = (key: string, title: string, l: MList, top: number, closed: boolean) => {
-    const shown = topOf(l, top)
+    const shown = topOf(l, capOf(top))
     const rest = Math.max(total(l) - shown.length, 0)
     return section(key, title, shown.map(i => boardMileRow(ui, `${key}-${i.tenant}-${i.id}`, mileOf({ tenant: i.tenant, id: i.id, title: i.title, done: i.done, total: i.total, ticket: i.ticket, ticketUrl: i.ticket_url }, labels, closed), canSvg, () => void openDetail($, { kind: 'wave', jobId: job.id, tenant: i.tenant, id: i.id }, 'news'))), rest)
   }
@@ -3885,17 +3889,23 @@ const modelNewsNodes = async (
     return nodes
   }
   if (o.style === 'kanban' || o.style === 'agile') {
-    const doc = o.style === 'agile' ? agileNews(m) : kanbanNews(m)
+    const noCap = ((await read($, blocksFill)) as { jobs: boolean; news: boolean }).news && !fullUnsupported.has(job.id)
+    const doc = o.style === 'agile' ? agileNews(m, noCap ? Number.MAX_SAFE_INTEGER : undefined) : kanbanNews(m, noCap ? Number.MAX_SAFE_INTEGER : undefined)
     const cols = o.style === 'agile' ? 1 : flowCols(o.given)
     nodes.push(withTenantHidden(m.only !== undefined, () => flowNodes(ui, $, job, doc, { cols, ageOf: () => '', keyPrefix: `n${o.style}`, ask: false, width: o.given })))
     return nodes
   }
   // normal and blocks: the newsletter as markdown through the same pipeline as mw's own news; milestone rows through the shared milestone row drawing
   const mono = o.style === 'blocks'
-  const segs = newsSegments(m, { metrics: views, labels })
+  const nFill = drawFill.news && !fullUnsupported.has(job.id)
+  const topN = nFill ? Number.MAX_SAFE_INTEGER : undefined
+  const segs = newsSegments(m, { metrics: views, labels, top: topN })
+  const hasMore = !nFill && segs.some(sg => ('md' in sg ? /\+\d+ more/.test(sg.md) : sg.tail !== ''))
+  const moreBtn = hasMore ? <Button key="news-more" plain dimColor label="+ more" onPress={() => void setFill($, 'news', true)} /> : null
   if (!canSvg) {
-    const md = newsMd(m, { metrics: views, labels })
+    const md = newsMd(m, { metrics: views, labels, top: topN })
     nodes.push(<Markdown key="md" text={md.length > NEWS_MAX ? `${md.slice(0, NEWS_MAX)}\n\n\u2026 truncated` : md} />)
+    if (moreBtn) nodes.push(moreBtn)
     return nodes
   }
   const urls = new Map<string, string>()
@@ -3921,6 +3931,7 @@ const modelNewsNodes = async (
       </Box>,
     )
   }
+  if (moreBtn) body.push(moreBtn)
   nodes.push(mono ? <Box key="grid" width={gridCols} flexDirection="column">{body}</Box> : <Box key="grid" flexDirection="column">{body}</Box>)
   return nodes
 }
@@ -4824,7 +4835,7 @@ const flowNodes = (ui: any, $: any, job: MwJobsJob, d: FDoc, o: { cols: number; 
       {s.sub && <Text dimColor wrap={sideBySide ? 'truncate-end' : undefined}>{s.sub}</Text>}
       {s.rows.length === 0 && <Text dimColor>{'\u2014'}</Text>}
       {s.rows.map(r => row(s.key, r))}
-      {s.rest > 0 && <Text dimColor>{`+${s.rest} more`}</Text>}
+      {s.rest > 0 && <Button key={`more-${o.keyPrefix}-${s.key}`} plain dimColor label={`+${s.rest} more`} onPress={() => void setFill($, o.from ?? (o.keyPrefix.startsWith('n') ? 'news' : 'jobs'), true)} />}
     </Box>
   )
   const head = d.head ? (
@@ -5018,21 +5029,13 @@ type Caps = Record<'needs' | 'review' | 'blocked' | 'doing', { hidden: number; m
 const GROUP_NAME: Record<string, string> = { needs: 'needs you', review: 'review', blocked: 'blocked', doing: 'in progress' }
 
 /** Under a pane: "+N more X" (expands that group by 10, to 50 rows) and "less X"; past 50 the rest stays on the board. */
-const groupMoreRow = (ui: any, $: any, jobId: string, cap: Caps) => {
-  const { Box, Text, Button } = ui
+const groupMoreRow = (ui: any, $: any, _jobId: string, cap: Caps) => {
+  const { Box, Button } = ui
   const nodes: any[] = []
+  // every "+N more" is a link that turns fill on for this pane (fill shows every row)
   for (const k of ['needs', 'review', 'blocked', 'doing'] as const) {
     const c = cap[k]
-    if (c.hidden > 0) {
-      nodes.push(
-        c.more ? (
-          <Button key={`more-${k}`} plain label={`+${c.hidden} more ${GROUP_NAME[k]}`} dimColor onPress={() => void expandGroup($, jobId, k, GROUP_STEP)} />
-        ) : (
-          <Text key={`more-${k}`} dimColor>{`+${c.hidden} more ${GROUP_NAME[k]} on the board`}</Text>
-        ),
-      )
-    }
-    if (c.shown > GROUP_BASE) nodes.push(<Button key={`less-${k}`} plain label={`less ${GROUP_NAME[k]}`} dimColor onPress={() => void expandGroup($, jobId, k, -GROUP_STEP)} />)
+    if (c.hidden > 0) nodes.push(<Button key={`more-${k}`} plain label={`+${c.hidden} more ${GROUP_NAME[k]}`} dimColor onPress={() => void setFill($, 'jobs', true)} />)
   }
   return nodes.length === 0 ? null : (
     <Box key="more-row" gap={2} flexWrap="wrap">
@@ -6294,14 +6297,14 @@ export const register: Register = (on, options) => {
     const openSorted = brief ? openAll : [...openAll].sort((x, y) => y.percent - x.percent)
     const openCount = brief ? brief.openMilestones : openSorted.length
     const closedCount = brief ? brief.closedMilestones : wavesAll.length - openAll.length
-    const shownWaves = style === 'gopher' && fillJobs && !fullUnsupported.has(job.id) ? openSorted : openSorted.slice(0, capN(openCount, MILES_MAX))
+    // fill on lifts every cap of the pane (and mw's, with --full); an mw without --full keeps its caps and says so
+    const fullJobs = fillJobs && !fullUnsupported.has(job.id)
+    const shownWaves = fullJobs ? openSorted : openSorted.slice(0, capN(openCount, MILES_MAX))
     const tailOf = (shown: number) => [openCount - shown > 0 ? `+${openCount - shown} open` : '', closedCount > 0 ? `\u2713${closedCount} closed` : ''].filter(Boolean).join(' \u00b7 ')
     const readyCount = snap.items.filter(i => i.state === 'ready').length
     const events: MwJobsEvent[] = []
     // each group: first 10, "+N more" expands by 10 up to 50
     const exp = (((await read($, expanded)) as Record<string, Record<string, number>>)[job.id] ?? {}) as Record<string, number>
-    // gopher with fill on (and an mw with --full): every row, no "+N more", no trimming
-    const fullJobs = style === 'gopher' && fillJobs && !fullUnsupported.has(job.id)
     const all = <T,>(l: T[], extra: number) => ({ rows: l, hidden: extra, more: false, shown: l.length })
     const cap = fullJobs
       ? { needs: all(a0.needs, brief?.more.needs ?? 0), review: all(a0.review, brief?.more.review ?? 0), blocked: all(a0.blocked, brief?.more.blocked ?? 0), doing: all(a0.doing, brief?.more.doing ?? 0) }
@@ -6337,7 +6340,7 @@ export const register: Register = (on, options) => {
     const draw = (trim: number): { node: any; size: number } => {
     const gone = (k: (typeof TRIM_ORDER)[number]) => TRIM_ORDER.indexOf(k) < trim
     const a: Analysis = { ...a0, needs: cap.needs.rows, review: cap.review.rows, blocked: cap.blocked.rows, doing: gone('progress') ? [] : cap.doing.rows }
-    const mviews = mviewsAll.map(sec => ({ ...sec, rows: gone('metrics') ? [] : sec.rows.slice(0, capN(sec.rows.length, METRIC_ROWS_MAX)), more: gone('metrics') ? sec.rows.length : Math.max(0, sec.rows.length - capN(sec.rows.length, METRIC_ROWS_MAX)) }))
+    const mviews = mviewsAll.map(sec => (fullJobs ? { ...sec, rows: gone('metrics') ? [] : sec.rows, more: gone('metrics') ? sec.rows.length : 0 } : { ...sec, rows: gone('metrics') ? [] : sec.rows.slice(0, capN(sec.rows.length, METRIC_ROWS_MAX)), more: gone('metrics') ? sec.rows.length : Math.max(0, sec.rows.length - capN(sec.rows.length, METRIC_ROWS_MAX)) }))
     const closedShown = gone('milestones') ? [] : shownWaves
     const waves = closedShown
     const foldedText = tailOf(closedShown.length)
@@ -6501,7 +6504,8 @@ export const register: Register = (on, options) => {
       if (m === undefined) {
         return { node: <Box flexDirection="column">{header}<Text color="warning">{noModelNotice(style, modelWhy.get(job.id)) ?? 'no news model'}</Text></Box>, size: 100 }
       }
-      const doc = style === 'agile' ? agileJobs(m) : kanbanJobs(m)
+      const noCap = fillJobs && !fullUnsupported.has(job.id)
+      const doc = style === 'agile' ? agileJobs(m, noCap ? Number.MAX_SAFE_INTEGER : undefined) : kanbanJobs(m, noCap ? Number.MAX_SAFE_INTEGER : undefined)
       const ageOfS = (since: string) => {
         const t = Date.parse(since)
         return Number.isNaN(t) ? '' : ageText(now - t)
@@ -6635,7 +6639,7 @@ export const register: Register = (on, options) => {
               const marker = isNew ? <Text color="success"> ●</Text> : <Text>{'  '}</Text>
               return gridRow(`wav-${w.id}`, name, undefined, status, countCell(w), marker, () => void openDetail($, { kind: 'wave', jobId: job.id, tenant: w.id.split(':')[0] ?? '', id: w.id }, 'jobs'))
             })}
-            {foldedText !== '' && <Text dimColor wrap="truncate-end" {...sz("footnote")}>{foldedText}</Text>}
+            {foldedText !== '' && (openCount - closedShown.length > 0 ? <Button key="miles-more" plain dimColor label={foldedText} onPress={() => void setFill($, 'jobs', true)} /> : <Text dimColor wrap="truncate-end" {...sz("footnote")}>{foldedText}</Text>)}
           </Box>
         )}
 
@@ -6674,7 +6678,7 @@ export const register: Register = (on, options) => {
                 )
                 return gridRow(`met-${sec.title}-${r.name}`, r.name, undefined, barNode ? { node: barNode } : { text: dim, dim: true }, arrows, <Text>{'  '}</Text>, undefined, cmax)
               })}
-              {(sec.more ?? 0) > 0 && <Text dimColor>{`+${sec.more} rows`}</Text>}
+              {(sec.more ?? 0) > 0 && <Button key={`rows-more-${sec.title}`} plain dimColor label={`+${sec.more} more rows`} onPress={() => void setFill($, 'jobs', true)} />}
               {(sec.note || sec.legend.length > 0) && <Text dimColor wrap="wrap">{[sec.legend.map(l => l.name).join(' · '), sec.note].filter(Boolean).join(' — ')}</Text>}
             </Box>
           ))}

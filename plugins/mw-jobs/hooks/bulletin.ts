@@ -610,7 +610,7 @@ const mdList = (l: MList, kind: ItemKind, top: number, labels: Record<string, st
     return `- **${mdText(r.key)}** ${mdText(r.title)}${ticketMd(i)} \u2014 ${r.state}`
   })
   const rest = Math.max(total(l, counted) - shown.length, 0)
-  if (rest > 0) rows.push(`- *+${rest} more (see full board)*`)
+  if (rest > 0) rows.push(`- *+${rest} more*`)
   return rows
 }
 
@@ -620,8 +620,9 @@ export type NewsSeg = { md: string } | { miles: MileRow[]; tail: string }
 const milesOf = (l: MList, closed: boolean, top: number, labels: Record<string, string>) =>
   topOf(l, top).map(i => mileOf({ tenant: i.tenant, id: i.id, title: i.title, done: i.done, total: i.total, ticket: i.ticket, ticketUrl: i.ticket_url }, labels, closed))
 
-export const newsSegments = (m: Model, o: { metrics?: MViewSection[]; labels?: Record<string, string> }): NewsSeg[] => {
+export const newsSegments = (m: Model, o: { metrics?: MViewSection[]; labels?: Record<string, string>; top?: number }): NewsSeg[] => {
   const labels = o.labels ?? {}
+  const TOP = o.top ?? 10
   const segs: NewsSeg[] = []
   const md = (...lines: string[]) => {
     const last = segs[segs.length - 1]
@@ -633,17 +634,17 @@ export const newsSegments = (m: Model, o: { metrics?: MViewSection[]; labels?: R
   const hp = m.happened
   md('## In short', '', ...(m.summary !== '' ? [mdText(m.summary)] : shortLines(m).map(mdText)), '', '## What happened', '')
   const happened: Array<[string, string[]]> = [
-    ['Done', mdList(hp.done, 'done', 10, labels, hp.counts.done)],
-    ['Accepted', mdList(hp.accepted, 'accepted', 10, labels, hp.counts.accepted)],
-    ['Sent back', mdList(hp.sent_back, 'sent_back', 10, labels, hp.counts.sent_back)],
-    ['Decisions', mdList(hp.decisions, 'decision', 10, labels, hp.counts.decisions)],
-    ['Answers', mdList(hp.answers, 'answer', 10, labels, hp.counts.answers)],
+    ['Done', mdList(hp.done, 'done', TOP, labels, hp.counts.done)],
+    ['Accepted', mdList(hp.accepted, 'accepted', TOP, labels, hp.counts.accepted)],
+    ['Sent back', mdList(hp.sent_back, 'sent_back', TOP, labels, hp.counts.sent_back)],
+    ['Decisions', mdList(hp.decisions, 'decision', TOP, labels, hp.counts.decisions)],
+    ['Answers', mdList(hp.answers, 'answer', TOP, labels, hp.counts.answers)],
   ]
-  const closed = milesOf(hp.closed_milestones, true, 10, labels)
+  const closed = milesOf(hp.closed_milestones, true, TOP, labels)
   const closedRest = Math.max(total(hp.closed_milestones, hp.counts.closed_milestones) - closed.length, 0)
   if (closed.length > 0) {
     md('### Milestones closed', '')
-    segs.push({ miles: closed, tail: closedRest > 0 ? `+${closedRest} more (see full board)` : '' })
+    segs.push({ miles: closed, tail: closedRest > 0 ? `+${closedRest} more` : '' })
     md('')
   }
   for (const [title, rows] of happened) if (rows.length > 0) md(`### ${title}`, '', ...rows, '')
@@ -657,7 +658,7 @@ export const newsSegments = (m: Model, o: { metrics?: MViewSection[]; labels?: R
   ]
   for (const [title, rows] of ongoing) if (rows.length > 0) md(`### ${title}`, '', ...rows, '')
   md("## What's next", '')
-  const ready = mdList(m.next.ready, 'ready', 10, labels, c.ready)
+  const ready = mdList(m.next.ready, 'ready', TOP, labels, c.ready)
   const nextMiles = milesOf(m.next.next_milestones, false, 5, labels)
   if (ready.length > 0) md(...ready, '')
   if (nextMiles.length > 0) segs.push({ miles: nextMiles, tail: '' })
@@ -676,7 +677,7 @@ export const newsSegments = (m: Model, o: { metrics?: MViewSection[]; labels?: R
 }
 
 /** The same newsletter as one markdown text (the terminal's Markdown element, and tests); milestone rows become list lines. */
-export const newsMd = (m: Model, o: { metrics?: MViewSection[]; labels?: Record<string, string> }): string =>
+export const newsMd = (m: Model, o: { metrics?: MViewSection[]; labels?: Record<string, string>; top?: number }): string =>
   newsSegments(m, o)
     .map(sg => ('md' in sg ? sg.md : [...sg.miles.map(r => `- **${mdText(r.key)}** ${mdText(r.title)}${r.ticket ? ` [${mdText(r.ticket)}]` : ''} \u2014 ${mileCount(r)} \u00b7 ${r.state}`), ...(sg.tail ? [`- *${sg.tail}*`] : [])].join('\n')))
     .join('\n')
