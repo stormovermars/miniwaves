@@ -316,6 +316,10 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 
 ## Changelog
 
+### 0.2.9
+
+- Fanfare sets: `mw fanfare sets add|drop`, `mw fanfare use NAME|all` picks only from that set (falls back to all when it has no playable pair); `mw fanfare -j` keeps its keys and adds `enabled`, `use`, `sets`, `pairs`; plain `mw fanfare` shows `use:`.
+
 ### 0.2.8
 
 - Fanfare: the finale's Stop dialog now says why it plays (tenant finished with its done count, or `mw fanfare test`), which song (manifest title, else file name and pair folder) and for how many seconds. Linux falls back to `kdialog` when `zenity` is missing. The text is passed to the dialog as data, never inside a script.
