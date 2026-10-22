@@ -55,6 +55,8 @@ mw builds **one model** per job: `mw news --job ID --format json`. Everything el
 
 **Caps:** each list has a cap and a `more` count. `now.tenants` holds at most 2000 rows (a row is about 150 bytes) plus `more`, sorted by attention: needs desc, review desc, blocked desc, last_change desc, slug. A job can have thousands of tenants; asks are gathered from every tenant in one run, so a pane needs exactly one mw call per job per poll. When the model would pass 1 MB, the item lists are trimmed first and the tenant rows last. `mw news --job ID --format json --tenant SLUG` is the same model filtered to one tenant; the release window and releases stay job-wide, and `--tenant` is refused with `--release` and with other formats. The `now` lists hold at most 50, `milestones.open` 200, each `happened` list 100, `next.ready` 10 and `next_milestones` 5. No item text is longer than 200 characters, and the whole model is at most 1 MB.
 
+**Full (`mw news --full`).** Draft only (`--full --release` is refused; allowed only with `-o FILE`, `-o -`, `--format json` or `--format text`, and it never rewrites the desk's `status.md`). It lifts every row cap above: every row is listed, every `more` is 0 and `caps` is 0. The 200-character item text and the 1 MB guard stay. Two fields are added, both absent without `--full`: `full` (`true`) and `trimmed_rows` (an integer, the rows the 1 MB guard still had to drop; the bulletin then prints one line `trimmed: N rows`). Pane names: in mw-jobs a news release is shown as an issue (`Issue N · date · vs issue N-1`); the model and `mw news --release` keep the name release.
+
 ### Views
 
 **Jobs pane (now):**

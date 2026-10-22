@@ -12,16 +12,16 @@ curl -fsSL https://raw.githubusercontent.com/stormovermars/miniwaves/main/instal
 irm https://raw.githubusercontent.com/stormovermars/miniwaves/main/install.ps1 | iex        # Windows
 ```
 
-This installs the `mw` binary and, when Claude Code (`claude`) is on PATH, the Claude Code plugins `mw` (skill, `/mw-next`, `/mw-board`), `mw-watch` (live pane) and `mw-jobs` (jobs and news panes). The plugin step is best effort: if it fails, the binary is still installed.
+This installs the `mw` binary and, when Claude Code (`claude`) is on PATH, the Claude Code plugins `mw` (skill, `/mw-next`, `/mw-board`) and `mw-jobs` (live jobs and news panes, settings, alerts). The plugin step is best effort: if it fails, the binary is still installed.
 
 Upgrade: `mw update` (checks GitHub releases, verifies the checksum, replaces the binary and updates the plugins; `--check` only reports).
 
-- Upgrading from 0.3.2 or older: the old `mw` does not know the plugin step, so after `mw update` run `mw update --plugins` once (or re-run the install one-liner).
-- `mw update --plugins` alone (re)installs or updates just the three plugins.
+- **Upgrading from 0.3.2 or 0.3.3:** after `mw update`, run `mw update --plugins` once (or re-run the install one-liner). The old binary updates its old plugin list, so only the new one installs `mw-jobs` and removes `tidewatch` and `mw-watch`. From 0.3.1 or older the same step applies.
+- `mw update --plugins` alone (re)installs or updates just the plugins `mw` and `mw-jobs`, then removes the retired `tidewatch` and `mw-watch` (only after the install succeeded).
 - `MW_NO_PLUGINS=1` skips the plugin step in `install.sh`, `install.ps1` and `mw update`.
-- No Claude Code, or the binary only: `go install github.com/stormovermars/miniwaves@latest` (the binary is named `miniwaves`). By hand: `claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves mw-watch@miniwaves mw-jobs@miniwaves`.
+- No Claude Code, or the binary only: `go install github.com/stormovermars/miniwaves@latest` (the binary is named `miniwaves`). By hand: `claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves mw-jobs@miniwaves`.
 
-Open the pane: run `/mw-watch`. That is the whole setup: it finds the boards this session used, then those near the session folder, then under `~`, with their tenants; `/mw-watch scan [DIR]` and `/mw-watch add PATH` are optional extras. Fanfare is switched on with defaults at install (change it with the `Fanfare:` button or `/mw-fanfare`). (It was called `tidewatch` before 0.3.4; `/tidewatch` still works for one release.)
+Open the panes: run `/mw jobs` or `/mw news` (settings: `/mw-configure`). That is the whole setup: mw-jobs finds the boards this session used, then those near the session folder, then under `~`, with their tenants (`mw boards` does the finding). Fanfare is switched on with defaults at install (change it with `mw configure`). `mw-watch` (formerly `tidewatch`) is retired; mw-jobs replaces it.
 
 ## Use
 
@@ -52,14 +52,15 @@ All off until you turn them on. Details in [USAGE.md](USAGE.md).
 | Tracker tickets (optional) | `mw jobs set ID tracker=jira tracker_url=URL`, `mw add ... --ticket KEY` | unset the key |
 | Job metrics | `mw jobs set ID metrics=PATH` (a `metrics.json` your tooling writes) | unset the key |
 | Coordinator kit (plan, news desk, build lock) | `mw init --kit coordinated --job ID` | delete the files it wrote |
-| Fanfare, per board (mw-watch: the `Fanfare:` button) | `mw fanfare set enabled=true` | `mw fanfare set enabled=false` |
+| Fanfare, per board | `mw fanfare set enabled=true` | `mw fanfare set enabled=false` |
 | Fanfare, just for you | `mw user set fanfare.enabled=true` | `mw user set fanfare.enabled=false` |
+| Find boards | `mw boards [DIR] [--depth N] [--up] [-j]` | read-only, nothing to turn off |
+| Uncapped news lists | `mw news --job ID --full -o FILE` (or `-o -`, `--format json\|text`) | leave `--full` off |
 | Personal settings (pane, alerts, fanfare, chat bar, discovery) | `mw configure` (or `mw configure KEY=VALUE...`) | `mw user set KEY=` resets a key |
-| Fanfare set (mw-watch: the `Fanfare:` button cycles off, all, each set; or `/mw-watch fanfare next`) | `mw fanfare use NAME` | `mw fanfare use all` |
-| mw-jobs panes: jobs, news, settings (Claude Code): `/mw jobs`, `/mw news`, `/mw-configure` | installed with the other plugins (`mw update --plugins`); no setup, it finds your boards | `claude plugin uninstall mw-jobs` |
-| mw-watch pane (Claude Code) | installed by `install.sh`, `install.ps1` and `mw update` when Claude Code is present; or `mw update --plugins` (`MW_NO_PLUGINS=1` skips) | `claude plugin uninstall mw-watch` |
+| Fanfare set | `mw fanfare use NAME` | `mw fanfare use all` |
+| mw-jobs panes: jobs, news, settings, alerts, chat-bar status (Claude Code): `/mw jobs`, `/mw news`, `/mw-configure` | installed with the `mw` plugin (`mw update --plugins`); no setup, it finds your boards | `claude plugin uninstall mw-jobs` |
 
-To share mw-watch with your team, install it, then ask Claude Code: "publish the mw-watch plugin to my organization". It shows every file and asks before sending; an admin may review it first. Colleagues then install it from the organization library.
+To share mw-jobs with your team, install it, then ask Claude Code: "publish the mw-jobs plugin to my organization". It shows every file and asks before sending; an admin may review it first. Colleagues then install it from the organization library.
 
 ## Links
 
