@@ -28,6 +28,7 @@ type promptData struct {
 	// Gate rules render only for effectively-on gates (empty = today's text).
 	GateEvidence, GateAcceptance, GateJudge bool
 	EvidenceDir                             string
+	EvidenceTenant                          string // <evidence>/<tenant>/, the parent of the per-ID folders
 	GatesRule                               string
 	// Coordinated-job variables (neutral defaults without --job; jobs.<id> with it).
 	Job, Title, Lock, Worktrees, NewsOut, NewsURL string
@@ -64,7 +65,8 @@ func buildSessionPrompt(path string, w *Workspace, t *Tenant, id, role string, h
 	return promptWith(w, "session", promptData{Role: role, ID: id, Slug: t.Slug, Session: id, Headless: headless, TenantName: compactText(t.Name, 72),
 		Setup:        sessionSetup(runtime.GOOS, dir, id, t.Slug, role),
 		GateEvidence: byName(gs, "evidence").Effective, GateAcceptance: byName(gs, "acceptance").Effective, GateJudge: byName(gs, "judge").Effective,
-		EvidenceDir: filepath.Join(workspaceFolders(w).Evidence, t.Slug, "<ID>") + string(filepath.Separator)})
+		EvidenceDir:    filepath.Join(workspaceFolders(w).Evidence, t.Slug, "<ID>") + string(filepath.Separator),
+		EvidenceTenant: filepath.Join(workspaceFolders(w).Evidence, t.Slug) + string(filepath.Separator)})
 }
 
 func sessionSetup(goos, dir, id, tenant, role string) string {

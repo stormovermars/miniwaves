@@ -129,3 +129,38 @@ func TestDispatcherCeremoniesGoldens(t *testing.T) {
 		t.Errorf("default prompt has ceremonies")
 	}
 }
+
+func TestSessionRoleCeremonyGoldens(t *testing.T) {
+	path := rolesBoard(t)
+	dir := filepath.Dir(path)
+	r, _ := filepath.EvalSymlinks(dir)
+	home := os.Getenv("HOME")
+	rh, _ := filepath.EvalSymlinks(home)
+	norm := func(s string) string { return osNorm(replacePath(replacePath(s, dir, r, "<DIR>"), home, rh, "<HOME>")) }
+	cap := func(args ...string) string { return norm(captureOutput(t, func() { runAll(t, args) })) }
+	wantIn := map[string][]string{
+		"review":  {"`Review WAV-NNN`", "WAV-NNN/", "lessons.md", "Screenshots only", "at most one `mw ask`", "never accept or reject"},
+		"planner": {"`Planning YYYY-MM-DD`", "never `doing` ones", "`mw edit -c` is for humans", "one `mw ask` digest", "screenshots only"},
+		"spike":   {"SPK-NNN/", "throwaway branch", "never merged", "STALE", "Screenshots only", "At most one `mw ask`"},
+	}
+	for _, role := range []string{"review", "planner", "spike"} {
+		got := cap("get-prompt", "session", "s-"+role, "-a", role)
+		rolesGolden(t, "session-"+role, got)
+		for _, want := range wantIn[role] {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s prompt missing %q", role, want)
+			}
+		}
+		for _, other := range []string{"review", "planner", "spike"} {
+			if other != role && strings.Contains(got, "Ceremony role "+other) {
+				t.Errorf("%s prompt carries the %s block", role, other)
+			}
+		}
+	}
+	// other roles never get a ceremony block
+	for _, role := range []string{"builder", "dispatcher", "reviewer"} {
+		if got := cap("get-prompt", "session", "s-"+role, "-a", role); strings.Contains(got, "Ceremony role") {
+			t.Errorf("%s prompt has a ceremony block", role)
+		}
+	}
+}
