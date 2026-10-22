@@ -75,9 +75,16 @@ mw builds **one model** per job: `mw news --job ID --format json`. Everything el
    - Past releases are read-only: the frozen N.json. Only the draft has the **Release** button (it asks first).
    - The ▦ jobs button stays.
 
+### Pane styles (Sir, 2026-10-22)
+
+Both panes keep their current look, which stays the default. Gopher is a **third style**: the style control becomes one group, `━ normal | ░ blocks | ▚ gopher`, in both panes, and the choice is stored per pane.
+- **Jobs pane, gopher style:** a live "NOW" sheet. The same sections and caps as the normal jobs view (needs you, review, blocked, in progress, milestones, metrics), drawn as gopher menu lines.
+- **News pane, gopher style:** the bulletin described below.
+- The news pane in normal and blocks style keeps today's look and gains the newsletter sections, the releases, the navigation and the Release button.
+
 ### Look: an old gopher-style bulletin (Sir, 2026-10-22)
 
-Every news rendering is a plain-text bulletin, in the style of a 1990s gopher hole. Text, md, html and the news pane all draw the same layout.
+mw's text, md and html news, and the panes in gopher style, are plain-text bulletins in the style of a 1990s gopher hole.
 
 - **Plain monospace, 70 columns wide.** Text is ASCII except for ▲/▼. md wraps the whole bulletin in one fenced `text` block. html uses `<pre>` on a dark green-on-black or amber page, with one `<a>` link per release.
 - **Masthead:**
@@ -102,6 +109,7 @@ Every news rendering is a plain-text bulletin, in the style of a 1990s gopher ho
 ======================================================================
 ```
   In html each number in the footer links to that release. In the pane, ☰ and prev/next do the same.
+- **The published page stays as it is (Sir, 2026-10-22).** A job's own page at `news_url` (tiny: the claude.ai news page the news desk publishes) belongs to the desk and keeps its design. mw never replaces it, and the gopher look doesn't apply to it. The ↗ button keeps opening it. mw's own `--format html` is the bulletin, for jobs that have no page of their own.
 - **The jobs pane is not a bulletin.** It keeps its live dashboard look.
 
 ### Alerts
@@ -113,3 +121,44 @@ Alerts stay in the panes (per type, deduplicated, one path). A new release count
 - `--format md|html|text` without `--release` keeps working and renders the draft.
 - The news desk kit's tick keeps writing the draft. Releasing is never part of the tick.
 - The panes read `latest` and `N.json` from the releases folder. When no archive exists, they fall back to running `mw news --format json`.
+
+## Tracker tickets: Jira and similar tools (Sir, 2026-10-22)
+
+An item can carry a ticket from the job's issue tracker. Wherever a ticket is shown, it is a real link.
+
+**Optional throughout.** mw tracks all the work itself. Every item is an mw item with its own id, whether or not it has a ticket.
+- A tracker and a ticket are optional cross-references: off by default, set per job and per item.
+- mw never syncs with, reads from or writes to any tracker. The ticket is only a link to it.
+- Jobs and items without a ticket look and behave exactly as they do today, in every style.
+
+- **Job keys:** `tracker` (one of the kinds below) and `tracker_url` (the base URL). Set them with `mw jobs set ID tracker=jira tracker_url=https://acme.atlassian.net`. One tracker per job.
+  - `tracker_url` must be https, with no query, fragment or credentials. A trailing slash is trimmed.
+  - The ClickUp and Asana kinds may leave `tracker_url` empty; they then use their fixed host.
+- **Item field `ticket`:**
+  - set with `mw add … --ticket KEY` or `mw edit ID ticket=KEY` (`ticket=` clears it);
+  - validated against the job's tracker kind, and refused when the job has no tracker;
+  - stored in canonical form, the "Shown as" column below.
+  - mw's own ids (`TSK-011`) are never taken as tickets; `ticket` is an explicit field only.
+- **Model:** an item with a ticket gets `ticket`, `ticket_label` and `ticket_url`. mw builds and validates the URL from the table. Renderers never build URLs themselves.
+
+| `tracker` | Accepted ticket | Shown as | Link | `tracker_url` example |
+|---|---|---|---|---|
+| `jira` | `MOB-142` | MOB-142 | `{base}/browse/{key}` | `https://acme.atlassian.net` |
+| `linear` | `ENG-42` | ENG-42 | `{base}/issue/{key}` | `https://linear.app/acme` |
+| `youtrack` | `APP-7` | APP-7 | `{base}/issue/{key}` | `https://acme.youtrack.cloud` |
+| `github` | `123` or `#123` | #123 | `{base}/issues/{n}` | `https://github.com/acme/app` |
+| `gitlab` | `123` or `#123` | #123 | `{base}/-/issues/{n}` | `https://gitlab.com/acme/app` |
+| `azure` | `123` or `AB#123` | AB#123 | `{base}/_workitems/edit/{n}` | `https://dev.azure.com/acme/App` |
+| `shortcut` | `123` or `sc-123` | sc-123 | `{base}/story/{n}` | `https://app.shortcut.com/acme` |
+| `clickup` | `86abc12xy` or `#86abc12xy` | #86abc12xy | `https://app.clickup.com/t/{id}` | (empty) |
+| `asana` | `1203456789012345` | Asana 1203456789012345 | `https://app.asana.com/0/0/{gid}` | (empty) |
+
+- **Patterns:**
+  - Key kinds (jira, linear, youtrack): `^[A-Z][A-Z0-9_]{0,9}-[0-9]{1,9}$`.
+  - Numbers: `[0-9]{1,9}`.
+  - ClickUp ids: `[a-z0-9]{6,12}`.
+  - Asana gids: `[0-9]{10,20}`.
+  - Keys are upper-cased before checking.
+- **Board style (J):** the card or row key is `ticket_label`, as a real link when `ticket_url` is set, and plain text otherwise. With no ticket, it shows `tenant/ID`. The mw key goes in the tooltip.
+- **Other styles:** the ticket appears after the title as `[MOB-142]`, `[#123]` and so on. It is a link in md, html and the normal and blocks pane styles, and plain text in gopher text.
+- **Unknown or newer `tracker` values:** the ticket is kept and shown as plain text, without a link.
