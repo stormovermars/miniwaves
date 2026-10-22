@@ -17,6 +17,12 @@ jobs:
         with:
           go-version: '1.23.x'
       - run: go vet ./...
+      - name: Default fanfare WAV is byte-identical on every OS
+        shell: bash
+        run: |
+          py=$(command -v python3 || command -v python)
+          "$py" scripts/gen_fanfare_default.py "$RUNNER_TEMP/fanfare-default.wav"
+          "$py" -c "import hashlib,sys; h=lambda p: hashlib.sha256(open(p,'rb').read()).hexdigest(); a,b=h(sys.argv[1]),h(sys.argv[2]); print('generated',a); print('shipped  ',b); sys.exit(0 if a==b else 'generated WAV differs from assets/fanfare-default.wav')" "$RUNNER_TEMP/fanfare-default.wav" assets/fanfare-default.wav
       - name: Cross-build every release target
         if: runner.os == 'Linux'
         run: for t in windows/amd64 windows/arm64 darwin/arm64 linux/amd64; do GOOS=${t%/*} GOARCH=${t#*/} go vet ./... && GOOS=${t%/*} GOARCH=${t#*/} go build -o /dev/null .; done
