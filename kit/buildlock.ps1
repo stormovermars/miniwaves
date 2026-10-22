@@ -1,7 +1,8 @@
 # Build lock for job "@@JOB@@": run one heavy build or test at a time.
 # Usage: ./buildlock.ps1 COMMAND [ARGS...]   (exit code = the command's; 75 = timed out waiting)
 # Env: BUILDLOCK_DIR (lock folder), BUILDLOCK_TIMEOUT (seconds to wait, default 1800).
-# The lock is a folder made with New-Item, which fails when it exists; a lock whose owner process is gone is taken over.
+# The lock is a folder published by one rename (Directory.Move fails when the target exists, so exactly one waiter wins, and
+# the pid file is already inside when the lock appears); a lock whose owner process is gone is taken over, one waiter at a time.
 # No param() block: it would make this an advanced script and bind the wrapped command's -v, -o, -e to common parameters.
 if ($args.Count -lt 1) { [Console]::Error.WriteLine('usage: buildlock.ps1 COMMAND [ARGS...]'); exit 2 }
 $Command = $args[0]
@@ -9,17 +10,29 @@ $Rest = @($args | Select-Object -Skip 1)
 $lock = if ($env:BUILDLOCK_DIR) { $env:BUILDLOCK_DIR } else { Join-Path ([System.IO.Path]::GetTempPath()) 'buildlock-@@JOB@@' }
 $timeout = if ($env:BUILDLOCK_TIMEOUT) { [int]$env:BUILDLOCK_TIMEOUT } else { 1800 }
 $waited = 0
+# New-Item is check-then-create and can succeed for two waiters at once; a rename onto an existing, non-empty folder cannot.
+function New-Claim([string]$Path) {
+  $tmp = "$Path.$PID.tmp"
+  try {
+    Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+    [void][System.IO.Directory]::CreateDirectory($tmp)
+    [System.IO.File]::WriteAllText((Join-Path $tmp 'pid'), [string]$PID)
+    [System.IO.Directory]::Move($tmp, $Path)
+    return $true
+  } catch {
+    Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+    return $false
+  }
+}
 while ($true) {
-  try { New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null; break } catch {}
+  if (New-Claim $lock) { break }
   $owner = $null
   try { $owner = [int](Get-Content -Path (Join-Path $lock 'pid') -ErrorAction Stop) } catch {}
   if ($owner -and -not (Get-Process -Id $owner -ErrorAction SilentlyContinue)) {
     # only the holder of $lock.takeover removes a stale lock, so the lock cannot be replaced under us;
     # re-read the owner first, another waiter may have finished the takeover already
     $mutex = "$lock.takeover"
-    $got = $false
-    try { New-Item -ItemType Directory -Path $mutex -ErrorAction Stop | Out-Null; $got = $true } catch {}
-    if ($got) {
+    if (New-Claim $mutex) {
       $now = $null
       try { $now = [int](Get-Content -Path (Join-Path $lock 'pid') -ErrorAction Stop) } catch {}
       if ($now -eq $owner) { Remove-Item -Recurse -Force $lock -ErrorAction SilentlyContinue }
@@ -36,7 +49,6 @@ while ($true) {
   Start-Sleep -Seconds 1
   $waited += 1
 }
-Set-Content -Path (Join-Path $lock 'pid') -Value $PID
 $code = 0
 try {
   & $Command @Rest
