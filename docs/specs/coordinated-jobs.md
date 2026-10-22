@@ -188,7 +188,7 @@ TSK-018 moved from WAV-006 to WAV-003 (M1). Notes on TSK-012, 017, 018 and 019 c
 ## Decisions (draft 4.2)
 
 - **D1, news is a tab.** It is a tab of the one tidewatch pane, opened with jobs and unfocused, because the pane API cannot make a separate panel.
-- **D2, the renderer.** The pane gets news only from `mw news --job ID -o -`. `blocks` and the terminal draw `--format text` verbatim, and `normal` draws `--format md` with a small md→Svg renderer.
+- **D2, the renderer (accepted by Sir 2026-10-22).** The pane gets news only from `mw news --job ID -o -`. `blocks` and the terminal draw `--format text` verbatim, and `normal` draws `--format md` with a small md→Svg renderer.
   - Options weighed:
     - (a) The prototype's own md renderer reading status.md in both styles. It duplicates layout and needs path handling and confinement in TypeScript.
     - (b) `--format text` for everything. It gives one renderer and a thin plugin, but it loses the sans scale and the clickable link rows of `normal`.
