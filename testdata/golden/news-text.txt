@@ -17,7 +17,7 @@ Page: https://example.com/news?a=1&b=2
 ── ✓ MILESTONES ────────────────────────────────────────────────────────────────
 │ MILESTONE                 │ DONE/TOTAL │ STATE │ PROGRESS             │
 ├───────────────────────────┼────────────┼───────┼──────────────────────┤
-│ WAV-001 First | milestone │ 1/2        │ ready │ ██████████░░░░░░░░░░ │
+│ WAV-001 First | milestone │        1/2 │ ready │ ██████████░░░░░░░░░░ │
 
 ── DECISIONS ───────────────────────────────────────────────────────────────────
 ▸ 10-22 11:13 decide: CHR-001 Decisions (doc) @sir - Ship <it> (why: cheap)
