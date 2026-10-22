@@ -1,0 +1,16 @@
+{
+  "judge": [],
+  "blocked": [],
+  "acceptance": [],
+  "waves": [],
+  "stale": [],
+  "needs": [
+    {
+      "tenant": "needs-app",
+      "item": "TSK-001",
+      "question": "Which format?",
+      "by": "bot",
+      "at": "<TS>"
+    }
+  ]
+}

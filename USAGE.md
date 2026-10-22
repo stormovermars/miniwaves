@@ -114,6 +114,11 @@ mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
 mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]   # -c under a session only while acceptance is empty
 mw gate [-t SLUG] [-j] | mw gate level trust|proof|spec|judged [-t SLUG] [--workspace] [--by NAME] | mw gate evidence|acceptance|judge on|off|auto [--by NAME] [--workspace]
 mw version [-j]   # {version, schema, board_schema, board}: nearest workspace and its schema (null if none)
+mw ask ID QUESTION... [-t SLUG] [-s NAME]   # a question for a human, as an event (see "Needs you and decisions")
+mw answer ID TEXT... --by NAME [-t SLUG]   # human only; closes the item's open ask
+mw decide TEXT... --by NAME [-b WHY] [-p ID] [-t SLUG]   # a decision event on ID, else on the tenant's "Decisions" chore
+mw user show [-j] | mw user set KEY=VALUE...   # per-user config (see "Per-user config")
+mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]   # coordinated-job config (see "Coordinated jobs")
 mw review [-t SLUG] [-j]
 mw judge ID [-t SLUG]
 mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]
@@ -136,6 +141,7 @@ mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v]   # the same full brief as show;
 mw next --claim [-s NAME] [-a ROLE] [-t SLUG] [-k KIND] [-j]   # pick + start in one locked step; -j adds "claimed": true
 mw archive [--days N] [-t SLUG] [--dry-run]   # done items older than N days (30) -> .miniwaves/<slug>.archive.json
 mw log [-t SLUG | -A] [-n N] [-j]   # activity feed, newest first
+mw log [-t SLUG | -A] --since CURSOR|start [--lookback DUR] [-n N] [-j]   # resumable feed, oldest first, plus a next cursor
 mw board [-t SLUG | -A] [-v] [-j]   # last: <ago> <item> <action>, today: N done; -A sorted by last activity
 mw context [-t SLUG] [-s NAME] [-j]
 ```
@@ -272,6 +278,67 @@ Without the key the defaults above apply.
 `mw note ID TEXT...` appends a timestamped note to any item or wave (any
 status); `mw show ID` lists the notes. It never changes the status or the
 block/done note.
+
+## Needs you and decisions
+
+`ask`, `answer` and `decide` append item events (`ask`, `answer`, `decide`; see PROTOCOL.md). They work on any board: there is no gate and no job is needed, and they never change an item's status.
+
+- `mw ask ID QUESTION... [-s NAME]` records a question for a human. Any session may ask.
+- `mw answer ID TEXT... --by NAME` is human only, like `accept`: it is refused under `MW_SESSION` or `-s`, and `--by` is required when stdin is not a terminal. It is refused when the item has no open ask.
+- An **open ask** is the last `ask` of an item with no later `answer` on that item (one answer closes every earlier ask).
+- `mw review` shows open asks as `needs you`, `mw review -j` gains `needs` (`[{tenant, item, question, by, at}]`, always an array), and the text `mw board` prints a `NEEDS YOU` block.
+- `mw decide TEXT... --by NAME [-b WHY] [-p ID]` appends a `decide` event to `-p ID`, else to the tenant's `Decisions` chore, created on first use (already `done`, so it never holds the tenant open). `-b WHY` is stored as `(why: WHY)` at the end of the note.
+
+## Resumable log (`log --since`)
+
+`mw log [-t SLUG | -A] --since CURSOR|start [--lookback DUR] [-n N] [-j]` is an event feed a poller can resume. It lists, oldest first, the events the cursor has not delivered, then a `next` cursor (`-j`: `{"events": [...], "next": "..."}`, each event with a `key`; text: a last `next: CURSOR` line). `--since ""` and `--since start` return everything; `-n` keeps the first N and `next` resumes after them.
+
+- The cursor is opaque (base64 of a time and the event keys seen near it). An event's key is `tenant/item/eventIndex`.
+- Each read re-scans from the cursor time minus the lookback (default `24h`; `--lookback 90m`, `2h`, `1d`) and drops the keys already delivered. An event stamped before the cursor that reaches the board later (a `git merge` from another clone) is therefore returned exactly once. One that arrives later than the lookback is not returned; keep the same `--lookback` on every read of a cursor.
+- `mw archive` removes whole items from the feed; their keys fall out of the cursor and nothing is replayed.
+
+## Per-user config
+
+Personal choices live outside the committed board, in `mw-user.json` under `os.UserConfigDir()/miniwaves/` (`MW_USER_CONFIG` overrides the path). `mw user` works without a board.
+
+```text
+mw user show [-j]            # the values and the file's path
+mw user set KEY=VALUE...     # validates every key and value, then writes the file (mode 0600); an empty VALUE unsets a key
+```
+
+| Key | Value |
+|---|---|
+| `alerts.on` | comma list of event names (lowercase letters, digits, `.` `_` `-`) |
+| `alerts.exec` | a JSON argv array, for example `["notify-send","mw"]`; stored as data, never run through a shell |
+| `fanfare.enabled` | `true` or `false`: overrides the board's `fanfare.enabled` when set (the user's choice wins) |
+| `fanfare.use` | a fanfare set name, or `all` |
+
+On Unix mw refuses to read the file when it is group- or world-writable (`chmod 600` fixes it), because `alerts.exec` names a command. On Windows there are no comparable mode bits and no check is made. A broken file never fails a board command: fanfare ignores it with one note on stderr. `log --follow --exec` (which would run `alerts.exec`) is not built yet.
+
+## Coordinated jobs
+
+A job groups tenants under one coordinator. mw only stores the config and ships prompts and data; it never starts a session. The config lives in `.miniwaves.json` as an omitempty `jobs` object keyed by job id (a tenant carries `"job": ID`), in schema 8 with no migration: a board that never opts in is unchanged.
+
+```text
+mw jobs enable ID -t SLUG...        # create the job if needed and put the tenants in it (-t repeats or takes a comma list)
+mw jobs disable ID [-t SLUG]        # clear the tenants (all, or one); the job's data stays
+mw jobs set ID KEY=VALUE...         # every key and value is validated; nothing is stored when one is refused; an empty VALUE resets the key
+mw jobs show [ID] [-j]              # effective values (defaults applied) and the job's tenants
+```
+
+| Key | Default | Rule |
+|---|---|---|
+| `title` | the id | up to 120 characters |
+| `max_workers` | `4` | 1..32 |
+| `worktrees` | `on` | `on` or `off` |
+| `lock` | none | a command name only (`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`), never a command line |
+| `news.out` | `docs/news/` | relative, cleaned, inside the workspace: no `..`, no absolute path, no `~`, no drive |
+| `news.url` | none | an `http(s)` URL |
+| `summary` | none | a path with the `news.out` rules |
+| `pane` | `on` | `on` or `off` |
+| `pane.style` | none | `^[a-z0-9-]{1,32}$` |
+
+Job ids match `^[a-z0-9][a-z0-9-]{0,31}$`. `jobs show` is a read; the other three write the index. Values are data: nothing here is executed.
 
 ## Fanfare
 

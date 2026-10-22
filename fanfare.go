@@ -578,7 +578,7 @@ func tenantFinished(t *Tenant) bool {
 // on the first finished transition and queues the clip to play once the command succeeded.
 // A close that also finishes the tenant plays the finale only.
 func fanfareAfterChange(w *Workspace, t *Tenant, waveClosed bool, now string) {
-	if !fanfareCfg(w).Enabled {
+	if !fanfareEffective(w).Enabled { // the per-user fanfare.enabled wins over the board
 		return
 	}
 	if tenantFinished(t) && t.FanfareFinaleAt == "" {
@@ -613,7 +613,7 @@ func playPendingFanfare(w *Workspace) {
 }
 
 func playClip(w *Workspace, kind, reason string) error {
-	c := fanfareCfg(w)
+	c := fanfareEffective(w)
 	p, err := pickPairFor(c, expandHome(c.Dir), rand.Intn)
 	if err != nil {
 		return err
@@ -938,7 +938,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		if len(pos) == 1 {
 			kind = pos[0]
 		}
-		p, err := pickPairFor(c, dir, rand.Intn)
+		p, err := pickPairFor(fanfareEffective(w), dir, rand.Intn)
 		if err != nil {
 			return err
 		}

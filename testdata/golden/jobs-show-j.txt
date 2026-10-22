@@ -1,0 +1,33 @@
+[
+  {
+    "id": "other",
+    "title": "other",
+    "tenants": [
+      "jobs-app"
+    ],
+    "max_workers": 4,
+    "worktrees": "on",
+    "lock": "",
+    "news.out": "docs/news/",
+    "news.url": "",
+    "summary": "",
+    "pane": "on",
+    "pane.style": ""
+  },
+  {
+    "id": "tiny",
+    "title": "Tiny corpus",
+    "tenants": [
+      "sheet",
+      "doc"
+    ],
+    "max_workers": 2,
+    "worktrees": "on",
+    "lock": "",
+    "news.out": "docs/news/",
+    "news.url": "https://example.com/news",
+    "summary": "",
+    "pane": "on",
+    "pane.style": ""
+  }
+]
