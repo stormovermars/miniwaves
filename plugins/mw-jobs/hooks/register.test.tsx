@@ -2016,6 +2016,33 @@ test('metric deltas and drops: ▲/▼ against the seen value; a drop alerts onc
   await cmd($, 'every off')
 })
 
+test('metric counts: one non-wrapping Text per row, the same width, with 4-digit totals and two deltas', async ($, on) => {
+  const big = (good: number, bad: number) => metricsFile({ sections: [{ title: 'Harness', kind: 'split', legend: { good: 'pass', warn: 'partial', bad: 'fail', none: 'skip' }, rows: [{ name: 'doc/ios', good, warn: 35, bad, none: 1200 }, { name: 'web', good: 2, warn: 0, bad: 0, none: 8 }, { name: 'android with a long name', good: 1100, warn: 41, bad: 7, none: 2000 }] }] })
+  const { state, clock } = rig($, on, true, REG_M)
+  state.newsFiles.zeta = '# S'
+  state.files.set(MPATH, big(1000, 30))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await cmd($, 'every 30s')
+  state.files.set(MPATH, big(1011, 33))
+  await clock.advance(30_000)
+  await clock.advance(30_000)
+  const mounts: Array<[string, any]> = []
+  await cmd($, 'style blocks')
+  mounts.push(['blocks', await $.ui.mount({ ...PANE, surface: 'desktop' } as never)])
+  mounts.push(['terminal', await $.ui.mount({ ...PANE, surface: 'terminal' } as never)])
+  for (const [name, ui] of mounts) {
+    const counts = (await ui.findAll({ type: 'Text' })).filter((t: any) => t.props?.wrap === 'truncate-end' && /^ *\d+\/\d+( [▲▼]\d+)*$/.test(flat(t)))
+    expect(counts, name).toHaveLength(3)
+    const lines = counts.map((t: any) => flat(t))
+    expect(lines.some((l: string) => /1011\/\d+ ▲11 ▲3/.test(l)), `${name} ${lines.join('|')}`).toBe(true)
+    for (const t of counts) expect(t.props.wrap, name).toBe('truncate-end')
+    expect(new Set(lines.map((l: string) => l.length)).size, `${name} ${lines.join('|')}`).toBe(1)
+    expect(lines.join(''), name).not.toMatch(/[~\u2717]/)
+    await ui.unmount()
+  }
+  await cmd($, 'every off')
+})
+
 test('an invalid or newer metrics file shows a one-line dim notice instead of the section', async ($, on) => {
   const { state } = rig($, on, true, REG_M)
   state.newsFiles.zeta = '# S'

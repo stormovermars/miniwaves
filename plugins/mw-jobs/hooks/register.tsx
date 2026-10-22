@@ -6045,7 +6045,10 @@ export const register: Register = (on, options) => {
       ...a.review.map(i => itemAge(i).length),
       ...a.doing.map(d => (d.ageMs === undefined ? 0 : ageText(d.ageMs).length)),
     ]
-    rightLens.push(...mviews.flatMap(sec => sec.rows.map(r => (r.valueText ?? '').length + r.delta.reduce((n, d) => n + d.text.length + 1, 0))))
+    // a metric row's count is one line: `good/total` (or the value) then the deltas; its width is the widest row's, so it never wraps
+    const metricCount = (r: MetricRowView) => (r.ratio ? `${abbr(r.ratio.a)}/${abbr(r.ratio.b)}` : (r.valueText ?? ''))
+    const cmax = Math.max(0, ...mviews.flatMap(sec => sec.rows.map(r => metricCount(r).length + r.delta.reduce((n, d) => n + d.text.length + 1, 0))))
+    rightLens.push(cmax)
     const rightW = Math.max(...rightLens)
     // done / total as fixed Boxes: digits of a proportional font never line up as a plain string
     const doneWd = Math.max(1, ...closedShown.map(w => String(memberParts(w).done).length)) + 1
@@ -6073,13 +6076,13 @@ export const register: Register = (on, options) => {
     const isMono = e.surface === 'terminal' || style === 'blocks'
 
     type Cell = { text?: string; color?: string; dim?: boolean; node?: unknown }
-    const gridRow = (key: string, name: string, nameColor: string | undefined, status: Cell | undefined, right: unknown, marker: unknown, open?: () => void) => {
+    const gridRow = (key: string, name: string, nameColor: string | undefined, status: Cell | undefined, right: unknown, marker: unknown, open?: () => void, minRight?: number) => {
       const nameNode = open !== undefined ? <Button key={`open-${key}`} plain label={name} onPress={open} /> : <Text color={nameColor} wrap="truncate-end">{name}</Text>
       const statusNode = status === undefined ? null : status.node !== undefined ? (status.node as any) : (
         <Text color={status.color} dimColor={status.dim ?? status.color === undefined} wrap="wrap">{status.text}</Text>
       )
       const rightBox = (k?: string) => (
-        <Box key={k} width={isMono ? Math.max(rightW, countW) : Math.max(6, countW)} flexShrink={0} flexGrow={0} justifyContent="flex-end">
+        <Box key={k} width={Math.max(minRight ?? 0, isMono ? Math.max(rightW, countW) : Math.max(6, countW))} flexShrink={0} flexGrow={0} justifyContent="flex-end">
           {right as any}
         </Box>
       )
@@ -6330,7 +6333,8 @@ export const register: Register = (on, options) => {
               {label(sec.title)}
               {sec.rows.map(r => {
                 const tcol = (t: string) => (t === 'green' ? 'success' : t === 'red' ? 'error' : t === 'amber' ? 'warning' : undefined)
-                const blen = isMono ? barLen : 10
+                // narrow pane: the bar shrinks, the count never does
+                const blen = Math.max(4, Math.min(isMono ? barLen : 10, hasWidth ? columns - nameW - cmax - 5 : 99))
                 // coloured segments (cumulative rounding, so the parts and the track always add up to the bar)
                 const segs: Array<{ n: number; tone: string }> = []
                 let used = 0
@@ -6351,14 +6355,16 @@ export const register: Register = (on, options) => {
                   </Box>
                 ) : undefined
                 const dim = r.barNote
+                const countStr = metricCount(r)
+                const used0 = countStr.length + r.delta.reduce((n, d) => n + d.text.length + 1, 0)
                 const arrows = (
-                  <Text>
-                    {r.ratio ? <Text dimColor>{`${abbr(r.ratio.a)}/${abbr(r.ratio.b)}`}</Text> : <Text color={tcol(r.valueTone)}>{r.valueText ?? ''}</Text>}
+                  <Text key={`mcount-${sec.title}-${r.name}`} wrap="truncate-end">
+                    {' '.repeat(Math.max(0, cmax - used0))}
+                    {r.ratio ? <Text dimColor>{countStr}</Text> : <Text color={tcol(r.valueTone)}>{countStr}</Text>}
                     {r.delta.map(d => <Text color={tcol(d.tone)}>{` ${d.text}`}</Text>)}
-                    {r.marks ? <Text color={tcol(r.markTone)}>{` ${r.marks}`}</Text> : null}
                   </Text>
                 )
-                return gridRow(`met-${sec.title}-${r.name}`, r.name, undefined, barNode ? { node: barNode } : { text: dim, dim: true }, arrows, <Text>{'  '}</Text>)
+                return gridRow(`met-${sec.title}-${r.name}`, r.name, undefined, barNode ? { node: barNode } : { text: dim, dim: true }, arrows, <Text>{'  '}</Text>, undefined, cmax)
               })}
               {(sec.more ?? 0) > 0 && <Text dimColor>{`+${sec.more} rows`}</Text>}
               {(sec.note || sec.legend.length > 0) && <Text dimColor wrap="wrap">{[sec.legend.map(l => l.name).join(' · '), sec.note].filter(Boolean).join(' — ')}</Text>}
