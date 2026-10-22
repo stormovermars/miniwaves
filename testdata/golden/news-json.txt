@@ -23,6 +23,36 @@
       "done": 2,
       "total": 5
     },
+    "tenants": [
+      {
+        "slug": "doc",
+        "name": "Doc",
+        "counts": {
+          "needs": 1,
+          "review": 0,
+          "blocked": 0,
+          "doing": 1,
+          "ready": 0,
+          "done": 1,
+          "total": 2
+        },
+        "last_change": "2026-10-22T11:13:00Z"
+      },
+      {
+        "slug": "news-app",
+        "name": "News app",
+        "counts": {
+          "needs": 0,
+          "review": 0,
+          "blocked": 1,
+          "doing": 0,
+          "ready": 1,
+          "done": 1,
+          "total": 3
+        },
+        "last_change": "2026-10-22T10:31:00Z"
+      }
+    ],
     "needs": [
       {
         "tenant": "doc",
@@ -71,14 +101,16 @@
       "doing": 50,
       "milestones": 200,
       "needs": 50,
-      "review": 50
+      "review": 50,
+      "tenants": 2000
     },
     "more": {
       "blocked": 0,
       "doing": 0,
       "milestones": 0,
       "needs": 0,
-      "review": 0
+      "review": 0,
+      "tenants": 0
     }
   },
   "happened": {

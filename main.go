@@ -393,7 +393,7 @@ mw fanfare stop
 Play a short clip when a wave closes and a longer finale when a tenant is finished (items exist, none inbox/ready/doing/blocked, no open wave; once per transition).
 Playback is a detached player (afplay, ffplay, mpv, paplay, Windows .wav) and never fails a board command. "fetch" downloads public-domain, CC0 and CC-BY pairs; the
 bring-your-own pair folders stay empty until you add fanfare.<ext> and finale.<ext>. Example: mw fanfare set enabled=true`,
-		"news": `mw news [--job ID] [--format md|html|text|json] [-o PATH|-] [-j]
+		"news": `mw news [--job ID] [--format md|html|text|json] [--tenant SLUG] [-o PATH|-] [-j]
 mw news --job ID --release [--force] [--format ...] [-j]
 The news bulletin of a job: one model (version 1: job, release, now, happened, next, metrics, summary) drawn as a
 70-column gopher-style bulletin (md = one fenced text block, html = <pre>, text) or printed as json. Without --release it
@@ -404,7 +404,7 @@ PATH.hash), otherwise it prints "unchanged". text and json print to stdout (a fi
 (job key news_releases, default <news.out dir>/releases). Release N compares with release N-1 (release 1 with the start).
 Nothing new since the last release is refused with exit 0 ("nothing new since release N") unless --force.
 The job's metrics file (key metrics, see USAGE.md) and summary file (key summary, at most 20 KB) are read as data.
---width (text only) is accepted and ignored: bulletins are 70 columns. No network. Example: mw news --job tiny --release`,
+--tenant SLUG (json only) filters the model to one tenant; the window stays job-wide. --width (text only) is accepted and ignored: bulletins are 70 columns. No network. Example: mw news --job tiny --release`,
 		"jobs": `mw jobs enable ID -t SLUG...
 mw jobs disable ID [-t SLUG]
 mw jobs set ID KEY=VALUE...

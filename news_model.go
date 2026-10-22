@@ -19,12 +19,13 @@ import (
 // from, so a number is computed once. See docs/specs/news-model.md and docs/specs/metrics.md.
 
 const (
-	newsCapNow       = 50  // each now list
-	newsCapMilesOpen = 200 // now.milestones.open
-	newsCapHappened  = 100 // each happened list
-	newsCapReady     = 10  // next.ready
-	newsCapNextMiles = 5   // next.next_milestones
-	newsItemText     = 200 // characters of any item text
+	newsCapNow       = 50   // each now list
+	newsCapMilesOpen = 200  // now.milestones.open
+	newsCapHappened  = 100  // each happened list
+	newsCapReady     = 10   // next.ready
+	newsCapNextMiles = 5    // next.next_milestones
+	newsCapTenants   = 2000 // now.tenants
+	newsItemText     = 200  // characters of any item text
 	newsModelMax     = 1 << 20
 
 	metricsMaxBytes    = 256 << 10
@@ -88,8 +89,17 @@ type newsMilestones struct {
 	ClosedCount int             `json:"closed_count"`
 }
 
+// newsTenant is one row of now.tenants: small on purpose (a job can have thousands of tenants).
+type newsTenant struct {
+	Slug       string     `json:"slug"`
+	Name       string     `json:"name"`
+	Counts     newsCounts `json:"counts"`
+	LastChange string     `json:"last_change"`
+}
+
 type newsNow struct {
 	Counts     newsCounts     `json:"counts"`
+	Tenants    []newsTenant   `json:"tenants"`
 	Needs      []newsItem     `json:"needs"`
 	Review     []newsItem     `json:"review"`
 	Blocked    []newsItem     `json:"blocked"`
@@ -565,7 +575,11 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 	// draft: the window ends at the newest event of the job, so the same board gives the same model
 	var newest string
 	var newestT time.Time
-	for _, t := range p.tenants {
+	scope := p.all // the window is job-wide even when the model is filtered to one tenant
+	if scope == nil {
+		scope = p.tenants
+	}
+	for _, t := range scope {
 		for _, r := range tenantRows(t) {
 			if newest == "" || r.sortKey.After(newestT) {
 				newest, newestT = r.At, r.sortKey
@@ -594,7 +608,11 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 	var closedMs, done, accepted, sentBack, answers, decisions, newItems []newsItem
 	events := 0
 	c := &m.Now.Counts
+	var trows []newsTenant
 	for _, t := range p.tenants {
+		tr := newsTenant{Slug: compactText(t.Slug, 40), Name: compactText(t.Name, 40)}
+		before := *c
+		cNeeds, cReview, cBlocked, cDoing, cReady := len(needs), len(review), len(blocked), len(doing), len(ready)
 		gs := gateStates(w, t)
 		judgeOn := byName(gs, "judge").Effective
 		title := map[string]string{}
@@ -712,11 +730,38 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 			}
 		}
 		done = append(done, tdone...)
+		tr.Counts = newsCounts{Needs: len(needs) - cNeeds, Review: len(review) - cReview, Blocked: len(blocked) - cBlocked, Doing: len(doing) - cDoing, Ready: len(ready) - cReady,
+			Done: c.Done - before.Done, Total: c.Total - before.Total}
+		tr.LastChange, _, _ = lastActivity(t)
+		trows = append(trows, tr)
 	}
 	c.Needs, c.Review, c.Blocked, c.Doing, c.Ready = len(needs), len(review), len(blocked), len(doing), len(ready)
 
-	m.Now.Caps = map[string]int{"needs": newsCapNow, "review": newsCapNow, "blocked": newsCapNow, "doing": newsCapNow, "milestones": newsCapMilesOpen}
-	m.Now.More = map[string]int{}
+	sort.SliceStable(trows, func(i, j int) bool {
+		a, b := trows[i], trows[j]
+		if a.Counts.Needs != b.Counts.Needs {
+			return a.Counts.Needs > b.Counts.Needs
+		}
+		if a.Counts.Review != b.Counts.Review {
+			return a.Counts.Review > b.Counts.Review
+		}
+		if a.Counts.Blocked != b.Counts.Blocked {
+			return a.Counts.Blocked > b.Counts.Blocked
+		}
+		if ta, tb := parseTS(a.LastChange), parseTS(b.LastChange); !ta.Equal(tb) {
+			return ta.After(tb)
+		}
+		return a.Slug < b.Slug
+	})
+	m.Now.Tenants = []newsTenant{}
+	tmore := 0
+	if len(trows) > newsCapTenants {
+		tmore = len(trows) - newsCapTenants
+		trows = trows[:newsCapTenants]
+	}
+	m.Now.Tenants = append(m.Now.Tenants, trows...)
+	m.Now.Caps = map[string]int{"tenants": newsCapTenants, "needs": newsCapNow, "review": newsCapNow, "blocked": newsCapNow, "doing": newsCapNow, "milestones": newsCapMilesOpen}
+	m.Now.More = map[string]int{"tenants": tmore}
 	for _, l := range []struct {
 		name string
 		src  []newsItem
@@ -795,13 +840,16 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 	return m
 }
 
-// newsGuardSize keeps the marshalled model under 1 MB: if it is over, rows are dropped from the longest
-// list (counted in its more) until it fits.
+// newsGuardSize keeps the encoded model (as it is written, indented) under 1 MB: if it is over, rows are
+// dropped from the longest lists (counted in their more) until it fits; tenant rows go last.
 func newsGuardSize(m *newsModel) {
 	for round := 0; round < 64; round++ {
-		b, err := json.Marshal(m)
+		b, err := json.MarshalIndent(m, "", "  ")
 		if err == nil && len(b) <= newsModelMax {
 			return
+		}
+		if err != nil {
+			return // reported by the caller's own encode
 		}
 		m.Truncated = true
 		type lst struct {
@@ -813,19 +861,32 @@ func newsGuardSize(m *newsModel) {
 			{&m.Happened.ClosedMilestones, m.Happened.More, "closed_milestones"}, {&m.Happened.Done, m.Happened.More, "done"}, {&m.Happened.Accepted, m.Happened.More, "accepted"},
 			{&m.Happened.SentBack, m.Happened.More, "sent_back"}, {&m.Happened.Answers, m.Happened.More, "answers"}, {&m.Happened.Decisions, m.Happened.More, "decisions"},
 			{&m.Happened.NewItems, m.Happened.More, "new_items"}}
+		reduced := false
 		for _, x := range all {
 			if n := len(*x.l); n > 1 {
 				k := n / 2
 				*x.l = (*x.l)[:n-k]
 				x.more[x.key] += k
+				reduced = true
 			}
 		}
 		if n := len(m.Now.Milestones.Open); n > 1 {
 			m.Now.Milestones.Open = m.Now.Milestones.Open[:n-n/2]
 			m.Now.More["milestones"] += n / 2
+			reduced = true
 		}
 		if len(m.Summary) > 4096 {
 			m.Summary = strings.ToValidUTF8(m.Summary[:4096], "")
+			reduced = true
+		}
+		if !reduced { // the items are as small as they get: now the tenant rows
+			if n := len(m.Now.Tenants); n > 1 {
+				k := n / 2
+				m.Now.Tenants = m.Now.Tenants[:n-k]
+				m.Now.More["tenants"] += k
+			} else {
+				return
+			}
 		}
 	}
 }

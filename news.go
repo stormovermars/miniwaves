@@ -38,7 +38,8 @@ func newsFence(s string) string {
 }
 
 type newsPart struct {
-	job     string // job id, "" for the workspace
+	all     []*Tenant // every tenant of the job when tenants is filtered to one; nil otherwise
+	job     string    // job id, "" for the workspace
 	title   string
 	desc    string // job description, one line; "" when none
 	url     string
@@ -194,7 +195,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "job", "format", "out", "json", "width", "release", "force"); err != nil {
+	if err := allowOptions(o, "job", "format", "out", "json", "width", "release", "force", "tenant"); err != nil {
 		return err
 	}
 	format := value(o, "format", "md")
@@ -211,6 +212,14 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		}
 		if _, e := strconv.Atoi(strings.TrimSpace(o["width"])); e != nil {
 			return fmt.Errorf("--width %q: use a number", o["width"])
+		}
+	}
+	if o["tenant"] != "" {
+		if format != "json" {
+			return errors.New("--tenant is only for --format json")
+		}
+		if release {
+			return errors.New("--tenant cannot be combined with --release (a release is job-wide)")
 		}
 	}
 	root := filepath.Dir(path)
@@ -259,6 +268,18 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	now := time.Now()
 	for _, id := range ids {
 		j := &job{p: newsPart{job: id, title: w.Name, tenants: newsJobTenants(w, id)}}
+		if slug := o["tenant"]; slug != "" { // the same model, filtered to one tenant; the window stays job-wide
+			var one *Tenant
+			for _, t := range j.p.tenants {
+				if t.Slug == slug {
+					one = t
+				}
+			}
+			if one == nil {
+				return fmt.Errorf("tenant %s is not a visible tenant of this job (mw jobs show)", slug)
+			}
+			j.p.all, j.p.tenants = j.p.tenants, []*Tenant{one}
+		}
 		dir := "docs/news/"
 		if id != "" {
 			j.v = jobView(w, id)

@@ -37,6 +37,7 @@ mw builds **one model** per job: `mw news --job ID --format json`. Everything el
   release: {number|null, at, since},                   // number null = draft
   now: {
     counts: {needs, review, blocked, doing, ready, done, total},
+    tenants[],                                         // {slug, name, counts{needs,review,blocked,doing,ready,done,total}, last_change}, by attention
     needs[], review[], blocked[], doing[],             // item: {tenant, id, title, note, since, by}
     milestones: {open[], closed_count}                 // open sorted nearest-to-done first: {tenant, id, title, done, total}
   },
@@ -49,7 +50,7 @@ mw builds **one model** per job: `mw news --job ID --format json`. Everything el
   summary: "plain text from the job's summary file" }
 ```
 
-**Caps:** each list has a cap and a `more` count. The `now` lists hold at most 50, `milestones.open` 200, each `happened` list 100, `next.ready` 10 and `next_milestones` 5. No item text is longer than 200 characters, and the whole model is at most 1 MB.
+**Caps:** each list has a cap and a `more` count. `now.tenants` holds at most 2000 rows (a row is about 150 bytes) plus `more`, sorted by attention: needs desc, review desc, blocked desc, last_change desc, slug. A job can have thousands of tenants; asks are gathered from every tenant in one run, so a pane needs exactly one mw call per job per poll. When the model would pass 1 MB, the item lists are trimmed first and the tenant rows last. `mw news --job ID --format json --tenant SLUG` is the same model filtered to one tenant; the release window and releases stay job-wide, and `--tenant` is refused with `--release` and with other formats. The `now` lists hold at most 50, `milestones.open` 200, each `happened` list 100, `next.ready` 10 and `next_milestones` 5. No item text is longer than 200 characters, and the whole model is at most 1 MB.
 
 ### Views
 
@@ -115,6 +116,10 @@ mw's text, md and html news, and the panes in gopher style, are plain-text bulle
 ### Alerts
 
 Alerts stay in the panes (per type, deduplicated, one path). A new release counts as one alert (alertNew). Draft changes raise no alerts, and a metric drop counts as an alertMilestone-class alert.
+- **Now events still alert in model mode:** a new needs-you, a new review, and a done item each raise an alert. They come from the `now` lists, not from the draft.
+- **Dedupe key:** type + tenant:id + event time, never the text. When two sessions show the same job, an alert key is claimed in the store with compare-and-set before the alert is sent.
+- **Overflow:** at most 3 notifications go out per poll. A 4th summary notification says "+N more", and the rest are logged as "capped".
+- **No diff across sources:** a failed model poll keeps the last model snapshot and marks it stale. A model snapshot is never diffed against a legacy one.
 
 ## Compatibility
 
