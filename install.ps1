@@ -18,6 +18,13 @@ $temp = Join-Path ([IO.Path]::GetTempPath()) ("miniwaves-" + [guid]::NewGuid())
 
 try {
     New-Item -ItemType Directory -Force -Path $temp, $dest | Out-Null
+    if ($env:MW_INSTALL_FILE) {
+        # Local artefact (CI smoke tests): mw.exe or a .zip holding it. No download, no checksum.
+        if (-not (Test-Path $env:MW_INSTALL_FILE)) { throw "MW_INSTALL_FILE not found: $env:MW_INSTALL_FILE" }
+        [Console]::Error.WriteLine("MW_INSTALL_FILE set: skipping download and checksum verification")
+        if ($env:MW_INSTALL_FILE -like "*.zip") { Expand-Archive -Force $env:MW_INSTALL_FILE $temp }
+        else { Copy-Item -Force $env:MW_INSTALL_FILE (Join-Path $temp "mw.exe") }
+    } else {
     $archive = Join-Path $temp $asset
     $checksums = Join-Path $temp "checksums.txt"
     Invoke-WebRequest -UseBasicParsing "$base/$asset" -OutFile $archive
@@ -28,6 +35,7 @@ try {
     $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
     if ($actual -ne $expected) { throw "Release checksum mismatch" }
     Expand-Archive -Force $archive $temp
+    }
     Copy-Item -Force (Join-Path $temp "mw.exe") (Join-Path $dest "mw.exe")
     Write-Output "installed miniwaves to $(Join-Path $dest 'mw.exe')"
     if ($env:MW_NO_FANFARE -ne "1" -and $env:MW_NO_PLUGINS -ne "1") {

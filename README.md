@@ -19,6 +19,7 @@ Upgrade: `mw update` (checks GitHub releases, verifies the checksum, replaces th
 - **Upgrading from 0.3.2 or 0.3.3:** after `mw update`, run `mw update --plugins` once (or re-run the install one-liner). The old binary updates its old plugin list, so only the new one installs `mw-jobs` and removes `tidewatch` and `mw-watch`. From 0.3.1 or older the same step applies.
 - `mw update --plugins` alone (re)installs or updates just the plugins `mw` and `mw-jobs`, then removes the retired `tidewatch` and `mw-watch` (only after the install succeeded).
 - `MW_NO_PLUGINS=1` skips the plugin step in `install.sh`, `install.ps1` and `mw update`.
+- `MW_INSTALL_FILE=<path>` makes `install.sh` / `install.ps1` install a local `mw` binary (or a `.tar.gz` / `.zip` holding it) instead of downloading a release; checksum verification is skipped (CI smoke tests).
 - No Claude Code, or the binary only: `go install github.com/stormovermars/miniwaves@latest` (the binary is named `miniwaves`). By hand: `claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves mw-jobs@miniwaves`.
 
 Open the panes: run `/mw-watch` (or `/mw-jobs`, `/mw-news`; settings: `/mw-configure`; fanfare: `/mw-fanfare`). That is the whole setup: mw-jobs finds the boards this session used, then those near the session folder, then under `~`, with their tenants (`mw boards` does the finding). Fanfare is switched on with defaults at install (change it with `mw configure`). `mw-watch` (formerly `tidewatch`) is retired; mw-jobs replaces it.

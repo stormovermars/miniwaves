@@ -26,6 +26,15 @@ else
 fi
 
 mkdir -p "$dest"
+if [ -n "${MW_INSTALL_FILE:-}" ]; then
+  # Local artefact (CI smoke tests): a binary or a .tar.gz holding mw. No download, no checksum.
+  [ -f "$MW_INSTALL_FILE" ] || { echo "MW_INSTALL_FILE not found: $MW_INSTALL_FILE" >&2; exit 1; }
+  echo "MW_INSTALL_FILE set: skipping download and checksum verification" >&2
+  case "$MW_INSTALL_FILE" in
+    *.tar.gz|*.tgz) tar -xzf "$MW_INSTALL_FILE" -C "$tmp" ;;
+    *) cp "$MW_INSTALL_FILE" "$tmp/mw" ;;
+  esac
+else
 archive="$tmp/miniwaves.tar.gz"
 curl -fsSL "$url" -o "$archive"
 checksums_url="${url%/*}/checksums.txt"
@@ -39,6 +48,7 @@ else
 fi
 [ "$actual" = "$expected" ] || { echo "release checksum mismatch" >&2; exit 1; }
 tar -xzf "$archive" -C "$tmp"
+fi
 install -m 0755 "$tmp/mw" "$dest/mw"
 echo "installed miniwaves to $dest/mw"
 case ":$PATH:" in *":$dest:"*) ;; *) echo "add $dest to PATH: export PATH=\"$dest:\$PATH\"" ;; esac

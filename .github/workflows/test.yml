@@ -45,6 +45,48 @@ jobs:
           New-Item -ItemType File -Path (Join-Path $env:MINIWAVES_INSTALL_DIR "mw.exe") | Out-Null
           ./uninstall.ps1
           if (Test-Path (Join-Path $env:MINIWAVES_INSTALL_DIR "mw.exe")) { throw "uninstall failed" }
+      - name: Installer smoke test (macOS/Linux)
+        if: runner.os != 'Windows'
+        run: |
+          sh -n install.sh
+          sh -n uninstall.sh
+          want="$(sed -n 's/^var version = "\(.*\)"/\1/p' gates.go)"
+          go build -o "$RUNNER_TEMP/mwbin/mw" .
+          for plug in 1 0; do
+            h="$RUNNER_TEMP/home$plug"; d="$RUNNER_TEMP/inst$plug"
+            mkdir -p "$h"
+            if [ "$plug" = 1 ]; then export MW_NO_PLUGINS=1; else unset MW_NO_PLUGINS; fi
+            command -v claude >/dev/null && { echo "claude on PATH, test invalid"; exit 1; }
+            HOME="$h" MW_USER_CONFIG="$h/user.json" MW_NO_FANFARE=1 MINIWAVES_INSTALL_DIR="$d" MW_INSTALL_FILE="$RUNNER_TEMP/mwbin/mw" sh install.sh
+            out="$("$d/mw" version)"
+            echo "$out"
+            case "$out" in "mw $want "*) ;; *) echo "unexpected version: $out (want $want)"; exit 1 ;; esac
+          done
+      - name: Installer smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $null = [ScriptBlock]::Create((Get-Content install.ps1 -Raw))
+          $null = [ScriptBlock]::Create((Get-Content uninstall.ps1 -Raw))
+          $want = (Select-String -Path gates.go -Pattern '^var version = "(.*)"').Matches[0].Groups[1].Value
+          go build -o (Join-Path $env:RUNNER_TEMP "mwbin\mw.exe") .
+          foreach ($plug in 1, 0) {
+            $h = Join-Path $env:RUNNER_TEMP "home$plug"
+            New-Item -ItemType Directory -Force $h | Out-Null
+            $env:USERPROFILE = $h
+            $env:MW_USER_CONFIG = Join-Path $h "user.json"
+            $env:MW_NO_FANFARE = "1"
+            $env:MINIWAVES_NO_PATH = "1"
+            $env:MINIWAVES_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "inst$plug"
+            $env:MW_INSTALL_FILE = Join-Path $env:RUNNER_TEMP "mwbin\mw.exe"
+            if ($plug -eq 1) { $env:MW_NO_PLUGINS = "1" } else { Remove-Item Env:MW_NO_PLUGINS -ErrorAction SilentlyContinue }
+            if (Get-Command claude -ErrorAction SilentlyContinue) { throw "claude on PATH, test invalid" }
+            ./install.ps1
+            if ($LASTEXITCODE) { throw "install.ps1 failed" }
+            $out = (& (Join-Path $env:MINIWAVES_INSTALL_DIR "mw.exe") version | Out-String).Trim()
+            Write-Output $out
+            if (-not $out.StartsWith("mw $want ")) { throw "unexpected version: $out (want $want)" }
+          }
       - name: Test published installer (macOS/Linux)
         if: github.event_name == 'workflow_dispatch' && runner.os != 'Windows'
         run: |
