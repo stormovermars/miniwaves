@@ -11,6 +11,10 @@ export type TidewatchJob = {
   newsFile: string
   /** Optional Markdown file (relative to the board) with harness lines. */
   summary: string
+  /** Short job id on its board ('' for a board shown as one job); used in pane titles. */
+  name?: string
+  /** Id of the registered board this job came from (the job's own id when not split). */
+  boardId?: string
 }
 export type TidewatchRegistry = { jobs: TidewatchJob[]; error: string | null }
 export type TidewatchWave = {
@@ -31,6 +35,8 @@ export type TidewatchItem = {
   /** ISO time of the item's last update ('' when unknown). */
   updated: string
 }
+/** An open ask from `mw review -j` (`needs`). */
+export type TidewatchAsk = { tenant: string; item: string; question: string; at: string }
 export type TidewatchEvent = { ts: string; tenant: string; item: string; action: string; note: string }
 export type TidewatchHarness = { name: string; line: string; pass: number; fail: number; skip: number }
 /** What the person has looked at: the cursor in epoch ms and the harness numbers then. */
@@ -40,8 +46,12 @@ export type TidewatchSnapshot = {
   items: TidewatchItem[]
   events: TidewatchEvent[]
   harness: TidewatchHarness[]
+  /** Open asks from `review -j` `needs`; undefined when that mw has no such array (blocked-note heuristic then). */
+  asks?: TidewatchAsk[]
   updatedAt: number
 }
+/** The fanfare footer's state: the per-user value wins over the board's. */
+export type TidewatchFanfare = { enabled: boolean; use: string; sets: string[] }
 
 /** A colour for light and dark, each a #rgb, #rrggbb or #rrggbbaa string. */
 export type TidewatchColor = { light: string; dark: string }
@@ -96,6 +106,8 @@ declare module 'claude-code' {
       stalledMin: number
       /** Ids of the jobs being refreshed now. */
       busy: string[]
+      /** The fanfare footer state per board folder; absent when that mw lacks fanfare sets or user show. */
+      fanfare: Record<string, TidewatchFanfare>
     }
   }
 }

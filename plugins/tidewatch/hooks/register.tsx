@@ -11,6 +11,8 @@ import type {
   TidewatchRegistry,
   TidewatchSeen,
   TidewatchSnapshot,
+  TidewatchAsk,
+  TidewatchFanfare,
   TidewatchWave,
 } from '../types'
 
@@ -40,6 +42,7 @@ const styleNames = atom({ plugin: 'tidewatch', key: 'styleNames' } as const, ['n
 const stalledMin = atom({ plugin: 'tidewatch', key: 'stalledMin' } as const, 45)
 const newsAtom = atom({ plugin: 'tidewatch', key: 'news' } as const, {})
 const busy = atom({ plugin: 'tidewatch', key: 'busy' } as const, [])
+const fanfareAtom = atom({ plugin: 'tidewatch', key: 'fanfare' } as const, {})
 
 const two = (n: number) => (n < 10 ? `0${n}` : `${n}`)
 const hhmm = (ms: number) => {
@@ -103,6 +106,12 @@ const isReview = (i: TidewatchItem) =>
 export const isNeed = (i: TidewatchItem) =>
   i.state !== 'done' && !isReview(i) && (i.state === 'blocked' || /\bneeds? (you|human|input|a decision)\b/i.test(`${i.title} ${i.note}`))
 
+/** What needs a person: open asks from `review -j` when mw has them, else the blocked-note heuristic. */
+export const needItems = (s: TidewatchSnapshot): TidewatchItem[] =>
+  s.asks !== undefined
+    ? s.asks.map(a => ({ tenant: a.tenant, id: a.item, type: 'task', state: 'ask', title: a.question.slice(0, 200), note: '', updated: a.at }))
+    : s.items.filter(isNeed)
+
 const ageText = (ms: number) => (ms < 3_600_000 ? `${Math.max(1, Math.round(ms / 60_000))}m` : `${Math.floor(ms / 3_600_000)}h`)
 
 export type Analysis = {
@@ -118,6 +127,8 @@ export type Analysis = {
 /** What needs attention now, and what changed after the seen cursor. */
 export const analyse = (s: TidewatchSnapshot, now: number, seenTs: number, stalledMs: number): Analysis => {
   const lastEvent = new Map<string, TidewatchEvent>()
+  const needs = needItems(s)
+  const needKeys = new Set(needs.map(i => `${i.tenant}:${i.id}`))
   const changed = new Map<string, 'done' | 'other'>()
   let doneNew = 0
   let blockedNew = 0
@@ -137,15 +148,15 @@ export const analyse = (s: TidewatchSnapshot, now: number, seenTs: number, stall
     }
   }
   const doing = s.items
-    .filter(i => i.state === 'doing' && WORK_TYPES.has(i.type) && !isNeed(i) && !isReview(i))
+    .filter(i => i.state === 'doing' && WORK_TYPES.has(i.type) && !needKeys.has(`${i.tenant}:${i.id}`) && !(s.asks === undefined && isNeed(i)) && !isReview(i))
     .map(item => {
       const stamps = [Date.parse(item.updated), Date.parse(lastEvent.get(`${item.tenant}:${item.id}`)?.ts ?? '')].filter(n => !Number.isNaN(n))
       const ageMs = stamps.length === 0 ? undefined : now - Math.max(...stamps)
       return { item, ageMs, isStalled: ageMs !== undefined && ageMs > stalledMs }
     })
   return {
-    needs: s.items.filter(isNeed),
-    review: s.items.filter(isReview),
+    needs,
+    review: s.items.filter(i => isReview(i) && !needKeys.has(`${i.tenant}:${i.id}`)),
     doing,
     stalled: doing.filter(d => d.isStalled).length,
     doneNew,
@@ -183,7 +194,7 @@ export const statusSegment = (
 ) => {
   if (s === undefined) return `${job.id} ▸ ${stale === undefined ? 'loading' : 'mw unavailable'}`
   const labels = tenantLabels(job.tenants.length > 0 ? job.tenants : [...new Set(s.waves.map(w => w.id.split(':')[0] ?? ''))])
-  const needs = s.items.filter(isNeed).length
+  const needs = needItems(s).length
   const parts = s.waves
     .filter(w => w.state !== 'done' && memberParts(w).total > 0)
     .map(w => `${waveName(w, labels)} ${w.members}`)
@@ -714,8 +725,61 @@ const writeRegistry = async ($: any, jobs: TidewatchJob[]) => {
   await $.store.set('registry', { jobs: map })
 }
 
+const newsFileOf = (out: string) => {
+  const o = out.trim()
+  if (o === '') return ''
+  return /\.md$/i.test(o) ? o : `${o.replace(/\/+$/, '')}/status.md`
+}
+
+/** One tab per job with `pane` on; a board with no jobs, or an mw too old for `jobs show`, stays one job of all its tenants. */
+const expandBoards = async ($: any, boards: TidewatchJob[]): Promise<TidewatchJob[]> => {
+  const bin = await resolveMw($)
+  const out: TidewatchJob[] = []
+  for (const b of boards) {
+    let list: unknown
+    if (bin !== undefined) {
+      try {
+        const r = await $.process.run([bin, 'jobs', 'show', '-j'], { cwd: b.board, timeoutMs: 20_000 })
+        list = r.exitCode === 0 ? parseJson(r.stdout) : undefined
+      } catch {
+        list = undefined
+      }
+    }
+    const jobs = Array.isArray(list) ? (list as Record<string, unknown>[]).filter(j => typeof j?.id === 'string' && j.id !== '') : []
+    if (jobs.length === 0) {
+      out.push({ ...b, name: '', boardId: b.id })
+      continue
+    }
+    for (const j of jobs) {
+      if (String(j.pane ?? 'on') === 'off') continue
+      const tenants = Array.isArray(j.tenants) ? j.tenants.map(str) : []
+      if (tenants.length === 0) continue
+      out.push({
+        id: `${b.id}/${str(j.id)}`,
+        name: str(j.id),
+        boardId: b.id,
+        title: str(j.title ?? j.id),
+        board: b.board,
+        tenants,
+        news: str(j['news.url']),
+        newsFile: b.newsFile !== '' ? b.newsFile : newsFileOf(str(j['news.out'])),
+        summary: b.summary !== '' ? b.summary : str(j.summary),
+      })
+    }
+  }
+  return out
+}
+
+const findJob = (jobs: TidewatchJob[], word: string): TidewatchJob | undefined => {
+  const exact = jobs.find(j => j.id === word)
+  if (exact !== undefined) return exact
+  const by = jobs.filter(j => j.name === word || j.boardId === word)
+  return by.length === 1 ? by[0] : undefined
+}
+
 const loadRegistry = async ($: any) => {
-  const reg = await readRegistry($)
+  const stored = await readRegistry($)
+  const reg: TidewatchRegistry = stored.error !== null ? stored : { jobs: await expandBoards($, stored.jobs), error: null }
   await update($, registry, () => reg)
   const cur: string = await read($, selected)
   if (reg.jobs.length > 0 && !reg.jobs.some(j => j.id === cur)) {
@@ -793,18 +857,21 @@ const loadNews = async ($: any, job: TidewatchJob) => {
 }
 
 const openJobs = async ($: any) => {
-  await $.ui.open({ id: PANE, title: jobsTitle(await read($, selected)) })
+  const reg: TidewatchRegistry = await read($, registry)
+  const id: string = await read($, selected)
+  const job = reg.jobs.find(j => j.id === id)
+  await $.ui.open({ id: PANE, title: jobsTitle(job === undefined ? id : job.name || job.id) })
 }
 
 const openNews = async ($: any, wanted: string) => {
   const reg = await loadRegistry($)
   if (reg.jobs.length === 0) return { text: 'Tidewatch: no boards yet. Add one with /tidewatch add PATH.' }
   const id = wanted !== '' ? wanted : await read($, selected)
-  const job = reg.jobs.find(j => j.id === id)
+  const job = findJob(reg.jobs, id)
   if (job === undefined) return { text: `Tidewatch: unknown job "${id}" (${reg.jobs.map(j => j.id).join(', ')}).` }
   await select($, job.id)
   await loadNews($, job)
-  await $.ui.open({ id: NEWS_PANE, title: newsTitle(job.id) })
+  await $.ui.open({ id: NEWS_PANE, title: newsTitle(job.name || job.id), focus: true })
   return { text: `Tidewatch: news pane opened for ${job.id}.` }
 }
 
@@ -890,10 +957,11 @@ const refreshJob = async ($: any, job: TidewatchJob) => {
         return undefined
       }
     }
-    const [wv, lv, ev] = await Promise.all([
+    const [wv, lv, ev, rv] = await Promise.all([
       run(['wave', 'list', '-A', '-j']),
       run(['list', '-A', '-j', '-v']),
       run(['log', '-A', '-n', '40', '-j']),
+      run(['review', '-j']),
     ])
     let summaryText = ''
     if (job.summary) {
@@ -910,6 +978,12 @@ const refreshJob = async ($: any, job: TidewatchJob) => {
     const waves = asWaves(wv)?.filter(w => inJob(w.id.split(':')[0] ?? ''))
     const items = asItems(lv)?.filter(i => inJob(i.tenant))
     const events = asEvents(ev)?.filter(e => inJob(e.tenant)).slice(0, 15)
+    const needs = (rv as { needs?: unknown } | undefined)?.needs
+    const asks: TidewatchAsk[] | undefined = Array.isArray(needs)
+      ? needs
+          .map((n: Record<string, unknown>) => ({ tenant: str(n.tenant), item: str(n.item), question: str(n.question), at: str(n.at) }))
+          .filter(a => inJob(a.tenant))
+      : undefined
     const isOk = waves !== undefined && items !== undefined && events !== undefined
     const hasNothing = waves === undefined && items === undefined && events === undefined
 
@@ -923,6 +997,7 @@ const refreshJob = async ($: any, job: TidewatchJob) => {
       items: items ?? old?.items ?? [],
       events: events ?? old?.events ?? [],
       harness: summaryText ? parseSummary(summaryText) : (old?.harness ?? []),
+      asks: rv !== undefined ? asks : old?.asks,
       updatedAt: waves !== undefined && items !== undefined ? now : (old?.updatedAt ?? now),
     }
     if (old !== undefined) await update($, previous, (p: Record<string, TidewatchSnapshot>) => ({ ...p, [job.id]: old }))
@@ -955,10 +1030,9 @@ const refreshJob = async ($: any, job: TidewatchJob) => {
         if (!lastTs.has(k) || Date.parse(e.ts) > Date.parse(lastTs.get(k)!)) lastTs.set(k, e.ts)
       }
       const keyOf = (kind: string, tenant: string, id: string, fallback: string) => `${job.id}|${kind}|${tenant}:${id}|${lastTs.get(`${tenant}:${id}`) ?? fallback}`
-      const needing = next.items.filter(i => {
-        const was = oldKeys.get(`${i.tenant}:${i.id}`)
-        return i.state !== 'done' && isNeed(i) && (was === undefined || !isNeed(was))
-      })
+      void oldKeys
+      const wasNeeding = new Set(needItems(old).map(i => `${i.tenant}:${i.id}`))
+      const needing = needItems(next).filter(i => !wasNeeding.has(`${i.tenant}:${i.id}`))
       const alerts: { key: string; text: string; isUrgent: boolean }[] = [
         ...next.waves
           .filter(w => old.waves.some(o => o.id === w.id && o.state !== 'done') && w.state === 'done')
@@ -1007,6 +1081,7 @@ const refreshAll = async ($: any) => {
     await renderStatus($)
     const cur = reg.jobs.find(j => j.id === sel)
     if (cur !== undefined && (await read($, newsAtom))[cur.id] !== undefined) await loadNews($, cur)
+    await Promise.all([...new Set(reg.jobs.map(j => j.board))].map(b => loadFanfare($, b)))
     await Promise.all(reg.jobs.map(j => refreshJob($, j)))
   } catch {
     // never throw out of a timer or a detached refresh
@@ -1080,6 +1155,93 @@ const select = async ($: any, id: string) => {
   await persist($, 'selectedJob', id)
 }
 
+// ---- fanfare footer: reads mw, writes only the per-user config (`mw user set`), never the board ----
+
+const runMw = async ($: any, board: string, args: string[], timeoutMs = 20_000) => {
+  const bin = await resolveMw($)
+  if (bin === undefined) return undefined
+  try {
+    return (await $.process.run([bin, ...args], { cwd: board, timeoutMs })) as { exitCode: number; stdout: string }
+  } catch {
+    return undefined
+  }
+}
+
+/** Reads `fanfare -j` and `user show -j`; the per-user value wins. Hidden (removed) when either is missing the needed keys. */
+const loadFanfare = async ($: any, board: string) => {
+  const [f, u] = await Promise.all([runMw($, board, ['fanfare', '-j']), runMw($, board, ['user', 'show', '-j'])])
+  const fan = f !== undefined && f.exitCode === 0 ? (parseJson(f.stdout) as Record<string, unknown> | undefined) : undefined
+  const usr = u !== undefined && u.exitCode === 0 ? (parseJson(u.stdout) as Record<string, unknown> | undefined) : undefined
+  const sets = fan?.sets
+  let next: TidewatchFanfare | undefined
+  if (fan !== undefined && usr !== undefined && fan !== null && usr !== null && sets !== null && typeof sets === 'object' && !Array.isArray(sets)) {
+    const boardEnabled = typeof fan.enabled === 'boolean' ? fan.enabled : (fan.config as { enabled?: unknown } | undefined)?.enabled === true
+    const userEnabled = usr['fanfare.enabled']
+    const userUse = usr['fanfare.use']
+    next = {
+      enabled: typeof userEnabled === 'boolean' ? userEnabled : boardEnabled,
+      use: typeof userUse === 'string' && userUse !== '' ? userUse : str(fan.use) || 'all',
+      sets: Object.keys(sets as object).sort(),
+    }
+  }
+  await update($, fanfareAtom, (m: Record<string, TidewatchFanfare>) => {
+    const { [board]: _gone, ...rest } = m
+    return next === undefined ? rest : { ...rest, [board]: next }
+  })
+  return next
+}
+
+const fanfareSet = async ($: any, board: string, kv: string) => {
+  const r = await runMw($, board, ['user', 'set', kv])
+  await loadFanfare($, board)
+  return r !== undefined && r.exitCode === 0
+}
+
+const fanfareToggle = async ($: any, board: string, on?: boolean) => {
+  const cur = ((await read($, fanfareAtom)) as Record<string, TidewatchFanfare>)[board]
+  if (cur === undefined) return false
+  return fanfareSet($, board, `fanfare.enabled=${on ?? !cur.enabled}`)
+}
+
+const fanfareCycle = async ($: any, board: string) => {
+  const cur = ((await read($, fanfareAtom)) as Record<string, TidewatchFanfare>)[board]
+  if (cur === undefined) return false
+  const all = ['all', ...cur.sets]
+  const next = all[(Math.max(0, all.indexOf(cur.use)) + 1) % all.length]!
+  return fanfareSet($, board, `fanfare.use=${next}`)
+}
+
+const fanfareTest = async ($: any, board: string) => {
+  // mw fanfare test detaches the player, so it returns at once; keep well inside the 30 s process timeout
+  const r = await runMw($, board, ['fanfare', 'test', 'milestone'], 25_000)
+  if (r === undefined || r.exitCode !== 0) $.ui.toast('Tidewatch: fanfare test failed.', { timeoutMs: 5000 })
+  return r !== undefined && r.exitCode === 0
+}
+
+const fanfareCommand = async ($: any, rest: string) => {
+  const reg = await loadRegistry($)
+  const id: string = await read($, selected)
+  const job = reg.jobs.find(j => j.id === id) ?? reg.jobs[0]
+  if (job === undefined) return { text: 'Tidewatch: no boards yet. Add one with /tidewatch add PATH.' }
+  const cur = await loadFanfare($, job.board)
+  if (cur === undefined) return { text: 'Tidewatch: this mw has no fanfare sets or per-user config (needs mw 0.3).' }
+  const w = rest.trim()
+  if (w === 'on' || w === 'off') {
+    const done = await fanfareToggle($, job.board, w === 'on')
+    return { text: done ? `Tidewatch: fanfare ${w}.` : 'Tidewatch: could not change fanfare.' }
+  }
+  if (w === 'test') {
+    return { text: (await fanfareTest($, job.board)) ? 'Tidewatch: fanfare test started.' : 'Tidewatch: fanfare test failed.' }
+  }
+  const u = /^use\s+(\S+)$/.exec(w)
+  if (u) {
+    if (u[1] !== 'all' && !cur.sets.includes(u[1]!)) return { text: `Tidewatch: unknown set "${u[1]}" (all, ${cur.sets.join(', ')}).` }
+    const done = await fanfareSet($, job.board, `fanfare.use=${u[1]}`)
+    return { text: done ? `Tidewatch: fanfare set ${u[1]}.` : 'Tidewatch: could not change the fanfare set.' }
+  }
+  return { text: `Tidewatch: fanfare ${cur.enabled ? 'on' : 'off'}, set ${cur.use}. Usage: /tidewatch fanfare on|off|use NAME|test` }
+}
+
 const toggleMute = async ($: any) => {
   const now: boolean = !(await read($, muted))
   await update($, muted, () => now)
@@ -1109,8 +1271,8 @@ const addBoard = async ($: any, raw: string) => {
   const prev = reg.jobs.find(j => j.id === id)
   const job: TidewatchJob = { id, title: prev?.title ?? id, board, tenants, news: prev?.news ?? '', newsFile: prev?.newsFile ?? '', summary: prev?.summary ?? '' }
   await writeRegistry($, [...reg.jobs.filter(j => j.id !== id), job])
-  await select($, id)
-  await loadRegistry($)
+  const loaded = await loadRegistry($)
+  await select($, loaded.jobs.find(j => j.boardId === id)?.id ?? id)
   await openJobs($)
   await refreshAll($)
   return { text: `Tidewatch: ${prev ? 'updated' : 'added'} ${id} (${tenants.length} tenant${tenants.length === 1 ? '' : 's'}).` }
@@ -1122,7 +1284,7 @@ const removeBoard = async ($: any, id: string) => {
     return { text: `Tidewatch: unknown job "${id}"${reg.jobs.length > 0 ? ` (${reg.jobs.map(j => j.id).join(', ')})` : ''}.` }
   }
   await writeRegistry($, reg.jobs.filter(j => j.id !== id))
-  const drop = <T,>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== id))
+  const drop = <T,>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== id && !k.startsWith(`${id}/`)))
   await update($, snapshots, drop)
   await update($, previous, drop)
   await update($, staleSince, drop)
@@ -1190,6 +1352,7 @@ const styleCommand = async ($: any, rest: string) => {
 const runCommand = async ($: any, args: string) => {
   const word = args.trim()
   if (word === 'mute') return toggleMute($)
+  if (word === 'fanfare' || word.startsWith('fanfare ')) return fanfareCommand($, word.slice(7))
   if (word === 'style' || word.startsWith('style ')) return styleCommand($, word.slice(5).trim())
   if (word === 'add' || word.startsWith('add ')) return addBoard($, word.slice(3))
   const nw = /^news(?:\s+(.*))?$/.exec(word)
@@ -1213,7 +1376,8 @@ const runCommand = async ($: any, args: string) => {
   }
   const reg = await loadRegistry($)
   if (word !== '') {
-    if (reg.jobs.some(j => j.id === word)) await select($, word)
+    const hit = findJob(reg.jobs, word)
+    if (hit !== undefined) await select($, hit.id)
     else return { text: `Tidewatch: unknown job "${word}"${reg.jobs.length > 0 ? ` (${reg.jobs.map(j => j.id).join(', ')})` : ''}. Add a board with /tidewatch add PATH.` }
   }
   await openJobs($)
@@ -1223,7 +1387,7 @@ const runCommand = async ($: any, args: string) => {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'tidewatch', description: 'Live mw boards: /tidewatch [job | mute | every off|30s|1m|5m | bigger|smaller|reset | style NAME|list|new NAME|import PATH|export NAME PATH | add PATH | remove ID]' })
+    await $.command.register({ name: 'tidewatch', description: 'Live mw boards: /tidewatch [job | mute | every off|30s|1m|5m | bigger|smaller|reset | style NAME|list|new NAME|import PATH|export NAME PATH | add PATH | remove ID | fanfare on|off|use NAME|test]' })
     sessionCwd = String((e as { cwd?: string }).cwd ?? '')
     try {
       const saved = await $.store.get('refreshEvery')
@@ -1270,7 +1434,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Box alignItems="center" gap={1}>
-          <Text bold wrap="truncate-end">{newsTitle(job.id)}</Text>
+          <Text bold wrap="truncate-end">{newsTitle(job.name || job.id)}</Text>
           <Box flexGrow={1} />
           <Button key="refresh-news" label="Refresh" onPress={() => void loadNews($, job)} />
           <Button key="jobs" label="Jobs" dimColor onPress={() => void openJobs($)} />
@@ -1334,7 +1498,7 @@ export const register: Register = on => {
     const step: number = await read($, fontStep)
     const density = step < 0 ? 'compact' : step > 0 ? 'roomy' : 'default'
 
-    const needsOf = (id: string) => (snaps[id] ? snaps[id]!.items.filter(isNeed).length : 0)
+    const needsOf = (id: string) => (snaps[id] ? needItems(snaps[id]!).length : 0)
     const header = (
       <Box alignItems="center" gap={1}>
         {reg.jobs.length < 2 && <Text {...wt} wrap="truncate-end">{job.title}</Text>}
@@ -1344,7 +1508,7 @@ export const register: Register = on => {
             <Button
               key={`job-${j.id}`}
               plain
-              label={j.id}
+              label={j.name ? j.title : j.id}
               variant={j.id === job.id ? 'primary' : 'secondary'}
               dimColor={j.id !== job.id}
               onPress={() => void select($, j.id)}
@@ -1368,6 +1532,16 @@ export const register: Register = on => {
       </Box>
     )
     const separator = <Text dimColor wrap="truncate-end">{'─'.repeat(columns)}</Text>
+    const fan = ((await read($, fanfareAtom)) as Record<string, TidewatchFanfare>)[job.board]
+    // buttons only: no Select or Input on mobile
+    const footer =
+      fan === undefined ? null : (
+        <Box gap={1}>
+          <Button key="fanfare-toggle" label={`Fanfare: ${fan.enabled ? 'on' : 'off'}`} dimColor onPress={() => void fanfareToggle($, job.board)} />
+          <Button key="fanfare-set" label={`Set: ${fan.use}`} dimColor onPress={() => void fanfareCycle($, job.board)} />
+          <Button key="fanfare-test" label="Test" dimColor onPress={() => void fanfareTest($, job.board)} />
+        </Box>
+      )
 
     if (snap === undefined) {
       return (
@@ -1375,6 +1549,7 @@ export const register: Register = on => {
           {header}
           {separator}
           <Text dimColor>{stale === undefined ? 'Loading…' : `mw unavailable since ${hhmm(stale)}`}</Text>
+          {footer}
         </Box>
       )
     }
@@ -1631,6 +1806,7 @@ export const register: Register = on => {
           {stale !== undefined && <Text color="warning">⏱ stale since {hhmm(stale)}</Text>}
           <Svg source={mono.source} alt={mono.alt} width={mono.width} />
           {job.news !== '' && <Link href={job.news}>News page ↗</Link>}
+          {footer}
         </Box>
       )
     }
@@ -1699,6 +1875,7 @@ export const register: Register = on => {
           {stale !== undefined && <Text color="warning">⏱ stale since {hhmm(stale)}</Text>}
           <Svg source={svg.source} alt={svg.alt} width={svg.width} />
           {job.news !== '' && <Link href={job.news}>News page ↗</Link>}
+          {footer}
         </Box>
       )
     }
@@ -1852,6 +2029,7 @@ export const register: Register = on => {
             <Box flexGrow={1} />
             {job.news !== '' && <Link href={job.news}>News page ↗</Link>}
           </Box>
+          {footer}
         </Box>
       </Box>
     )

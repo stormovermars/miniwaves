@@ -29,15 +29,17 @@ const item = (tenant: string, id: string, state: string, note = '', updated = is
 const ok = (out: unknown) => ({ value: { exitCode: 0, stdout: JSON.stringify(out), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
 const raw = (stdout: string, exitCode = 0) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
 
-type RigOptions = { registry?: unknown; hasMw?: boolean; files?: Record<string, string>; store?: Record<string, unknown> }
+type RigOptions = { registry?: unknown; hasMw?: boolean; files?: Record<string, string>; store?: Record<string, unknown>; extra?: (argv: string[], cwd: string) => unknown }
 
 const rig = ($: any, on: any, opts: RigOptions = {}) => {
-  const { registry = REG, hasMw = true, files = {}, store = {} } = opts
+  const { registry = REG, hasMw = true, files = {}, store = {}, extra } = opts
   const state = {
     round: 0,
     alphaCalls: 0,
     toasts: [] as string[],
     opened: [] as string[],
+    focused: [] as unknown[],
+    runs: [] as string[][],
     statuses: [] as unknown[],
     sounds: [] as string[],
     argv0: new Set<string>(),
@@ -48,7 +50,7 @@ const rig = ($: any, on: any, opts: RigOptions = {}) => {
   on('store.get', (_: any, e: any) => ({ value: state.store.get(e.key) }))
   on('store.set', (_: any, e: any) => { state.store.set(e.key, e.value); return { value: undefined } })
   on('command.register', () => ({ value: { command: 'x' } }))
-  on('ui.open', (_: any, e: any) => { state.opened.push(`${e.id}|${e.title}`); return { value: { isPlaced: true } } })
+  on('ui.open', (_: any, e: any) => { state.opened.push(`${e.id}|${e.title}`); state.focused.push(e.focus); return { value: { isPlaced: true } } })
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
   on('env.get', () => ({ value: undefined }))
   on('fs.exists', (_: any, e: any) => ({ value: hasMw && e.path === MW }))
@@ -61,6 +63,9 @@ const rig = ($: any, on: any, opts: RigOptions = {}) => {
     const cmd = e.argv.join(' ')
     if (e.argv[0] === '/bin/sh') return hasMw ? raw(`${MW}\n`) : raw('', 1)
     state.argv0.add(String(e.argv[0]))
+    state.runs.push([...e.argv, `@${String(e.init?.cwd)}`])
+    const hit = extra?.(e.argv.slice(1), String(e.init?.cwd))
+    if (hit !== undefined) return hit
     const cwd = String(e.init?.cwd)
     if (cwd.endsWith('/nope')) return raw('', 2)
     const demo = cwd.endsWith('/demo')
@@ -696,5 +701,118 @@ test('a missing news file shows a short how-to', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /No news page yet/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: new RegExp('/boards/alpha/docs/news/status.md') })).toBeDefined()
   expect(await ui.find({ type: 'Markdown' })).toBeUndefined()
+  await ui.unmount()
+})
+
+const JOBS = [
+  { id: 'alpha-job', title: 'Alpha job', tenants: ['alpha-core'], 'news.out': 'docs/news/', 'news.url': 'https://example.com/a', summary: '', pane: 'on' },
+  { id: 'web', title: 'Web job', tenants: ['alpha-web'], 'news.out': 'out/web.md', 'news.url': '', summary: '', pane: 'on' },
+  { id: 'hidden', title: 'Hidden', tenants: ['alpha-web'], 'news.out': 'docs/news/', 'news.url': '', summary: '', pane: 'off' },
+]
+const jobsExtra = (argv: string[], cwd: string) =>
+  argv.join(' ') === 'jobs show -j' ? (cwd.endsWith('/alpha') ? ok(JOBS) : ok([])) : undefined
+
+test('jobs: one tab per job with pane on, a board with no jobs stays one job', async ($, on) => {
+  const { state } = rig($, on, { extra: jobsExtra, files: { '/boards/alpha/docs/news/status.md': '# alpha news', '/boards/alpha/out/web.md': '# web news' } })
+  await start($)
+  const status = String(state.statuses.at(-1))
+  expect(status).toContain('alpha-job')
+  expect(status).not.toContain('hidden')
+  expect(status).toContain('demo ▸')
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'job-alpha/alpha-job' })).toBeDefined()
+  expect(await ui.find({ key: 'job-alpha/web' })).toBeDefined()
+  expect(await ui.find({ key: 'job-alpha/hidden' })).toBeUndefined()
+  expect(await ui.find({ key: 'job-demo' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Fanfare/ })).toBeUndefined()
+  // the job's tenants only: web has alpha-web, not alpha-core
+  await ui.press({ key: 'job-alpha/web' })
+  expect(await ui.find({ type: 'Text', text: /^C2 Harness/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /M4 Consolidation/ })).toBeDefined()
+  expect(await ui.find({ type: 'Link' })).toBeUndefined()
+  await ui.press({ key: 'job-alpha/alpha-job' })
+  expect(await ui.find({ type: 'Link' })).toBeDefined()
+  await ui.unmount()
+  // news pane: titled by the job id, read from news.out/status.md, brought to the front
+  await cmd($, 'news alpha-job')
+  expect(state.opened.at(-1)).toBe('tidewatch-news|mw news · alpha-job')
+  expect(state.focused.at(-1)).toBe(true)
+  expect(state.opened.some(o => o === 'tidewatch|mw jobs · alpha-job' || o === 'tidewatch|mw jobs · alpha')).toBe(true)
+  const news = await $.ui.mount({ ...PANE, requestId: 'tidewatch-news', surface: 'terminal' })
+  expect(await news.find({ type: 'Markdown' })).toBeDefined()
+  expect(String((await news.find({ type: 'Markdown' }))?.props.text)).toBe('# alpha news')
+  await news.unmount()
+  await cmd($, 'news web')
+  const web = await $.ui.mount({ ...PANE, requestId: 'tidewatch-news', surface: 'terminal' })
+  expect(String((await web.find({ type: 'Markdown' }))?.props.text)).toBe('# web news')
+  await web.unmount()
+})
+
+const FAN = { config: { enabled: false }, enabled: false, use: 'all', sets: { calm: ['rocky'], loud: ['die-hard'] } }
+const fanExtra = (user: Record<string, unknown> = { 'fanfare.enabled': null, 'fanfare.use': '' }, fan: unknown = FAN) => (argv: string[]) => {
+  const c = argv.join(' ')
+  if (c === 'fanfare -j') return ok(fan)
+  if (c === 'user show -j') return ok(user)
+  if (c.startsWith('user set ') || c.startsWith('fanfare test')) return raw('')
+  return undefined
+}
+const fanRuns = (state: { runs: string[][] }) => state.runs.filter(r => r[1] === 'user' || r[1] === 'fanfare').map(r => r.slice(1, -1).join(' ')).filter(r => /^user set|^fanfare test/.test(r))
+
+test('fanfare footer: buttons run user set / fanfare test; the per-user value wins', async ($, on) => {
+  const { state } = rig($, on, { extra: fanExtra({ 'fanfare.enabled': true, 'fanfare.use': 'calm' }) })
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'fanfare-toggle' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', label: 'Fanfare: on' } as never)).toBeDefined()
+  expect(await ui.find({ type: 'Button', label: 'Set: calm' } as never)).toBeDefined()
+  // no Select, no Input
+  expect(await ui.find({ type: 'Select' })).toBeUndefined()
+  await ui.press({ key: 'fanfare-toggle' })
+  await ui.press({ key: 'fanfare-set' })
+  await ui.press({ key: 'fanfare-test' })
+  expect(fanRuns(state)).toEqual(['user set fanfare.enabled=false', 'user set fanfare.use=loud', 'fanfare test milestone'])
+  // argv[0] absolute, cwd is the board
+  expect(state.runs.filter(r => r[1] === 'user' && r[2] === 'set').every(r => r[0] === MW && r.at(-1) === '@/boards/alpha')).toBe(true)
+  await ui.unmount()
+})
+
+test('fanfare commands', async ($, on) => {
+  const { state } = rig($, on, { extra: fanExtra() })
+  await start($)
+  await cmd($, 'fanfare on')
+  await cmd($, 'fanfare off')
+  await cmd($, 'fanfare use calm')
+  expect(String((await cmd($, 'fanfare use nope')).text)).toContain('unknown set')
+  await cmd($, 'fanfare test')
+  expect(fanRuns(state)).toEqual(['user set fanfare.enabled=true', 'user set fanfare.enabled=false', 'user set fanfare.use=calm', 'fanfare test milestone'])
+})
+
+const oldMwChecks = async ($: any, on: any, extra: (argv: string[]) => unknown) => {
+  const { state } = rig($, on, { extra })
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'fanfare-toggle' })).toBeUndefined()
+  expect(await ui.find({ key: 'fanfare-test' })).toBeUndefined()
+  expect(String((await cmd($, 'fanfare on')).text)).toContain('no fanfare')
+  expect(fanRuns(state)).toEqual([])
+  await ui.unmount()
+}
+
+test('fanfare footer is hidden when user show fails', async ($, on) => {
+  await oldMwChecks($, on, argv => (argv.join(' ') === 'user show -j' ? raw('', 1) : argv.join(' ') === 'fanfare -j' ? ok(FAN) : undefined))
+})
+
+test('fanfare footer is hidden when fanfare -j lacks sets', async ($, on) => {
+  await oldMwChecks($, on, argv => (argv.join(' ') === 'fanfare -j' ? ok({ config: { enabled: false } }) : argv.join(' ') === 'user show -j' ? ok({}) : undefined))
+})
+
+test('needs come from review -j asks when present, else the blocked-note heuristic', async ($, on) => {
+  const asks = { needs: [{ tenant: 'alpha-web', item: 'A-3', question: 'Which format?', by: 'bot', at: iso(BASE - 600_000) }] }
+  rig($, on, { extra: argv => (argv.join(' ') === 'review -j' ? ok(asks) : undefined) })
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^! Which format\?/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /needs a decision/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^! 1 need you/ })).toBeDefined()
   await ui.unmount()
 })
