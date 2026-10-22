@@ -6,7 +6,7 @@ Owner: the news desk session. Reader: the human who owns the job. Rev 1, @@DATE@
 
 | Page | Content | Source | Made by |
 |---|---|---|---|
-| Status | Headline; needs-you at the top; milestone bars; numbers; last 10 events | `mw news --job @@JOB@@ --format json` (the model), `mw review` | mw data, desk page |
+| Status | Headline; needs-you at the top; milestone bars; numbers | `mw news --job @@JOB@@ --format json` (the model), `mw review` | mw data, desk page |
 | Plan | Goal, scope, milestones and what each means, task table (id, title, owner, state) | PLAN.md + mw | script + short intro |
 | Changelog | Dated entries, newest first: merges, closed milestones, rejections, new tasks, failures | `mw log -A --since`, git logs of the repos in PLAN.md | script |
 | Decisions | D-NNN: date, decision, decided by, why, alternatives dropped, link. Append-only | `mw decide` events, PLAN.md | desk, by hand |

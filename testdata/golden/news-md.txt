@@ -1,7 +1,7 @@
 ````text
 ======================================================================
  TINY <JOB> BULLETIN                             DRAFT - NOT RELEASED
- since the start - 19 changes       gopher://example.com/news?a=1&b=2
+ since the start - 7 changes        gopher://example.com/news?a=1&b=2
 ======================================================================
 
 1. IN SHORT

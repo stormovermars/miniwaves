@@ -10,7 +10,7 @@ a{color:#ffb000}a:visited{color:#cc8a00}
 <pre>
 ======================================================================
  TINY &lt;JOB&gt; BULLETIN                             DRAFT - NOT RELEASED
- since the start - 19 changes       gopher://example.com/news?a=1&amp;b=2
+ since the start - 7 changes        gopher://example.com/news?a=1&amp;b=2
 ======================================================================
 
 1. IN SHORT

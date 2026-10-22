@@ -25,7 +25,7 @@ mw builds **one model** per job: `mw news --job ID --format json`. Everything el
 - A news **release** is cut only when Sir asks: with the **Release** button in the news pane (it asks first, then runs `mw news --job ID --release`), or by asking in chat. Nothing cuts a release automatically. The news desk tick never releases.
 - Release N compares against release N−1: what happened between them, the metric changes since then, and the milestones closed since then. Release 1 compares against the job's start.
 - Between releases, the news pane shows the **draft of the next release**: `mw news --job ID --format json` with no `--release`, covering everything since the last release. It is marked "Draft, not released", with "N changes since release M". The news desk tick only refreshes this draft (in `news.out`).
-- `--release` writes `RELEASE_DIR/N.json` (the model, frozen), renders `RELEASE_DIR/N.md` and `N.html`, and updates `RELEASE_DIR/latest`. `RELEASE_DIR` is the job key `news_releases`, defaulting to `<dir of news_out>/releases`. If `news_url` is set, the published page shows the latest release.
+- `--release` writes `RELEASE_DIR/N.json` (the model, frozen), renders `RELEASE_DIR/N.md` and `N.html`, and updates `RELEASE_DIR/latest`. `RELEASE_DIR` is the job key `news_releases`, defaulting to `<dir of news_out>/releases`. The job's own published page is the desk's business; mw writes releases only to RELEASE_DIR, and `news.out` always holds the draft.
 - An empty release (nothing happened since the last one) is refused with "nothing new since release N", unless `--force` is given.
 - Writes are atomic (temp file plus rename) under the job lock. Every release is kept; they are small.
 

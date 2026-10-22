@@ -37,6 +37,11 @@ func knownTracker(kind string) bool {
 // canonTicket validates raw against the tracker kind and returns the canonical form ("Shown as").
 func canonTicket(kind, raw string) (string, error) {
 	s := strings.TrimSpace(raw)
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 { // reject before case folding can map a non-ASCII letter onto an ASCII one
+			return "", fmt.Errorf("ticket %q is not a valid %s ticket: ASCII only", compactText(raw, 40), kind)
+		}
+	}
 	bad := func() (string, error) {
 		return "", fmt.Errorf("ticket %q is not a valid %s ticket (%s)", compactText(raw, 40), kind, trackerExample(kind))
 	}
@@ -82,6 +87,12 @@ func trackerExample(kind string) string {
 func validTrackerURL(s string) (string, error) {
 	if len(s) > 200 || !trackerURLRe.MatchString(s) {
 		return "", errors.New("must be an https URL with a host and an optional path, no query, fragment, credentials or special characters")
+	}
+	for _, seg := range strings.Split(strings.TrimPrefix(s, "https://"), "/")[1:] {
+		low := strings.ToLower(seg)
+		if seg == "." || seg == ".." || strings.Contains(low, "%2e") || strings.Contains(low, "%2f") || strings.Contains(low, "%5c") {
+			return "", errors.New("must not contain . or .. path segments or encoded dots, slashes or backslashes")
+		}
 	}
 	u, err := url.Parse(s)
 	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.ForceQuery || u.Host == "" {

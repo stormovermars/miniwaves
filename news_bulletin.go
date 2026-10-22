@@ -392,7 +392,11 @@ func bulletinDraw(m *newsModel, releases []int, lim bulletinLimits) []string {
 		}
 		u = "local/1/news/" + id
 	}
-	out = append(out, rule, bulletinPair(bulletinCut(title+" BULLETIN", 46), right1), bulletinPair(left2, "gopher://"+u), rule)
+	out = append(out, rule, bulletinPair(bulletinCut(title+" BULLETIN", 46), right1))
+	if d := bc(m.Job.Description); d != "" { // the job's one-line description, dim, under the title
+		out = append(out, " "+bulletinCut(d, 66))
+	}
+	out = append(out, bulletinPair(left2, "gopher://"+u), rule)
 
 	out = append(out, bulletinSection(1, "IN SHORT")...)
 	out = append(out, bulletinShortLines(m, lim.short)...)

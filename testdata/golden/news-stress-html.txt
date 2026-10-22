@@ -10,7 +10,7 @@ a{color:#ffb000}a:visited{color:#cc8a00}
 <pre>
 ======================================================================
  BIG BULLETIN                                    DRAFT - NOT RELEASED
- since the start - 1050 changes             gopher://local/1/news/big
+ since the start - 550 changes              gopher://local/1/news/big
 ======================================================================
 
 1. IN SHORT

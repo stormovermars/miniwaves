@@ -86,8 +86,14 @@ func newsConfined(root, key, rel string) (string, error) {
 		probe = parent
 	}
 	real := filepath.Join(append([]string{probe}, tail...)...)
+	if boardOwnPath(c) {
+		return "", fmt.Errorf("%s: %q is mw's own board file or folder", key, rel)
+	}
 	if real != realRoot && !strings.HasPrefix(real, realRoot+string(filepath.Separator)) {
 		return "", fmt.Errorf("%s: %q leaves the workspace (a symlink points outside it)", key, rel)
+	}
+	if r, e := filepath.Rel(realRoot, real); e == nil && boardOwnPath(filepath.ToSlash(r)) {
+		return "", fmt.Errorf("%s: %q is mw's own board file or folder", key, rel)
 	}
 	return real, nil
 }
@@ -159,16 +165,17 @@ type newsReleaseResult struct {
 }
 
 // newsRender draws one model in a format; the releases list feeds the footer, prefix the html links.
-func newsRender(format string, m *newsModel, releases []int, prefix string) string {
+func newsRender(format string, m *newsModel, releases []int, prefix string) (string, error) {
 	switch format {
 	case "html":
-		return bulletinHTMLPage(bulletinTitle(m), []string{bulletinHTMLBlock(m, releases, prefix)})
+		return bulletinHTMLPage(bulletinTitle(m), []string{bulletinHTMLBlock(m, releases, prefix)}), nil
 	case "text":
-		return renderBulletinText(m, releases)
+		return renderBulletinText(m, releases), nil
 	case "json":
-		return string(newsModelJSON(m))
+		b, err := newsModelJSON(m)
+		return string(b), err
 	}
-	return renderBulletinMD(m, releases)
+	return renderBulletinMD(m, releases), nil
 }
 
 func relPrefix(from, dir string) string {
@@ -266,13 +273,13 @@ func newsCommand(path string, w *Workspace, args []string) error {
 				j.metrics = newsMetricsLoad(root, v.Metrics)
 			}
 			if j.relDir, err = newsReleaseDir(root, v); err != nil {
-				if release || v.NewsReleases != "" {
+				if release || w.Jobs[id].NewsReleases != "" {
 					return err
 				}
 				j.relDir = "" // a bad news.out is reported where it is used (the page path); -o ignores it
 			}
 			if j.relDir != "" {
-				if j.prev, j.prevNum, j.nums, err = newsPreviousRelease(j.relDir); err != nil {
+				if j.prev, j.prevNum, j.nums, err = newsPreviousRelease(j.relDir, release); err != nil {
 					return err
 				}
 			}
@@ -294,10 +301,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		}
 		win := newsWindow{prev: j.prev, prevNum: j.prevNum}
 		if release {
-			n := 1
-			if j.prevNum != nil {
-				n = *j.prevNum + 1
-			}
+			n := newsMaxReleaseNumber(j.relDir) + 1 // above every N.* file and the latest pointer, readable or not
 			j.nextNum = n
 			win.number = &n
 			win.at = now.UTC().Format(time.RFC3339Nano)
@@ -307,7 +311,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	}
 
 	if release {
-		return newsCutRelease(o, format, jobs[0].model, jobs[0].relDir, jobs[0].nums, jobs[0].prevNum, jobs[0].nextNum, jobs[0].target, o["force"] == "true", now)
+		return newsCutRelease(o, format, jobs[0].model, jobs[0].relDir, jobs[0].nums, jobs[0].prevNum, jobs[0].nextNum, o["force"] == "true")
 	}
 
 	if plain { // stdout by default; a file only with -o PATH
@@ -317,7 +321,9 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		}
 		docs := make([]string, len(jobs))
 		for i, j := range jobs {
-			docs[i] = newsRender(format, j.model, j.nums, "")
+			if docs[i], err = newsRender(format, j.model, j.nums, ""); err != nil {
+				return err
+			}
 		}
 		content := strings.Join(docs, "\n")
 		if out == "" {
@@ -375,7 +381,11 @@ func newsCommand(path string, w *Workspace, args []string) error {
 			if j.target != "" {
 				prefix = relPrefix(j.target, j.relDir)
 			}
-			if err := put(j.p.job, j.target, newsRender(format, j.model, j.nums, prefix)); err != nil {
+			content, err := newsRender(format, j.model, j.nums, prefix)
+			if err != nil {
+				return err
+			}
+			if err := put(j.p.job, j.target, content); err != nil {
 				return err
 			}
 		}
@@ -396,10 +406,11 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	return nil
 }
 
-// newsCutRelease cuts release n (the caller holds the board lock, which is the job lock): N.json is the frozen
-// model, N.md and N.html are drawn from it, and latest is updated last. Nothing new since the last release
-// is refused with exit 0 unless force.
-func newsCutRelease(o map[string]string, format string, m *newsModel, dir string, nums []int, prevNum *int, n int, target string, force bool, now time.Time) error {
+// newsCutRelease cuts release n (the caller holds the board lock, which is the job lock): N.md and N.html are
+// drawn from the model, N.json (the frozen model) is linked in after them, and latest is updated last. Files
+// of a failed run are removed again. Nothing new since the last release is refused with exit 0 unless force.
+// Releases live only in the releases folder: news.out keeps holding the draft.
+func newsCutRelease(o map[string]string, format string, m *newsModel, dir string, nums []int, prevNum *int, n int, force bool) (err error) {
 	res := newsReleaseResult{Job: m.Job.ID, Number: n}
 	say := func() error {
 		if o["json"] == "true" {
@@ -420,34 +431,55 @@ func newsCutRelease(o map[string]string, format string, m *newsModel, dir string
 		res.Message = "nothing new since " + since
 		return say()
 	}
+	js, err := newsModelJSON(m) // encode first: a model that cannot be encoded writes nothing
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 	all := append([]int{n}, nums...)
 	num := strconv.Itoa(n)
-	if err := writeNewFile(filepath.Join(dir, num+".json"), newsModelJSON(m)); err != nil { // claims the number
+	var made []string
+	defer func() {
+		if err != nil {
+			for _, p := range made {
+				_ = os.Remove(p)
+			}
+		}
+	}()
+	put := func(name string, b []byte) error {
+		p := filepath.Join(dir, name)
+		if err := writeNewFile(p, b); err != nil {
+			return err
+		}
+		made = append(made, p)
+		return nil
+	}
+	if err = put(num+".md", []byte(renderBulletinMD(m, all))); err != nil { // the first file claims the number
 		return err
 	}
-	if err := writeNewFile(filepath.Join(dir, num+".md"), []byte(renderBulletinMD(m, all))); err != nil {
+	if err = put(num+".html", []byte(renderBulletinHTML(m, all, ""))); err != nil {
 		return err
 	}
-	if err := writeNewFile(filepath.Join(dir, num+".html"), []byte(renderBulletinHTML(m, all, ""))); err != nil {
+	if err = put(num+".json", js); err != nil {
 		return err
 	}
-	if err := writeFileAtomicMode(filepath.Join(dir, "latest"), []byte(num+"\n"), 0644); err != nil {
+	if err = writeFileAtomicMode(filepath.Join(dir, "latest"), []byte(num+"\n"), 0644); err != nil {
 		return err
 	}
 	res.Released, res.Path = true, filepath.Join(dir, num+".md")
 	res.Message = fmt.Sprintf("released %d: %s", n, res.Path)
-	// the published page shows the latest release
-	if target != "" && (format == "md" || format == "html") {
-		if _, err := newsWrite(target, newsRender(format, m, all, relPrefix(target, dir)), now); err != nil {
-			return err
-		}
-	}
 	if format == "json" {
-		fmt.Print(string(newsModelJSON(m)))
+		fmt.Print(string(js))
 		return nil
 	}
 	return say()
+}
+
+// boardOwnPath reports a workspace-relative path at or under mw's own files: .miniwaves/ (tenant files,
+// archives, locks), .miniwaves.json and its backups and locks. A job's output must never point there.
+func boardOwnPath(rel string) bool {
+	first := strings.ToLower(strings.SplitN(strings.TrimPrefix(strings.ReplaceAll(rel, `\`, "/"), "./"), "/", 2)[0])
+	return strings.HasPrefix(first, ".miniwaves")
 }

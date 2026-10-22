@@ -166,7 +166,8 @@ func newsStress(t *testing.T) string {
 		add("BLK", i, "task", "blocked", "", "block")
 	}
 	for i := 1; i <= 100; i++ { // blocked items that wait for a reviewer are review, not blocked
-		add("REV", i, "task", "blocked", "", "block").Note = "awaiting review: ready for a look"
+		rv := add("REV", i, "task", "blocked", "", "block")
+		rv.Events[0].Note = "awaiting review: ready for a look"
 	}
 	for i := 1; i <= 100; i++ {
 		add("ASK", i, "task", "ready", "", "ask")
@@ -324,7 +325,7 @@ func TestNewsReleaseSequence(t *testing.T) {
 		t.Fatalf("2.md:\n%s", md2)
 	}
 	// 1.json is frozen
-	if again := mustRead(t, filepath.Join(dir, "1.json")); again != string(newsModelJSON(r1)) {
+	if again := mustRead(t, filepath.Join(dir, "1.json")); again != mj(t, r1) {
 		t.Fatal("1.json changed")
 	}
 	// --force cuts an empty release
@@ -354,6 +355,15 @@ func srcCmd(bin string) *exec.Cmd {
 	return c
 }
 
+func mj(t *testing.T, m *newsModel) string {
+	t.Helper()
+	b, err := newsModelJSON(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
 func mustRead(t *testing.T, p string) string {
 	t.Helper()
 	b, err := os.ReadFile(p)
@@ -363,12 +373,15 @@ func mustRead(t *testing.T, p string) string {
 	return string(b)
 }
 
-func TestNewsReleaseWritesPublishedPage(t *testing.T) {
+// releases live only in the releases folder: news.out keeps the draft
+func TestNewsReleaseLeavesNewsOutAlone(t *testing.T) {
 	path := newsBoardAt(t, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
+	newsOut(t)
+	page := filepath.Join(filepath.Dir(path), "docs", "news", "status.md")
+	before := mustRead(t, page)
 	newsOut(t, "--job", "tiny", "--release")
-	page := mustRead(t, filepath.Join(filepath.Dir(path), "docs", "news", "status.md"))
-	if !strings.Contains(page, "RELEASE 1 / ") {
-		t.Fatalf("status.md shows the draft, not the release:\n%s", page)
+	if after := mustRead(t, page); after != before || !strings.Contains(after, "DRAFT - NOT RELEASED") {
+		t.Fatalf("--release rewrote news.out:\n%s", after)
 	}
 }
 
@@ -678,7 +691,7 @@ func TestNewsHostileTitlesRender(t *testing.T) {
 	m.Now.More, m.Happened.More, m.Next.More = map[string]int{}, map[string]int{}, map[string]int{}
 	m.Metrics = &newsMetrics{Error: bad}
 	// through a frozen file, as a release does
-	back := decodeModel(t, string(newsModelJSON(m)))
+	back := decodeModel(t, mj(t, m))
 	md := renderBulletinMD(back, []int{1})
 	lines := strings.Split(strings.TrimSuffix(md, "\n"), "\n")
 	fence := strings.TrimSuffix(lines[0], "text")

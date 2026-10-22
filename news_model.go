@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -235,8 +236,8 @@ func metricsNum(what string, f *float64) (*float64, error) {
 	if f == nil {
 		return nil, nil
 	}
-	if math.IsNaN(*f) || math.IsInf(*f, 0) {
-		return nil, fmt.Errorf("%s must be a finite number", what)
+	if math.IsNaN(*f) || math.IsInf(*f, 0) || math.Abs(*f) > 1e12 {
+		return nil, fmt.Errorf("%s must be a finite number with an absolute value of at most 1e12", what)
 	}
 	v := *f
 	return &v, nil
@@ -248,7 +249,11 @@ func metricsNum(what string, f *float64) (*float64, error) {
 func parseMetrics(b []byte) *newsMetrics {
 	var raw rawMetrics
 	dec := json.NewDecoder(strings.NewReader(string(b)))
-	if err := dec.Decode(&raw); err != nil {
+	err := dec.Decode(&raw)
+	if err == nil && dec.More() {
+		err = errors.New("unexpected data after the JSON document")
+	}
+	if err != nil {
 		var probe struct {
 			Version float64 `json:"version"`
 		}
@@ -323,12 +328,17 @@ func parseMetrics(b []byte) *newsMetrics {
 		if len(rs.Rows) > metricsMaxRows {
 			return fail(fmt.Errorf("%s has %d rows (at most %d)", at, len(rs.Rows), metricsMaxRows))
 		}
+		names := map[string]bool{}
 		for ri, rr := range rs.Rows {
 			rat := fmt.Sprintf("%s row %d", at, ri+1)
 			row := newsMRow{}
 			if row.Name, err = metricsStr(rat+" name", rr.Name, metricsText, true); err != nil {
 				return fail(err)
 			}
+			if names[row.Name] {
+				return fail(fmt.Errorf("%s: duplicate row name %q", at, row.Name))
+			}
+			names[row.Name] = true
 			switch sec.Kind {
 			case "split":
 				for _, p := range []struct {
@@ -461,7 +471,11 @@ func metricsDeltas(cur, prev *newsMetrics) int {
 			now, was := metricsFields(s.Kind, s.Rows[ri]), metricsFields(s.Kind, o)
 			d := map[string]float64{}
 			for k, v := range now {
-				if diff := math.Round((v-was[k])*1e9) / 1e9; diff != 0 {
+				diff := v - was[k]
+				if r, err := strconv.ParseFloat(strconv.FormatFloat(diff, 'g', 12, 64), 64); err == nil {
+					diff = r // 99.2-98.9 reads 0.3, not 0.30000000000000426
+				}
+				if diff != 0 && !math.IsInf(diff, 0) && !math.IsNaN(diff) {
 					d[k] = diff
 				}
 			}
@@ -476,14 +490,11 @@ func metricsDeltas(cur, prev *newsMetrics) int {
 
 // ---- model building ----
 
-// awaitingReviewNote reports a blocked item whose reason starts with "awaiting review".
-func awaitingReviewNote(it Item, blockNote string) bool {
-	for _, n := range []string{blockNote, it.Note} {
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(n)), "awaiting review") {
-			return true
-		}
-	}
-	return false
+// awaitingReviewNote reports a blocked item whose latest block event's reason starts with "awaiting review";
+// mw review and mw news use this one rule.
+func awaitingReviewNote(it Item) bool {
+	e, ok := lastEvent(it, "block")
+	return ok && strings.HasPrefix(strings.ToLower(strings.TrimSpace(e.Note)), "awaiting review")
 }
 
 func newsCap(s string) string { return compactText(s, newsItemText) }
@@ -634,7 +645,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 				if e, ok := lastEvent(it, "block"); ok {
 					x.Note, x.Since, x.By = newsCap(e.Note), e.At, displayName(e.By)
 				}
-				if awaitingReviewNote(it, x.Note) { // a block that waits for a reviewer is a review, not a block
+				if awaitingReviewNote(it) { // a block that waits for a reviewer is a review, not a block
 					review = append(review, x)
 					break
 				}
@@ -772,7 +783,13 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 		prevM = win.prev.Metrics
 	}
 	changed := metricsDeltas(m.Metrics, prevM)
-	m.Release.Changes = events + changed
+	// changes are what the newsletter reports: the happened lists plus changed metric rows (edits, notes, steps,
+	// ready/start events and the like never count)
+	_ = events
+	for _, n := range m.Happened.Counts {
+		m.Release.Changes += n
+	}
+	m.Release.Changes += changed
 	m.Summary = newsClean(p.summary, true)
 	newsGuardSize(m)
 	return m
@@ -782,8 +799,8 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 // list (counted in its more) until it fits.
 func newsGuardSize(m *newsModel) {
 	for round := 0; round < 64; round++ {
-		b, _ := json.Marshal(m)
-		if len(b) <= newsModelMax {
+		b, err := json.Marshal(m)
+		if err == nil && len(b) <= newsModelMax {
 			return
 		}
 		m.Truncated = true
@@ -813,14 +830,17 @@ func newsGuardSize(m *newsModel) {
 	}
 }
 
-func newsModelJSON(m *newsModel) []byte {
-	b, _ := json.MarshalIndent(m, "", "  ")
-	return append(b, '\n')
+func newsModelJSON(m *newsModel) ([]byte, error) {
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("news model cannot be encoded: %w", err)
+	}
+	return append(b, '\n'), nil
 }
 
 // ---- releases ----
 
-var releaseFile = regexp.MustCompile(`^([1-9][0-9]{0,8})\.json$`)
+var releaseFile = regexp.MustCompile(`^([1-9][0-9]{0,17})\.json$`)
 
 // newsReleaseDir resolves the releases folder of a job: news_releases, else <news_out dir>/releases.
 func newsReleaseDir(root string, v JobView) (string, error) {
@@ -848,6 +868,29 @@ func newsReleaseNumbers(dir string) []int {
 	return out
 }
 
+var releaseAny = regexp.MustCompile(`^([1-9][0-9]{0,17})\.`)
+
+// newsMaxReleaseNumber is the highest number any N.* file or the latest pointer claims, so a half-written or
+// hand-pruned archive never gets a number reused.
+func newsMaxReleaseNumber(dir string) int {
+	max := 0
+	if ents, err := os.ReadDir(dir); err == nil {
+		for _, e := range ents {
+			if m := releaseAny.FindStringSubmatch(e.Name()); m != nil {
+				if n, _ := strconv.Atoi(m[1]); n > max {
+					max = n
+				}
+			}
+		}
+	}
+	if b, err := readFileShared(filepath.Join(dir, "latest")); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && n > max {
+			max = n
+		}
+	}
+	return max
+}
+
 func newsReadRelease(dir string, n int) (*newsModel, error) {
 	b, err := readFileShared(filepath.Join(dir, strconv.Itoa(n)+".json"))
 	if err != nil {
@@ -860,18 +903,23 @@ func newsReadRelease(dir string, n int) (*newsModel, error) {
 	return &m, nil
 }
 
-// newsPreviousRelease loads the newest release, nil when none exists.
-func newsPreviousRelease(dir string) (*newsModel, *int, []int, error) {
+// newsPreviousRelease loads the newest release, nil when none exists. A release file that cannot be read is an
+// error when strict (cutting a release); otherwise a warning goes to stderr and the newest readable release is
+// used (or none), so a corrupt archive never blocks a draft.
+func newsPreviousRelease(dir string, strict bool) (*newsModel, *int, []int, error) {
 	nums := newsReleaseNumbers(dir)
-	if len(nums) == 0 {
-		return nil, nil, nil, nil
+	for _, n := range nums {
+		m, err := newsReadRelease(dir, n)
+		if err == nil {
+			n := n
+			return m, &n, nums, nil
+		}
+		if strict {
+			return nil, nil, nums, fmt.Errorf("%s is unreadable (%v): fix or remove it before cutting a release", filepath.Join(dir, strconv.Itoa(n)+".json"), err)
+		}
+		fmt.Fprintf(os.Stderr, "mw: warning: %s is unreadable (%v); the draft compares with the newest readable release\n", filepath.Join(dir, strconv.Itoa(n)+".json"), err)
 	}
-	m, err := newsReadRelease(dir, nums[0])
-	if err != nil {
-		return nil, nil, nums, err
-	}
-	n := nums[0]
-	return m, &n, nums, nil
+	return nil, nil, nums, nil
 }
 
 // writeNewFile writes content atomically and never replaces an existing file (a lost race becomes an error).

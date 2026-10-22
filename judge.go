@@ -149,6 +149,7 @@ type reviewItem struct {
 
 type reviewDoc struct {
 	Judge      []reviewItem `json:"judge"`
+	Review     []reviewItem `json:"review,omitempty"` // blocked items that wait for a reviewer (same rule as mw news)
 	Blocked    []reviewItem `json:"blocked"`
 	Acceptance []reviewItem `json:"acceptance"`
 	Waves      []waveRow    `json:"waves"`
@@ -184,7 +185,11 @@ func reviewOf(w *Workspace, t *Tenant) (reviewDoc, bool) {
 		if it.Status == "blocked" {
 			r := mk(it)
 			r.Note = compactText(it.Note, 72)
-			d.Blocked = append(d.Blocked, r)
+			if awaitingReviewNote(it) {
+				d.Review = append(d.Review, r)
+			} else {
+				d.Blocked = append(d.Blocked, r)
+			}
 		}
 		if accOn && it.Status != "done" && (it.Kind == "story" || isWorkKind(it.Kind)) && strings.TrimSpace(effectiveAcceptance(t, it)) == "" {
 			d.Acceptance = append(d.Acceptance, mk(it))
@@ -274,6 +279,9 @@ func reviewCommand(w *Workspace, args []string) error {
 		printNeeds(d.Needs)
 	}
 	section("judge", len(d.Judge), items(d.Judge))
+	if len(d.Review) > 0 {
+		section("review", len(d.Review), items(d.Review))
+	}
 	section("blocked", len(d.Blocked), items(d.Blocked))
 	if accOn {
 		section("acceptance", len(d.Acceptance), items(d.Acceptance))

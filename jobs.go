@@ -146,6 +146,9 @@ func jobView(w *Workspace, id string) JobView {
 	if v.NewsOut == "" {
 		v.NewsOut = "docs/news/"
 	}
+	if v.NewsReleases == "" {
+		v.NewsReleases = strings.TrimSuffix(v.NewsOut, "/") + "/releases"
+	}
 	if v.Pane == "" {
 		v.Pane = "on"
 	}
@@ -245,6 +248,9 @@ func setJobKey(c *JobConfig, key, val string) error {
 			var err error
 			if val, err = workspaceRelPath(key, val); err != nil {
 				return err
+			}
+			if boardOwnPath(val) {
+				return fmt.Errorf("%s: %q is mw's own board file or folder (.miniwaves/, .miniwaves.json and their locks and backups)", key, val)
 			}
 		}
 		switch key {

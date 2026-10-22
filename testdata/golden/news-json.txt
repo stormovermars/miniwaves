@@ -11,7 +11,7 @@
     "at": "2026-10-22T11:13:00Z",
     "since": "",
     "previous": null,
-    "changes": 19
+    "changes": 7
   },
   "now": {
     "counts": {

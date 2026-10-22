@@ -568,8 +568,8 @@ Usage:
   mw session list [-t SLUG] [-j] [-v] | stop NAME [--release] | reap [-t SLUG | -A] [--older-than DUR] [--except NAMES] [-n] [-j]
   mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]
   mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
-  mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT]
-  mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]
+  mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [--ticket KEY]
+  mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY]
   mw user show [-j] | mw user set KEY=VALUE...
   mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]
   mw news [--job ID] [--format md|html|text|json] [--release [--force]] [-o PATH] [-j]
