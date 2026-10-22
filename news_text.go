@@ -164,7 +164,7 @@ func newsRule(head string, width int) string {
 func newsBar(progress string, n int) string {
 	var dn, tot int
 	if _, err := fmt.Sscanf(progress, "%d/%d", &dn, &tot); err != nil || tot <= 0 {
-		return strings.Repeat("░", n)
+		return "–" + strings.Repeat(" ", n-1) // no total: nothing to draw
 	}
 	f := (dn*n + tot/2) / tot
 	if f > n {
@@ -260,13 +260,16 @@ func renderNewsText(p newsPart, d newsData, width int) string {
 		for over() > 0 && barW > 8 {
 			barW--
 		}
+		for over() > 0 && pw > max(dw+1+tw, len("DONE")) { // the DONE/TOTAL header gives way to DONE before names are cut
+			pw--
+		}
 		for over() > 0 && mw > 4 {
 			mw--
 		}
 		for over() > 0 && showTen && ten > 2 {
 			ten--
 		}
-		for over() > 0 && pw > dw+1+tw { // last: the DONE/TOTAL header gives way to the data width
+		for over() > 0 && pw > dw+1+tw { // last resort: header gives way to the data width
 			pw--
 		}
 		cells := func(a, t, p, s, g string) string {
@@ -274,7 +277,7 @@ func renderNewsText(p newsPart, d newsData, width int) string {
 			if showTen {
 				line += newsPad(newsCut(t, ten), ten) + " │ "
 			}
-			return line + newsPad(newsCut(p, pw), pw) + " │ " + newsPad(newsCut(s, st), st) + " │ " + newsPad(newsCut(g, barW), barW) + " │"
+			return line + newsPadLeft(newsCut(p, pw), pw) + " │ " + newsPad(newsCut(s, st), st) + " │ " + newsPad(newsCut(g, barW), barW) + " │"
 		}
 		seg := func(n int) string { return strings.Repeat("─", n+2) }
 		rule := "├" + seg(mw) + "┼"
@@ -282,9 +285,13 @@ func renderNewsText(p newsPart, d newsData, width int) string {
 			rule += seg(ten) + "┼"
 		}
 		rule += seg(pw) + "┼" + seg(st) + "┼" + seg(barW) + "┤"
-		b.WriteString(cells("MILESTONE", "TENANT", newsPad("DONE/TOTAL", pw), "STATE", "PROGRESS") + "\n" + rule + "\n")
+		hdr := "DONE/TOTAL"
+		if pw < len(hdr) {
+			hdr = "DONE"
+		}
+		b.WriteString(cells("MILESTONE", "TENANT", hdr, "STATE", "PROGRESS") + "\n" + rule + "\n")
 		for _, m := range rows {
-			b.WriteString(cells(c(m.ID)+" "+c(compactText(m.Title, 60)), c(m.Tenant), newsPad(prog(m.Progress), pw), c(m.State), newsBar(m.Progress, barW)) + "\n")
+			b.WriteString(cells(c(m.ID)+" "+c(compactText(m.Title, 60)), c(m.Tenant), prog(m.Progress), c(m.State), newsBar(m.Progress, barW)) + "\n")
 		}
 		if more > 0 {
 			fmt.Fprintf(&b, "▸ ... %d more\n", more)

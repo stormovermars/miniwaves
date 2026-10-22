@@ -382,3 +382,48 @@ func TestNewsTextTableNarrow(t *testing.T) {
 		}
 	}
 }
+
+func TestNewsTextTableAlignsSlashMixedWidths(t *testing.T) {
+	d := newsData{miles: []newsMile{
+		{"WAV-001", "a", "First", "1/16", "ready"}, {"WAV-002", "bb", "Second", "2/2", "done"},
+		{"WAV-003", "c", "Third", "12/4", "doing"}, {"WAV-004", "c", "Empty", "0/0", "ready"},
+	}}
+	out := renderNewsText(newsPart{title: "J"}, d, 80)
+	t.Log("\n" + out)
+	slash, n := -1, 0
+	for _, l := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(l, "│ WAV-") {
+			continue
+		}
+		n++
+		si := len([]rune(l[:strings.Index(l, "/")]))
+		if slash == -1 {
+			slash = si
+		}
+		if si != slash {
+			t.Fatalf("slash misaligned (%d vs %d): %q", si, slash, l)
+		}
+		cell := strings.Split(l, "│")[3]
+		if !strings.HasSuffix(cell, "/16 ") && !strings.HasSuffix(cell, "/2  ") && !strings.HasSuffix(cell, "/4  ") && !strings.HasSuffix(cell, "/0  ") {
+			t.Fatalf("cell not right-aligned padded: %q", cell)
+		}
+		if strings.HasPrefix(strings.TrimSpace(l[strings.LastIndex(l[:len(l)-3], "│"):]), "│ ░") {
+			t.Fatalf("empty bar uses ░: %q", l)
+		}
+	}
+	if n != 4 {
+		t.Fatalf("rows: %d", n)
+	}
+	if !strings.Contains(out, "│ – ") && !strings.Contains(out, "–") {
+		t.Fatalf("no dash bar for 0/0")
+	}
+}
+
+func TestNewsTextShortHeaderBeforeCuttingName(t *testing.T) {
+	d := newsData{miles: []newsMile{{"WAV-004", "tinysheet", "Consolidation by feature area", "1/16", "ready"}, {"WAV-001", "tinydoc", "Feature matrix", "2/2", "done"}}}
+	out := renderNewsText(newsPart{title: "J"}, d, 80)
+	t.Log("\n" + out)
+	if !strings.Contains(out, "Consolidation by feature area") {
+		t.Fatalf("name truncated")
+	}
+}
