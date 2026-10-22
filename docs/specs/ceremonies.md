@@ -1,6 +1,6 @@
 # Ceremonies in mw: plan
 
-Draft 2, 2026-10-22, after an Opus audit (20 findings, resolved below). Target: 0.3.1, after 0.3.0. It builds on coordinated-jobs.md (draft 4.1).
+Draft 2, 2026-10-22, after an Opus audit (20 findings, resolved below). Target: 0.3.1, after 0.3.0. It builds on coordinated-jobs.md (draft 4.2).
 
 ## Rule: mw stays thin and configurable
 
