@@ -4,6 +4,11 @@
 Python 3 standard library only (wave, math, struct). Deterministic: no randomness, so the same bytes
 come out on every run. Mono, 22050 Hz, 16-bit, about 3.6 s.
 
+Byte-identical on Linux, macOS and Windows (CI compares the sha256 against the shipped WAV on all three, TSK-061):
+the maths library (libm / the Windows CRT) may round sin() and pow() differently, so this script uses neither.
+It calls only + - * / floor on IEEE doubles, which every platform rounds the same way, and the note frequencies
+are literals. The final rounding to 16 bits is floor(x + 0.5), not round().
+
 Usage: python3 scripts/gen_fanfare_default.py [OUT]   (default: assets/fanfare-default.wav)
 """
 import math
@@ -14,11 +19,36 @@ import wave
 
 RATE = 22050
 
-# Note name -> frequency (equal temperament, A4 = 440 Hz).
-def hz(semitones_from_a4):
-    return 440.0 * 2 ** (semitones_from_a4 / 12.0)
+# Note frequencies in Hz (equal temperament, A4 = 440 Hz: 440 * 2 ** (n / 12) for n = -2, 3, 7, 10, 15), written
+# out as literals so no pow() runs here.
+G4, C5, E5, G5, C6 = 391.99543598174927, 523.2511306011972, 659.2551138257398, 783.9908719634985, 1046.5022612023945
 
-G4, C5, E5, G5, C6 = hz(-2), hz(3), hz(7), hz(10), hz(15)
+TWO_PI = 2.0 * math.pi
+PI = math.pi
+HALF_PI = math.pi / 2.0
+# sin x = x * (1 + x^2 * (c1 + c2 x^2 + ...)) with c_j = (-1)^j / (2j+1)!, built by exact-rounded division (no libm).
+_SIN_C = []
+_f = 1.0
+for _j in range(1, 11):
+    _f *= (2 * _j) * (2 * _j + 1)
+    _SIN_C.append((-1.0 if _j % 2 else 1.0) / _f)
+
+
+def sin(x):
+    """sin(x) from + - * / floor only: reduce to [-pi/2, pi/2], then a Taylor polynomial (error below 1e-16)."""
+    x = x - TWO_PI * math.floor(x / TWO_PI)
+    if x > PI:
+        x -= TWO_PI
+    if x > HALF_PI:
+        x = PI - x
+    elif x < -HALF_PI:
+        x = -PI - x
+    x2 = x * x
+    acc = 0.0
+    for c in reversed(_SIN_C):
+        acc = acc * x2 + c
+    return x * (1.0 + x2 * acc)
+
 
 # Relative strengths of harmonics 1..10: a brass spectrum is rich and falls off slowly.
 HARMONICS = [1.0, 0.85, 0.7, 0.55, 0.42, 0.3, 0.2, 0.13, 0.08, 0.05]
@@ -46,14 +76,18 @@ def tone(freq, dur, vib=0.0):
         t = i / RATE
         env = brass_amp(t, dur)
         # vibrato fades in on long notes
-        f = freq * (1.0 + vib * math.sin(2 * math.pi * 5.2 * t) * min(1.0, t / 0.5))
+        f = freq * (1.0 + vib * sin(2 * math.pi * 5.2 * t) * min(1.0, t / 0.5))
         phase += 2 * math.pi * f / RATE
+        if phase >= TWO_PI:  # keep the phase small: sin() is then accurate to the last bit or so
+            phase -= TWO_PI
         bright = 0.35 + 0.65 * env  # fewer overtones when the note is quiet, like a real horn
         s = 0.0
+        bk = 1.0  # bright ** (k - 1) by repeated multiplication, not pow()
         for k, h in enumerate(HARMONICS, start=1):
             if f * k >= RATE / 2:
                 break
-            s += h * (bright ** (k - 1)) * math.sin(k * phase)
+            s += h * bk * sin(k * phase)
+            bk *= bright
         out.append(s * env)
     return out
 
@@ -85,7 +119,7 @@ def main():
     buf = mix(3.65, parts)
     peak = max(abs(v) for v in buf) or 1.0
     scale = 0.85 * 32767 / peak
-    pcm = b"".join(struct.pack("<h", int(round(v * scale))) for v in buf)
+    pcm = b"".join(struct.pack("<h", int(math.floor(v * scale + 0.5))) for v in buf)
     with wave.open(out, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
