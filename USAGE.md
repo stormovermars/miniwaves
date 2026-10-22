@@ -102,6 +102,7 @@ mw description [-j]
 mw init [workspace name] | mw init --kit coordinated --job ID   # the kit writes files only (see "Kit")
 mw tenant add SLUG [NAME...] [-d DIR]   # on an existing slug with -d: updates the path
 mw tenant list [-j] [-v] | default [SLUG|-]
+mw boards [DIR] [--depth N] [--up] [-j]   # discover boards below DIR (read-only, index files only)
 mw migrate [--dry-run] [PATH]   # upgrade a schema 5/6 workspace file to 7 (MIGRATION.md)
 mw dirs [init] [-j] | set NAME PATH   # NAME: datalake docs data tools templates builds evidence scratch (all eight shown by mw dirs)
 mw note ID TEXT... [-t SLUG] [-s NAME]
@@ -289,6 +290,10 @@ block/done note.
 - An **open ask** is the last `ask` of an item with no later `answer` on that item (one answer closes every earlier ask).
 - `mw review` shows open asks as `needs you`, `mw review -j` and `mw board -j` gain `needs` (`[{tenant, item, question, by, at}]`, always an array), and the text `mw board` prints a `NEEDS YOU` block.
 - `mw decide TEXT... [--by NAME] [-b WHY] [-p ID]` is open to humans and sessions. With `-s` (or `MW_SESSION`) the event is recorded by that session and a `--by NAME` becomes `(for NAME)` at the end of the note; without a session it is recorded by `--by NAME` (required when stdin is not a terminal), else the login name. It appends a `decide` event to `-p ID`, else to the tenant's `Decisions` chore, created on first use (already `done`, so it never holds the tenant open). `-b WHY` is stored as `(why: WHY)` at the end of the note.
+
+## Discovering boards
+
+`mw boards [DIR] [--depth N] [--up] [-j]` lists the boards under DIR (default `.`, depth 3, max 8) so pane plugins need no setup; `--up` also adds the nearest ancestor board. It reads only each `.miniwaves.json` (no tenant files, no locks, no writes), skips dot folders, `node_modules`, `build`, `dist`, `vendor`, symlinks and, on macOS, `~/Documents`, `~/Desktop`, `~/Downloads`, `~/Library`, `~/Movies`, `~/Music`, `~/Pictures` unless DIR is inside one. It stops at 200 boards or 5 s and says so (`truncated`, `reason`). An unreadable index is listed with `error`. `-j` prints `{"root","boards":[{"dir","path","name","schema","tenants":[{"slug","name","archived"}],"error"}],"truncated","reason"}`.
 
 ## Resumable log (`log --since`)
 
