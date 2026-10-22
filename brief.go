@@ -112,11 +112,12 @@ func logCommand(w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "tenant", "session", "all", "limit", "json", "tag", "since"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "all", "limit", "json", "tag", "since", "since-file"); err != nil {
 		return err
 	}
 	_, since := o["since"]
-	if since {
+	_, sinceFile := o["since-file"]
+	if since || sinceFile {
 		return logSinceCommand(w, o)
 	}
 	limit := 20
@@ -484,9 +485,30 @@ func logSinceCommand(w *Workspace, o map[string]string) error {
 		}
 		tenants = []*Tenant{t}
 	}
-	rows, next, err := logSince(tenants, o["since"], limit)
+	cursor := o["since"]
+	sf := o["since-file"]
+	if _, both := o["since"]; both && sf != "" {
+		return errors.New("mw log: use --since or --since-file, not both")
+	}
+	if _, ok := o["since-file"]; ok && sf == "" {
+		return errors.New("--since-file needs a path")
+	}
+	if sf != "" {
+		cursor = "start"
+		if b, err := os.ReadFile(sf); err == nil {
+			cursor = string(b)
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
+	rows, next, err := logSince(tenants, cursor, limit)
 	if err != nil {
 		return err
+	}
+	if sf != "" {
+		if err := writeFileAtomic(sf, []byte(next+"\n")); err != nil {
+			return err
+		}
 	}
 	if o["json"] == "true" {
 		return printJSON(struct {

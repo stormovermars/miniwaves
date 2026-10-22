@@ -14,12 +14,23 @@ import (
 
 // mw log --since CURSOR: an event feed a poller can resume.
 //
-// The cursor is opaque (base64url of {"t": last timestamp, "seen": [keys of the delivered events stamped exactly t]}),
-// so it stays small however long the board is. An event's key is tenant/item/H, H being 12 hex digits of
-// sha256(at|action|by|note): content, not position, so a git merge that reorders an item's events cannot make one
-// event inherit another's key. A read returns the events stamped after t, and those stamped at t whose key is not
-// in seen. An event stamped before t that reaches the board later (a merge from a slower clone) is not returned:
-// read from "start" to see it.
+// The cursor is opaque (base64url of {"t": newest delivered timestamp, "seen": [8-byte key hashes of the delivered
+// events stamped within the window (t-24h, t]]}), so it stays bounded by the window however long the board is. An
+// event's key is tenant/item/H, H being 12 hex digits of sha256(at|action|by|note): content, not position, so a
+// git merge that reorders an item's events cannot make one event inherit another's key. A read returns the events
+// stamped after t, and those stamped within the window up to t whose key hash is not in seen: a merge from a slower
+// clone, or a tenant that stamped before another's save, still arrives, once. Events older than t minus the window
+// are skipped: read from "start" to see them. Old-form cursors (seen holding the full tenant/item/H keys) still
+// match exactly.
+
+// cursorWindow is how far behind t a late event is still delivered.
+const cursorWindow = 24 * time.Hour
+
+// keyHash is the 8-byte form of an event key stored in a cursor.
+func keyHash(k string) string {
+	h := sha256.Sum256([]byte(k))
+	return hex.EncodeToString(h[:8])
+}
 
 type logCursor struct {
 	T    string   `json:"t,omitempty"`
@@ -84,7 +95,7 @@ func logSince(tenants []*Tenant, cursor string, limit int) ([]logRow, string, er
 		seen[k] = true
 	}
 	var fresh []keyedEvent
-	onBoard := map[string]bool{} // seen keys still on the board (an archived item drops out of the cursor)
+	var all []keyedEvent // every board event with its key, to rebuild the seen set
 	for _, t := range tenants {
 		for _, it := range t.Items {
 			dup := map[string]int{}
@@ -93,13 +104,18 @@ func logSince(tenants []*Tenant, cursor string, limit int) ([]logRow, string, er
 				k := eventKey(t.Slug, it.ID, e, dup[base])
 				dup[base]++
 				ts := parseTS(e.At)
-				if seen[k] {
-					onBoard[k] = true
+				if was0 := seen[keyHash(k)] || seen[k]; was0 {
+					all = append(all, keyedEvent{row: logRow{Key: k}, ts: ts})
 				}
-				if hasT && (ts.Before(curT) || ts.Equal(curT) && seen[k]) {
-					continue
+				kh := keyHash(k)
+				was := seen[kh] || seen[k]
+				if hasT {
+					if !ts.After(curT) && (was || !ts.After(curT.Add(-cursorWindow))) {
+						continue
+					}
 				}
-				fresh = append(fresh, keyedEvent{row: logRow{At: e.At, Tenant: t.Slug, Item: it.ID, Action: e.Action, By: e.By, Note: e.Note, Key: k}, ts: ts, idx: i})
+				ke := keyedEvent{row: logRow{At: e.At, Tenant: t.Slug, Item: it.ID, Action: e.Action, By: e.By, Note: e.Note, Key: k}, ts: ts, idx: i}
+				fresh = append(fresh, ke)
 			}
 		}
 	}
@@ -130,15 +146,20 @@ func logSince(tenants []*Tenant, cursor string, limit int) ([]logRow, string, er
 	next := logCursor{}
 	if !newT.IsZero() {
 		next.T = newT.UTC().Format(time.RFC3339Nano)
-		if newT.Equal(curT) { // t did not move: what was seen at t still counts
-			for k := range onBoard {
-				next.Seen = append(next.Seen, k)
+		lo := newT.Add(-cursorWindow)
+		set := map[string]bool{}
+		for _, ke := range all { // delivered earlier and still on the board
+			if ke.ts.After(lo) && !ke.ts.After(newT) {
+				set[keyHash(ke.row.Key)] = true
 			}
 		}
-		for _, ke := range fresh {
-			if ke.ts.Equal(newT) {
-				next.Seen = append(next.Seen, ke.row.Key)
+		for _, ke := range fresh { // delivered now
+			if ke.ts.After(lo) && !ke.ts.After(newT) {
+				set[keyHash(ke.row.Key)] = true
 			}
+		}
+		for k := range set {
+			next.Seen = append(next.Seen, k)
 		}
 		sort.Strings(next.Seen)
 	}

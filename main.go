@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "format": true, "width": true,
+	"since": true, "since-file": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "format": true, "width": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -489,11 +489,13 @@ With the evidence gate on, <evidence>/<tenant>/<ID>/ must hold a non-empty file
 		"reopen": `mw reopen ID [-t SLUG] [-s NAME]
 Return an item to inbox and release its session owner.`,
 		"log": `mw log [-t SLUG | -A] [-n N] [-j]
-mw log [-t SLUG | -A] --since CURSOR|start [-n N] [-j]
+mw log [-t SLUG | -A] --since CURSOR|start | --since-file PATH [-n N] [-j]
 Activity feed, newest first (default 20): time, tenant, item, action, session, note. Actions: created,
 ready, start, block, done, reopen, accept, reject, note, ask, answer, decide, edit, step, unstep. -A spans all tenants.
 --since turns it into a resumable feed, oldest first: it prints the events the cursor has not delivered and a next cursor
-(-j: {events, next}; text: a last "next: CURSOR" line). The cursor is opaque and small (the last time plus the event keys at that time); --since "" or start returns everything.
+(-j: {events, next}; text: a last "next: CURSOR" line). The cursor is opaque and bounded (the newest time plus 8-byte hashes of the events
+of the 24h before it, so an event that reaches the board late with an older stamp is still delivered once); --since "" or start returns everything.
+--since-file PATH reads the cursor from PATH (missing = start) and writes the next one back atomically, instead of --since.
 An event stamped after the cursor time that arrives later (a git merge) is returned once; one stamped before it is not (read from start). -n keeps the first N.`,
 		"wave": `mw wave create TITLE... [-t SLUG] [-p WAVE] [-b TEXT]
 mw wave add|remove WAVE ID... [-t SLUG]

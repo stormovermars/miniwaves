@@ -130,10 +130,10 @@ func TestLogSinceLateGitMergedEventOnce(t *testing.T) {
 	if m := logSinceJ(t, b.Next); len(m.Events) != 0 {
 		t.Fatalf("returned twice: %+v", m.Events)
 	}
-	// an event stamped before the cursor time is not returned (documented limit); start returns it
+	// an event stamped older than the window before the cursor time is not returned; start returns it
 	addLateEvent(t, path, "cursor-app", "TSK-001", time.Now().Add(-48*time.Hour), "note", "ancient")
 	if m := logSinceJ(t, b.Next); len(m.Events) != 0 {
-		t.Fatalf("before the cursor: %+v", m.Events)
+		t.Fatalf("before the window: %+v", m.Events)
 	}
 }
 
@@ -148,7 +148,7 @@ func TestLogSinceMergeReorder(t *testing.T) {
 	ev := it.Events
 	last := ev[len(ev)-1].At
 	lt, _ := time.Parse(time.RFC3339Nano, last)
-	foreign := Event{At: lt.Add(time.Second).UTC().Format(time.RFC3339Nano), Action: "note", By: "other", Note: "foreign"}
+	foreign := Event{At: lt.Add(-time.Second).UTC().Format(time.RFC3339Nano), Action: "note", By: "other", Note: "foreign"} // stamped BEFORE the cursor time
 	n := len(ev)
 	// swap the last two and insert the foreign event at the old index of the second to last
 	it.Events = append(append(append([]Event{}, ev[:n-2]...), foreign), ev[n-1], ev[n-2])
@@ -164,14 +164,78 @@ func TestLogSinceMergeReorder(t *testing.T) {
 	}
 }
 
-// The cursor holds the last timestamp and the keys at it only: small however many events the board has.
+// A tenant that stamped before another tenant's save lands behind the cursor time: still delivered, once.
+func TestLogSinceTwoTenantInterleave(t *testing.T) {
+	path := cursorBoard(t)
+	runAll(t, []string{"tenant", "add", "other", "Other"}, []string{"add", "task", "Z", "-t", "other"})
+	d := logSinceJ(t, "start", "-A")
+	now := time.Now()
+	// Y stamped t2 and saved first; X stamped t1 < t2 and saved after Y was polled
+	addLateEvent(t, path, "other", "TSK-001", now.Add(time.Minute), "note", "Y t2")
+	m := logSinceJ(t, d.Next, "-A")
+	if len(m.Events) != 1 || m.Events[0].Note != "Y t2" {
+		t.Fatalf("Y: %+v", m.Events)
+	}
+	addLateEvent(t, path, "cursor-app", "TSK-001", now.Add(30*time.Second), "note", "X t1")
+	x := logSinceJ(t, m.Next, "-A")
+	if len(x.Events) != 1 || x.Events[0].Note != "X t1" {
+		t.Fatalf("X must arrive once: %+v", x.Events)
+	}
+	if y := logSinceJ(t, x.Next, "-A"); len(y.Events) != 0 {
+		t.Fatalf("repeat: %+v", y.Events)
+	}
+}
+
+// Old-form cursors (seen = full tenant/item/H keys) keep matching: no duplicates.
+func TestLogSinceOldFormSeenKeys(t *testing.T) {
+	cursorBoard(t)
+	d := logSinceJ(t, "start")
+	var last time.Time
+	for _, e := range d.Events {
+		if ts, _ := time.Parse(time.RFC3339Nano, e.At); ts.After(last) {
+			last = ts
+		}
+	}
+	old := logCursor{T: last.UTC().Format(time.RFC3339Nano), Seen: keysOf(d)}
+	if n := logSinceJ(t, encodeCursor(old)); len(n.Events) != 0 {
+		t.Fatalf("old-form keys must still match: %+v", n.Events)
+	}
+}
+
+func TestLogSinceFile(t *testing.T) {
+	cursorBoard(t)
+	f := t.TempDir() + "/cursor"
+	read := func() sinceDoc {
+		var d sinceDoc
+		out := captureOutput(t, func() { runAll(t, []string{"log", "--since-file", f, "-j"}) })
+		if err := json.Unmarshal([]byte(out), &d); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	if d := read(); len(d.Events) != 4 {
+		t.Fatalf("first: %+v", d)
+	}
+	if d := read(); len(d.Events) != 0 {
+		t.Fatalf("second: %+v", d)
+	}
+	runAll(t, []string{"note", "TSK-001", "x"})
+	if d := read(); len(d.Events) != 1 {
+		t.Fatalf("third: %+v", d)
+	}
+	if err := run([]string{"log", "--since", "start", "--since-file", f}); err == nil {
+		t.Fatal("both flags must error")
+	}
+}
+
+// The cursor holds the hashes of the window only: bounded however many events the board has.
 func TestLogSinceCursorSize(t *testing.T) {
 	tn := &Tenant{Slug: "big"}
 	base := time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)
 	for i := 0; i < 100; i++ {
 		it := Item{ID: "TSK-" + strconv.Itoa(i)}
 		for j := 0; j < 100; j++ {
-			it.Events = append(it.Events, Event{At: base.Add(time.Duration(i*100+j) * time.Second).Format(time.RFC3339Nano), Action: "note", Note: strconv.Itoa(j)})
+			it.Events = append(it.Events, Event{At: base.Add(time.Duration(i*100+j) * 10 * time.Minute).Format(time.RFC3339Nano), Action: "note", Note: strconv.Itoa(j)})
 		}
 		tn.Items = append(tn.Items, it)
 	}
@@ -179,7 +243,7 @@ func TestLogSinceCursorSize(t *testing.T) {
 	if err != nil || len(rows) != 10000 {
 		t.Fatalf("%d rows, %v", len(rows), err)
 	}
-	if len(next) >= 512 {
+	if len(next) >= 8192 { // ~144 events inside the 24h window, 16 hex chars each
 		t.Fatalf("cursor is %d chars", len(next))
 	}
 	if rows, _, _ := logSince([]*Tenant{tn}, next, 0); len(rows) != 0 {
