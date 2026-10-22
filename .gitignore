@@ -6,3 +6,4 @@ build/
 /miniwaves
 /.miniwaves/
 /.miniwaves.json.*
+plugins/*/.claude-plugin/types/

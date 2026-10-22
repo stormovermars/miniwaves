@@ -1,0 +1,18 @@
+{
+  "id": "stress",
+  "title": "stress",
+  "description": "release harness metrics render render sync release schema adapter layout ticket corpus harness adapter export render ind",
+  "tenants": [
+    "a",
+    "b",
+    "c"
+  ],
+  "max_workers": 4,
+  "worktrees": "on",
+  "lock": "",
+  "news.out": "docs/news/",
+  "news.url": "",
+  "summary": "",
+  "pane": "on",
+  "pane.style": ""
+}
