@@ -7,7 +7,7 @@ import { SHOW_TSK001, SHOW_STR002, WAVE_002, WAVE_004 } from '../tests/fixtures/
 import { parseItemDetail, parseWaveDetail } from './detail'
 import { REAL_DRAFT, SMALL_DRAFT, SMALL_RELEASE, STRESS_DRAFT, releases30, tenantsDraft, tenantSlug, manyJobs, jobDraft } from '../tests/fixtures/model'
 import { buildIdIndex, splitIds } from './ids'
-import { unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, groupToast, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
+import { unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, metricChanges, metricAlerts, legacyEvents, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, groupToast, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
 import { REAL_USER_KEYS } from '../tests/fixtures/userkeys'
 
 declare const console: { log: (...a: unknown[]) => void }
@@ -4330,4 +4330,68 @@ test('ids in text: existing item and wave ids are linked, wave labels map to a u
   expect(parts.filter(p => p.ref).map(p => [p.text, p.ref!.kind, p.ref!.id])).toEqual([['TSK-057', 'item', 'TSK-057'], ['S·STR-6', 'item', 'STR-6'], ['WAV-002', 'wave', 'a:WAV-002'], ['M4', 'wave', 'a:WAV-002']])
   expect(parts.map(p => p.text).join('')).toBe('See TSK-057 and S·STR-6, then WAV-002 (M4) or M5; TSK-999 is unknown')
   expect(splitIds('nothing here', idx)).toEqual([{ text: 'nothing here' }])
+})
+
+// TSK-060: alerts.kinds review, release and metrics are raised from the data mw-jobs already reads.
+const kindsRun = async ($: any, on: any, kinds: string) => {
+  const { state, clock } = rig($, on, true)
+  state.cfg = userKeys()
+  setKey(state.cfg, 'alerts.kinds', kinds)
+  state.draft = SMALL_DRAFT
+  seedReleases(state, 3)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(60_000)
+  await clock.advance(60_000)
+  const d = JSON.parse(SMALL_DRAFT)
+  // review: an item enters review; metrics: a row improves (not a drop); release: issue 4 appears
+  d.now.review.items.push({ tenant: 'zetadoc', id: 'TSK-097', title: 'Needs a look', note: 'x', since: '2026-10-22T10:00:00', by: 'z' })
+  d.now.counts.review = (d.now.counts.review ?? 0) + 1
+  d.metrics.sections[0].rows[0].good = 41
+  state.draft = JSON.stringify(d)
+  seedReleases(state, 4)
+  await clock.advance(60_000)
+  await clock.advance(60_000)
+  return state.toasts.join('\n')
+}
+
+test('TSK-060: with alerts.kinds=review,release,metrics, an item entering review, a new issue and a metrics change each alert once', async ($, on) => {
+  const t = await kindsRun($, on, 'review,release,metrics')
+  expect(t.match(/Review: .*TSK-097/g) ?? []).toHaveLength(1)
+  expect(t.match(/zeta ▸ Issue 4 published/g) ?? []).toHaveLength(1)
+  expect(t.match(/Metrics change: .*sheet formulas.*40→41/g) ?? []).toHaveLength(1)
+})
+
+test('TSK-060: without those kinds in alerts.kinds, none of the three alerts', async ($, on) => {
+  const t = await kindsRun($, on, 'blocked,ask,done,new')
+  expect(t).not.toContain('Review:')
+  expect(t).not.toContain('Issue 4')
+  expect(t).not.toContain('Metrics')
+})
+
+test('TSK-060: metricChanges are the non-drop changes; metricAlerts carries both under the metrics kind', () => {
+  const m1 = parseMetrics(metricsFile()).metrics!
+  const m2 = parseMetrics(metricsFile({ sections: [{ title: 'Harness', kind: 'split', rows: [{ name: 'doc/ios', good: 6, bad: 40 }] }, { title: 'Store listings', kind: 'progress', rows: [{ name: 'Play', done: 5, total: 9 }] }] })).metrics!
+  // m1 -> m2: Harness got worse (a drop), the others are improvements or unchanged
+  expect(metricChanges(m1, m1)).toEqual([])
+  const ch = metricChanges(m2, m1).map(d => d.line)
+  expect(ch.length).toBeGreaterThan(0)
+  expect(ch.some(l => l.startsWith('Harness doc/ios'))).toBe(true)
+  const all = metricAlerts('zeta', m1, m2)
+  expect(all.every(a => a.kind === 'metrics')).toBe(true)
+  expect(all.some(a => a.text.includes('Metrics drop:'))).toBe(true)
+  // a row never appears as both a drop and a change
+  const dropWho = new Set(all.filter(x => x.text.includes('Metrics drop:')).map(x => x.who))
+  expect(all.filter(x => x.text.includes('Metrics change:')).some(x => dropWho.has(x.who))).toBe(false)
+  expect(metricAlerts('zeta', undefined, m2)).toEqual([])
+})
+
+test('TSK-060: without a news model, an item entering review alerts once under the review kind', () => {
+  const job = { id: 'zeta', title: 'Zeta', board: '/b', tenants: ['t'], news: '', summary: '', coordinator: '', desk: '', alerts: {} } as any
+  const snap = (items: any[]) => ({ waves: [], items, events: [], asks: [], updatedAt: 1 }) as any
+  const it = (state: string, note = '') => ({ tenant: 't', id: 'T-1', type: 'task', state, title: 'Do it', note, updated: '2026-10-22T10:00:00Z' })
+  const ev = legacyEvents(job, snap([it('doing')]), snap([it('review')]))
+  expect(ev.map(e => [e.kind, e.text])).toEqual([['review', 'zeta ▸ Review: T-1 Do it']])
+  expect(legacyEvents(job, snap([it('review')]), snap([it('review')]))).toEqual([])
+  // blocked awaiting review counts as review too
+  expect(legacyEvents(job, snap([it('doing')]), snap([it('blocked', 'awaiting review')])).map(e => e.kind)).toEqual(['review'])
 })

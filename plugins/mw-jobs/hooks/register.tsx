@@ -660,6 +660,34 @@ export const metricDrops = (prev: MwMetrics | undefined, next: MwMetrics | undef
 }
 
 
+const rowNums = (sec: MwMetricSection, r: MwMetricRow): number[] => (sec.kind === 'split' ? [r.good ?? 0, r.warn ?? 0, r.bad ?? 0, r.none ?? 0] : sec.kind === 'progress' ? [r.done ?? 0, r.total ?? 0] : [r.value ?? 0])
+/** Alert lines for rows that changed since the last snapshot without getting worse (an improvement, a moved total, a new row): the rest of a metrics.json change. */
+export const metricChanges = (prev: MwMetrics | undefined, next: MwMetrics | undefined): Array<{ line: string; who: string }> => {
+  const out: Array<{ line: string; who: string }> = []
+  const dropped = new Set(metricDrops(prev, next).map(d => d.who))
+  for (const sec of next?.sections ?? []) {
+    const old = prev?.sections.find(x => x.title === sec.title && x.kind === sec.kind)
+    if (old === undefined) continue
+    for (const r of sec.rows) {
+      const who = rowKey(sec, r)
+      if (dropped.has(who)) continue
+      const o = old.rows.find(x => x.name === r.name)
+      const head = `${sec.title} ${r.name}`
+      if (o === undefined) {
+        out.push({ line: `${head}: new`, who })
+        continue
+      }
+      const a = rowNums(sec, o)
+      const b = rowNums(sec, r)
+      if (a.every((n, i) => n === b[i])) continue
+      const [p0, b0] = sec.kind === 'split' ? [o.good ?? 0, r.good ?? 0] : sec.kind === 'progress' ? [`${o.done ?? 0}/${o.total ?? 0}`, `${r.done ?? 0}/${r.total ?? 0}`] : [fmtNum(o.value ?? 0), `${fmtNum(r.value ?? 0)}${r.unit ? ` ${r.unit}` : ''}`]
+      out.push({ line: `${head}: ${sec.kind === 'split' ? `${sec.legend.good} ` : ''}${p0}\u2192${b0}`, who })
+    }
+  }
+  return out
+}
+
+
 const parseRegistry = (text: string): MwJobsRegistry => {
   const v = parseJson(text) as { jobs?: unknown } | undefined
   if (v === undefined || !Array.isArray(v.jobs)) return { jobs: [], error: 'registry is not valid JSON' }
@@ -2364,6 +2392,12 @@ export const modelEvents = (job: { id: string; tenants?: string[] }, old: Model,
 }
 
 const metricEvent = (jobId: string, d: { line: string; who: string }): AlertEvent => ({ type: 'metric', kind: 'metrics', text: `${jobId} \u25b8 Metrics drop: ${d.line}`, who: d.who, key: `metric|${d.line}` })
+const metricChangeEvent = (jobId: string, d: { line: string; who: string }): AlertEvent => ({ type: 'metric', kind: 'metrics', text: `${jobId} \u25b8 Metrics change: ${d.line}`, who: d.who, key: `metric-change|${d.line}` })
+/** The alerts of a metrics.json change: rows that got worse ("Metrics drop") and every other change ("Metrics change"). */
+export const metricAlerts = (jobId: string, prev: MwMetrics | undefined, next: MwMetrics | undefined): AlertEvent[] => [
+  ...metricDrops(prev, next).map(d => metricEvent(jobId, d)),
+  ...metricChanges(prev, next).map(d => metricChangeEvent(jobId, d)),
+]
 
 /** The last draft model polled per job: the baseline the next poll's events are measured against (first sight is silent). */
 const lastDrafts = new Map<string, Model>()
@@ -2371,7 +2405,7 @@ const lastDrafts = new Map<string, Model>()
 /** A release being cut: the refresh that follows runs once the one in flight is done. */
 const forceAfter = new Set<string>()
 
-const legacyEvents = (job: MwJobsJob, old: MwJobsSnapshot, next: MwJobsSnapshot): AlertEvent[] => {
+export const legacyEvents = (job: MwJobsJob, old: MwJobsSnapshot, next: MwJobsSnapshot): AlertEvent[] => {
   const labels = tenantLabels(job.tenants.length > 0 ? job.tenants : [...new Set(next.waves.map(w => w.id.split(':')[0] ?? ''))])
   const oldKeys = new Map(old.items.map(i => [`${i.tenant}:${i.id}`, i]))
   const oldWaves = new Map(old.waves.map(w => [w.id, w]))
@@ -2393,12 +2427,16 @@ const legacyEvents = (job: MwJobsJob, old: MwJobsSnapshot, next: MwJobsSnapshot)
   }
   for (const i of next.items) {
     const was = oldKeys.get(`${i.tenant}:${i.id}`)
+    if (isReview(i) && (was === undefined || !isReview(was))) out.push({ type: 'needs', kind: 'review', text: alertText(job.id, 'Review', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `review|${i.tenant}:${i.id}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
+  }
+  for (const i of next.items) {
+    const was = oldKeys.get(`${i.tenant}:${i.id}`)
     if (was !== undefined && was.state !== i.state && i.state === 'done') out.push({ type: 'done', kind: 'done', text: alertText(job.id, 'Done', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `done|${i.tenant}:${i.id}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
   }
   for (const i of next.items) {
     if (!oldKeys.has(`${i.tenant}:${i.id}`)) out.push({ type: 'new', kind: 'new', text: alertText(job.id, 'New', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `new|${i.tenant}:${i.id}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
   }
-  out.push(...metricDrops(old.metrics, next.metrics).map(d => metricEvent(job.id, d)))
+  out.push(...metricAlerts(job.id, old.metrics, next.metrics))
   return out
 }
 
@@ -2530,7 +2568,7 @@ const refreshJobRun = async ($: any, job: MwJobsJob): Promise<void> => {
       const events: AlertEvent[] = []
       if (modelMode) {
         // from a news model: a new release, metric drops, and the "now" events (needs, review, blocked, done, milestones, new) against the last poll; first sight is silent
-        events.push(...relEv, ...(old?.model !== undefined ? metricDrops(old.metrics, next.metrics).map(d => metricEvent(job.id, d)) : []), ...(baseline !== undefined ? modelEvents(job, baseline, mentry!.draft!) : []))
+        events.push(...relEv, ...(old?.model !== undefined ? metricAlerts(job.id, old.metrics, next.metrics) : []), ...(baseline !== undefined ? modelEvents(job, baseline, mentry!.draft!) : []))
       } else if (old !== undefined) {
         events.push(...legacyEvents(job, old, next), ...relEv)
       }
