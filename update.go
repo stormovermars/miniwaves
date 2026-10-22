@@ -173,7 +173,7 @@ func updateCommand(args []string) error {
 
 // Claude Code plugins: best effort, never changes the exit status.
 var (
-	pluginNames = []string{"mw", "mw-watch"}
+	pluginNames = []string{"mw", "mw-watch", "mw-jobs"}
 	claudeFound = func() bool { _, err := exec.LookPath("claude"); return err == nil }
 	// claudeRun runs `claude args...` with a timeout and returns its combined output.
 	claudeRun = func(args ...string) (string, error) {
@@ -214,7 +214,7 @@ var fanfareDefaults = func(w io.Writer) {
 	}
 }
 
-// installPlugins installs or updates the mw and mw-watch plugins from the miniwaves marketplace.
+// installPlugins installs or updates the mw, mw-watch and mw-jobs plugins from the miniwaves marketplace.
 func installPlugins(w io.Writer) {
 	if os.Getenv("MW_NO_PLUGINS") == "1" {
 		fmt.Fprintln(w, "plugins: skipped (MW_NO_PLUGINS=1)")
