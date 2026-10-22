@@ -36,13 +36,16 @@ mw builds **one model** per job: `mw news --job ID --format json`. Everything el
   job: {id, title, description, url},
   release: {number|null, at, since},                   // number null = draft
   now: {
-    counts: {needs, review, blocked, doing, ready, done, total},
+    counts: {draft, needs, review, blocked, doing, ready, done, total},
     tenants[],                                         // {slug, name, counts{needs,review,blocked,doing,ready,done,total}, last_change}, by attention
+    backlog: {items[], count},                         // ready queue order first, then drafts by creation; items carry state ready|draft; cap 50, more
+    recent_done[],                                     // the last 10 done items, since = done time, milestone, milestone_title
+    sprint: {kind:"wave", tenant, id, title, done, total, items[{...item, state todo|doing|review|blocked|done, needs?}], more} | null,  // the open wave nearest to done; items cap 50
     needs[], review[], blocked[], doing[],             // item: {tenant, id, title, note, since, by}
     milestones: {open[], closed_count}                 // open sorted nearest-to-done first: {tenant, id, title, done, total}
   },
   happened: {                                          // events in (since, at]
-    closed_milestones[], done[], accepted[], sent_back[], answers[], decisions[], new_items[],
+    closed_milestones[], done[], accepted[], sent_back[], answers[], decisions[], new_items[], moved_to_review[], moved_to_doing[],
     counts: {...per list}
   },
   next: {ready[] (queue order), next_milestones[] (open, nearest first)},
@@ -78,9 +81,18 @@ mw builds **one model** per job: `mw news --job ID --format json`. Everything el
 
 ### Pane styles (Sir, 2026-10-22)
 
-Both panes keep their current look, which stays the default. Gopher is a **third style**: the style control becomes one group, `━ normal | ░ blocks | ▚ gopher`, in both panes, and the choice is stored per pane.
-- **Jobs pane, gopher style:** a live "NOW" sheet. The same sections and caps as the normal jobs view (needs you, review, blocked, in progress, milestones, metrics), drawn as gopher menu lines.
-- **News pane, gopher style:** the bulletin described below.
+Both panes keep their current look, which stays the default. The style control is one group in both panes, `N | ░ | = | A | K` (bold letters, centred, equal widths), and the choice is stored per pane:
+
+| Button | Style id | Jobs pane (now) | News pane (release) |
+|---|---|---|---|
+| **N** | `normal` | today's dashboard | today's look + newsletter sections |
+| ░ | `blocks` | mono blocks | mono blocks |
+| = | `gopher` | a live "NOW" sheet as gopher menu lines, same sections and caps | the bulletin below |
+| **A** | `agile` | **Sprint + backlog:** the sprint is the open wave (else the open milestone nearest to done), with a progress bar and its items under To do / In progress / Review / Done; needs-you and blocked items are flagged. Then **Backlog:** the ready queue in order, then drafts | **Sprint review:** what was done, grouped by milestone; carry-over (still open); then the backlog as it stands |
+| **K** | `kanban` | **Columns:** Backlog · Ready · In progress · Review · Done (recent). Blocked and needs-you cards stay in their column, flagged ⛔ / !. Narrow panes stack the columns | **Flow since the previous release:** what moved into Done, Review and In progress, plus what was added to Backlog |
+
+- **Backlog** = drafts plus ready items. In both A and K it shows the top 10 with "+N", and the counts.
+- **Naming:** the earlier "board / J (Jira-like)" style is replaced by A and K. A stored `board` choice opens as `kanban`. "Jira" survives only as a tracker kind (below).
 - The news pane in normal and blocks style keeps today's look and gains the newsletter sections, the releases, the navigation and the Release button.
 
 ### Look: an old gopher-style bulletin (Sir, 2026-10-22)
@@ -127,7 +139,7 @@ Alerts stay in the panes (per type, deduplicated, one path). A new release count
 - The news desk kit's tick keeps writing the draft. Releasing is never part of the tick.
 - The panes read `latest` and `N.json` from the releases folder. When no archive exists, they fall back to running `mw news --format json`.
 
-## Tracker tickets: Jira and similar tools (Sir, 2026-10-22)
+## Tracker tickets: Jira, Linear and similar tools (Sir, 2026-10-22)
 
 An item can carry a ticket from the job's issue tracker. Wherever a ticket is shown, it is a real link.
 
@@ -164,6 +176,6 @@ An item can carry a ticket from the job's issue tracker. Wherever a ticket is sh
   - ClickUp ids: `[a-z0-9]{6,12}`.
   - Asana gids: `[0-9]{10,20}`.
   - Keys are upper-cased before checking.
-- **Board style (J):** the card or row key is `ticket_label`, as a real link when `ticket_url` is set, and plain text otherwise. With no ticket, it shows `tenant/ID`. The mw key goes in the tooltip.
+- **Agile and Kanban styles (A, K):** the card or row key is `ticket_label`, as a real link when `ticket_url` is set, and plain text otherwise. With no ticket, it shows `tenant/ID`. The mw key goes in the tooltip.
 - **Other styles:** the ticket appears after the title as `[MOB-142]`, `[#123]` and so on. It is a link in md, html and the normal and blocks pane styles, and plain text in gopher text.
 - **Unknown or newer `tracker` values:** the ticket is kept and shown as plain text, without a link.

@@ -100,6 +100,14 @@ func TestNewsManyTenants(t *testing.T) {
 		if len(m.Now.Tenants) != c.tenants || m.Now.More["tenants"] != 0 || m.Now.Caps["tenants"] != 2000 {
 			t.Fatalf("tenant rows: %d more %v", len(m.Now.Tenants), m.Now.More)
 		}
+		// the kanban/agile fields at scale
+		if m.Now.Backlog.Count != c.tenants*c.items/10*4 || len(m.Now.Backlog.Items) != 50 || m.Now.More["backlog"] != c.tenants*c.items/10*4-50 || m.Now.Counts.Draft != c.tenants*c.items/10 {
+			// per 10 items: 3 ready (+ the doing/blocked/done mix) and 1 draft; asks sit on item 0 (done)
+			t.Errorf("backlog: count %d items %d more %d draft %d", m.Now.Backlog.Count, len(m.Now.Backlog.Items), m.Now.More["backlog"], m.Now.Counts.Draft)
+		}
+		if len(m.Now.RecentDone) != 10 || m.Now.Sprint != nil {
+			t.Errorf("recent_done %d sprint %v", len(m.Now.RecentDone), m.Now.Sprint)
+		}
 		// asks from every tenant, in one run
 		if m.Now.Counts.Needs != c.asks {
 			t.Errorf("needs %d, want %d", m.Now.Counts.Needs, c.asks)

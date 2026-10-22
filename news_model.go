@@ -25,6 +25,9 @@ const (
 	newsCapReady     = 10   // next.ready
 	newsCapNextMiles = 5    // next.next_milestones
 	newsCapTenants   = 2000 // now.tenants
+	newsCapBacklog   = 50   // now.backlog.items
+	newsCapRecent    = 10   // now.recent_done
+	newsCapSprint    = 50   // now.sprint.items
 	newsItemText     = 200  // characters of any item text
 	newsModelMax     = 1 << 20
 
@@ -46,6 +49,35 @@ type newsItem struct {
 	Ticket      string `json:"ticket,omitempty"`
 	TicketLabel string `json:"ticket_label,omitempty"`
 	TicketURL   string `json:"ticket_url,omitempty"`
+	// the milestone (wave) the item belongs to, set on done items; state only on backlog items
+	Milestone      string `json:"milestone,omitempty"`
+	MilestoneTitle string `json:"milestone_title,omitempty"`
+	State          string `json:"state,omitempty"`
+}
+
+// newsSprintItem is a member of the sprint with its state (todo, doing, review, blocked, done); needs marks an
+// open ask.
+type newsSprintItem struct {
+	newsItem
+	State string `json:"state"`
+	Needs bool   `json:"needs,omitempty"`
+}
+
+// newsSprint is the open wave (mw's work batch), with its members, for the agile and kanban views.
+type newsSprint struct {
+	Kind   string           `json:"kind"`
+	Tenant string           `json:"tenant"`
+	ID     string           `json:"id"`
+	Title  string           `json:"title"`
+	Done   int              `json:"done"`
+	Total  int              `json:"total"`
+	Items  []newsSprintItem `json:"items"`
+	More   int              `json:"more"`
+}
+
+type newsBacklog struct {
+	Items []newsItem `json:"items"`
+	Count int        `json:"count"`
 }
 
 type newsMilestone struct {
@@ -75,6 +107,7 @@ type newsRelease struct {
 }
 
 type newsCounts struct {
+	Draft   int `json:"draft"`
 	Needs   int `json:"needs"`
 	Review  int `json:"review"`
 	Blocked int `json:"blocked"`
@@ -100,6 +133,9 @@ type newsTenant struct {
 type newsNow struct {
 	Counts     newsCounts     `json:"counts"`
 	Tenants    []newsTenant   `json:"tenants"`
+	Backlog    newsBacklog    `json:"backlog"`
+	RecentDone []newsItem     `json:"recent_done"`
+	Sprint     *newsSprint    `json:"sprint"`
 	Needs      []newsItem     `json:"needs"`
 	Review     []newsItem     `json:"review"`
 	Blocked    []newsItem     `json:"blocked"`
@@ -117,6 +153,8 @@ type newsHappened struct {
 	Answers          []newsItem     `json:"answers"`
 	Decisions        []newsItem     `json:"decisions"`
 	NewItems         []newsItem     `json:"new_items"`
+	MovedToReview    []newsItem     `json:"moved_to_review"`
+	MovedToDoing     []newsItem     `json:"moved_to_doing"`
 	Counts           map[string]int `json:"counts"`
 	Caps             map[string]int `json:"caps"`
 	More             map[string]int `json:"more"`
@@ -507,6 +545,15 @@ func awaitingReviewNote(it Item) bool {
 	return ok && strings.HasPrefix(strings.ToLower(strings.TrimSpace(e.Note)), "awaiting review")
 }
 
+// itemStamp is the time of an item's last logged event (Updated only when it has none), so the model stays a
+// function of the logged history.
+func itemStamp(it Item) string {
+	if n := len(it.Events); n > 0 {
+		return it.Events[n-1].At
+	}
+	return it.Updated
+}
+
 func newsCap(s string) string { return compactText(s, newsItemText) }
 
 func lastEvent(it Item, actions ...string) (Event, bool) {
@@ -606,6 +653,13 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 	var needs, review, blocked, doing, ready []newsItem
 	var open, openAll []newsMilestone
 	var closedMs, done, accepted, sentBack, answers, decisions, newItems []newsItem
+	var drafts, recent, movedReview, movedDoing []newsItem
+	type openWave struct {
+		t       *Tenant
+		judgeOn bool
+	}
+	waves := map[string]openWave{}
+	waveTitle := map[string]string{}
 	events := 0
 	c := &m.Now.Counts
 	var trows []newsTenant
@@ -631,16 +685,37 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 						dn++
 					}
 				}
+				waveTitle[t.Slug+"/"+it.ID] = newsCap(it.Title)
 				if it.Status == "done" {
 					m.Now.Milestones.ClosedCount++
 				} else {
 					open = append(open, newsMilestone{t.Slug, it.ID, newsCap(it.Title), dn, len(mem)})
+					waves[t.Slug+"/"+it.ID] = openWave{t, judgeOn}
 				}
 				continue
 			}
 			c.Total++
 			if it.Status == "done" {
 				c.Done++
+				x := base
+				x.Since = it.Updated
+				if n := len(it.Events); n > 0 { // event stamps only, so the model stays a function of the logged history
+					x.Since = it.Events[n-1].At
+				}
+				if e, ok := lastEvent(it, "done"); ok {
+					x.Since, x.By = e.At, displayName(e.By)
+				}
+				x.Milestone = it.Wave
+				recent = append(recent, x)
+			}
+			if it.Status == "inbox" {
+				x := base
+				x.Since, x.State = it.Created, "draft"
+				if e, ok := lastEvent(it, "created"); ok {
+					x.Since = e.At
+				}
+				drafts = append(drafts, x)
+				c.Draft++
 			}
 			if e, ok := openAsk(it); ok {
 				x := base
@@ -704,6 +779,18 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 					x.By = ""
 				}
 				tick(&x, it)
+				if e.Action == "done" && it.Kind != "wave" {
+					x.Milestone = it.Wave
+					x.MilestoneTitle = waveTitle[t.Slug+"/"+it.Wave]
+				}
+				if it.Kind != "wave" {
+					switch {
+					case e.Action == "start":
+						movedDoing = append(movedDoing, x)
+					case e.Action == "done" && judgeOn && judgeable(t, it), e.Action == "block" && strings.HasPrefix(strings.ToLower(strings.TrimSpace(e.Note)), "awaiting review"):
+						movedReview = append(movedReview, x)
+					}
+				}
 				switch {
 				case e.Action == "done" && it.Kind == "wave":
 					closedMs = append(closedMs, x)
@@ -730,7 +817,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 			}
 		}
 		done = append(done, tdone...)
-		tr.Counts = newsCounts{Needs: len(needs) - cNeeds, Review: len(review) - cReview, Blocked: len(blocked) - cBlocked, Doing: len(doing) - cDoing, Ready: len(ready) - cReady,
+		tr.Counts = newsCounts{Needs: len(needs) - cNeeds, Review: len(review) - cReview, Blocked: len(blocked) - cBlocked, Doing: len(doing) - cDoing, Ready: len(ready) - cReady, Draft: c.Draft - before.Draft,
 			Done: c.Done - before.Done, Total: c.Total - before.Total}
 		tr.LastChange, _, _ = lastActivity(t)
 		trows = append(trows, tr)
@@ -760,8 +847,31 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 		trows = trows[:newsCapTenants]
 	}
 	m.Now.Tenants = append(m.Now.Tenants, trows...)
-	m.Now.Caps = map[string]int{"tenants": newsCapTenants, "needs": newsCapNow, "review": newsCapNow, "blocked": newsCapNow, "doing": newsCapNow, "milestones": newsCapMilesOpen}
-	m.Now.More = map[string]int{"tenants": tmore}
+	// backlog: the ready queue in order, then the drafts by creation
+	newsSortItems(drafts, false)
+	backlog := make([]newsItem, 0, len(ready)+len(drafts))
+	for _, r := range ready {
+		r.State = "ready"
+		backlog = append(backlog, r)
+	}
+	backlog = append(backlog, drafts...)
+	m.Now.Backlog.Count = len(backlog)
+	backlogMore := 0
+	if len(backlog) > newsCapBacklog {
+		backlogMore = len(backlog) - newsCapBacklog
+		backlog = backlog[:newsCapBacklog]
+	}
+	m.Now.Backlog.Items = append([]newsItem{}, backlog...)
+	newsSortItems(recent, true)
+	if len(recent) > newsCapRecent {
+		recent = recent[:newsCapRecent]
+	}
+	for i := range recent {
+		recent[i].MilestoneTitle = waveTitle[recent[i].Tenant+"/"+recent[i].Milestone]
+	}
+	m.Now.RecentDone = append([]newsItem{}, recent...)
+	m.Now.Caps = map[string]int{"backlog": newsCapBacklog, "recent_done": newsCapRecent, "sprint": newsCapSprint, "tenants": newsCapTenants, "needs": newsCapNow, "review": newsCapNow, "blocked": newsCapNow, "doing": newsCapNow, "milestones": newsCapMilesOpen}
+	m.Now.More = map[string]int{"tenants": tmore, "backlog": backlogMore}
 	for _, l := range []struct {
 		name string
 		src  []newsItem
@@ -784,6 +894,11 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 		}
 		return a.ID < b.ID
 	})
+	var sprintPick *newsMilestone
+	if len(open) > 0 {
+		first := open[0]
+		sprintPick = &first
+	}
 	openAll = open
 	m.Now.Milestones.Open = []newsMilestone{}
 	if len(open) > newsCapMilesOpen {
@@ -803,7 +918,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 		dst  *[]newsItem
 	}{{"closed_milestones", closedMs, &m.Happened.ClosedMilestones}, {"done", done, &m.Happened.Done}, {"accepted", accepted, &m.Happened.Accepted},
 		{"sent_back", sentBack, &m.Happened.SentBack}, {"answers", answers, &m.Happened.Answers}, {"decisions", decisions, &m.Happened.Decisions},
-		{"new_items", newItems, &m.Happened.NewItems}} {
+		{"new_items", newItems, &m.Happened.NewItems}, {"moved_to_review", movedReview, &m.Happened.MovedToReview}, {"moved_to_doing", movedDoing, &m.Happened.MovedToDoing}} {
 		newsSortItems(l.src, true)
 		m.Happened.Counts[l.name] = len(l.src)
 		m.Happened.Caps[l.name] = newsCapHappened
@@ -822,6 +937,47 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 	}
 	m.Next.NextMilestones = append(m.Next.NextMilestones, openAll...)
 
+	if sprintPick != nil { // the open wave nearest to done (mw's work batch is the wave; there is no other milestone kind)
+		ow := waves[sprintPick.Tenant+"/"+sprintPick.ID]
+		sp := &newsSprint{Kind: "wave", Tenant: sprintPick.Tenant, ID: sprintPick.ID, Title: sprintPick.Title, Done: sprintPick.Done, Total: sprintPick.Total, Items: []newsSprintItem{}}
+		rank := map[string]int{"doing": 0, "review": 1, "blocked": 2, "todo": 3, "done": 4}
+		var mem []newsSprintItem
+		for _, it := range waveMembers(ow.t, sprintPick.ID) {
+			if it.Kind == "wave" {
+				continue
+			}
+			x := newsSprintItem{newsItem: newsItem{Tenant: ow.t.Slug, ID: it.ID, Title: newsCap(it.Title), Since: itemStamp(it)}}
+			tick(&x.newsItem, it)
+			_, x.Needs = openAsk(it)
+			switch {
+			case it.Status == "done" && ow.judgeOn && awaitingJudgement(ow.t, it):
+				x.State = "review"
+			case it.Status == "done":
+				x.State = "done"
+			case it.Status == "blocked" && awaitingReviewNote(it):
+				x.State = "review"
+			case it.Status == "blocked":
+				x.State = "blocked"
+			case it.Status == "doing":
+				x.State = "doing"
+			default:
+				x.State = "todo"
+			}
+			mem = append(mem, x)
+		}
+		sort.SliceStable(mem, func(i, j int) bool {
+			if rank[mem[i].State] != rank[mem[j].State] {
+				return rank[mem[i].State] < rank[mem[j].State]
+			}
+			return mem[i].ID < mem[j].ID
+		})
+		if len(mem) > newsCapSprint {
+			sp.More = len(mem) - newsCapSprint
+			mem = mem[:newsCapSprint]
+		}
+		sp.Items = append(sp.Items, mem...)
+		m.Now.Sprint = sp
+	}
 	m.Metrics = metrics
 	var prevM *newsMetrics
 	if win.prev != nil {
@@ -831,8 +987,10 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 	// changes are what the newsletter reports: the happened lists plus changed metric rows (edits, notes, steps,
 	// ready/start events and the like never count)
 	_ = events
-	for _, n := range m.Happened.Counts {
-		m.Release.Changes += n
+	for k, n := range m.Happened.Counts {
+		if k != "moved_to_review" && k != "moved_to_doing" { // flow views only; they never make a release
+			m.Release.Changes += n
+		}
 	}
 	m.Release.Changes += changed
 	m.Summary = newsClean(p.summary, true)
@@ -860,7 +1018,8 @@ func newsGuardSize(m *newsModel) {
 		all := []lst{{&m.Now.Needs, m.Now.More, "needs"}, {&m.Now.Review, m.Now.More, "review"}, {&m.Now.Blocked, m.Now.More, "blocked"}, {&m.Now.Doing, m.Now.More, "doing"},
 			{&m.Happened.ClosedMilestones, m.Happened.More, "closed_milestones"}, {&m.Happened.Done, m.Happened.More, "done"}, {&m.Happened.Accepted, m.Happened.More, "accepted"},
 			{&m.Happened.SentBack, m.Happened.More, "sent_back"}, {&m.Happened.Answers, m.Happened.More, "answers"}, {&m.Happened.Decisions, m.Happened.More, "decisions"},
-			{&m.Happened.NewItems, m.Happened.More, "new_items"}}
+			{&m.Happened.NewItems, m.Happened.More, "new_items"}, {&m.Happened.MovedToReview, m.Happened.More, "moved_to_review"}, {&m.Happened.MovedToDoing, m.Happened.More, "moved_to_doing"},
+			{&m.Now.Backlog.Items, m.Now.More, "backlog"}}
 		reduced := false
 		for _, x := range all {
 			if n := len(*x.l); n > 1 {

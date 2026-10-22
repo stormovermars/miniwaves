@@ -15,6 +15,7 @@
   },
   "now": {
     "counts": {
+      "draft": 0,
       "needs": 1,
       "review": 0,
       "blocked": 1,
@@ -28,6 +29,7 @@
         "slug": "doc",
         "name": "Doc",
         "counts": {
+          "draft": 0,
           "needs": 1,
           "review": 0,
           "blocked": 0,
@@ -42,6 +44,7 @@
         "slug": "news-app",
         "name": "News app",
         "counts": {
+          "draft": 0,
           "needs": 0,
           "review": 0,
           "blocked": 1,
@@ -53,6 +56,69 @@
         "last_change": "2026-10-22T10:31:00Z"
       }
     ],
+    "backlog": {
+      "items": [
+        {
+          "tenant": "news-app",
+          "id": "TSK-002",
+          "title": "Pipe | in `title` \u0026 more",
+          "note": "",
+          "since": "2026-10-22T09:56:00Z",
+          "by": "",
+          "state": "ready"
+        }
+      ],
+      "count": 1
+    },
+    "recent_done": [
+      {
+        "tenant": "doc",
+        "id": "CHR-001",
+        "title": "Decisions",
+        "note": "",
+        "since": "2026-10-22T11:13:00Z",
+        "by": ""
+      },
+      {
+        "tenant": "news-app",
+        "id": "TSK-001",
+        "title": "Fix \u003cscript\u003ealert(1)\u003c/script\u003e now",
+        "note": "",
+        "since": "2026-10-22T09:42:00Z",
+        "by": "alice",
+        "milestone": "WAV-001",
+        "milestone_title": "First | milestone"
+      }
+    ],
+    "sprint": {
+      "kind": "wave",
+      "tenant": "news-app",
+      "id": "WAV-001",
+      "title": "First | milestone",
+      "done": 1,
+      "total": 2,
+      "items": [
+        {
+          "tenant": "news-app",
+          "id": "TSK-002",
+          "title": "Pipe | in `title` \u0026 more",
+          "note": "",
+          "since": "2026-10-22T10:03:00Z",
+          "by": "",
+          "state": "todo"
+        },
+        {
+          "tenant": "news-app",
+          "id": "TSK-001",
+          "title": "Fix \u003cscript\u003ealert(1)\u003c/script\u003e now",
+          "note": "",
+          "since": "2026-10-22T09:42:00Z",
+          "by": "",
+          "state": "done"
+        }
+      ],
+      "more": 0
+    },
     "needs": [
       {
         "tenant": "doc",
@@ -97,14 +163,18 @@
       "closed_count": 0
     },
     "caps": {
+      "backlog": 50,
       "blocked": 50,
       "doing": 50,
       "milestones": 200,
       "needs": 50,
+      "recent_done": 10,
       "review": 50,
+      "sprint": 50,
       "tenants": 2000
     },
     "more": {
+      "backlog": 0,
       "blocked": 0,
       "doing": 0,
       "milestones": 0,
@@ -122,7 +192,9 @@
         "title": "Fix \u003cscript\u003ealert(1)\u003c/script\u003e now",
         "note": "checked",
         "since": "2026-10-22T09:42:00Z",
-        "by": "alice"
+        "by": "alice",
+        "milestone": "WAV-001",
+        "milestone_title": "First | milestone"
       }
     ],
     "accepted": [],
@@ -180,12 +252,41 @@
         "by": ""
       }
     ],
+    "moved_to_review": [],
+    "moved_to_doing": [
+      {
+        "tenant": "doc",
+        "id": "TSK-001",
+        "title": "Doc work",
+        "note": "",
+        "since": "2026-10-22T10:52:00Z",
+        "by": "carol"
+      },
+      {
+        "tenant": "news-app",
+        "id": "TSK-003",
+        "title": "Wait for keys",
+        "note": "",
+        "since": "2026-10-22T10:24:00Z",
+        "by": "bob"
+      },
+      {
+        "tenant": "news-app",
+        "id": "TSK-001",
+        "title": "Fix \u003cscript\u003ealert(1)\u003c/script\u003e now",
+        "note": "",
+        "since": "2026-10-22T09:35:00Z",
+        "by": "alice"
+      }
+    ],
     "counts": {
       "accepted": 0,
       "answers": 0,
       "closed_milestones": 0,
       "decisions": 1,
       "done": 1,
+      "moved_to_doing": 3,
+      "moved_to_review": 0,
       "new_items": 5,
       "sent_back": 0
     },
@@ -195,6 +296,8 @@
       "closed_milestones": 100,
       "decisions": 100,
       "done": 100,
+      "moved_to_doing": 100,
+      "moved_to_review": 100,
       "new_items": 100,
       "sent_back": 100
     },
@@ -204,6 +307,8 @@
       "closed_milestones": 0,
       "decisions": 0,
       "done": 0,
+      "moved_to_doing": 0,
+      "moved_to_review": 0,
       "new_items": 0,
       "sent_back": 0
     }
