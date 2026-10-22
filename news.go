@@ -40,6 +40,7 @@ func newsMD(s string) string {
 type newsPart struct {
 	job     string // job id, "" for the workspace
 	title   string
+	desc    string // job description, one line; "" when none
 	url     string
 	tenants []*Tenant
 	summary string // file contents, already capped; "" when none
@@ -272,7 +273,11 @@ func newsFence(s string) string {
 func renderNewsMD(p newsPart, d newsData, events, summaryMax int) string {
 	var b strings.Builder
 	multi := len(p.tenants) > 1
-	fmt.Fprintf(&b, "# %s\nUpdated %s\n", newsMD(compactText(p.title, 72)), newsStampMarker)
+	fmt.Fprintf(&b, "# %s\n", newsMD(compactText(p.title, 72)))
+	if p.desc != "" {
+		fmt.Fprintf(&b, "_%s_\n", strings.ReplaceAll(strings.ReplaceAll(newsMD(p.desc), "*", "\\*"), "_", "\\_"))
+	}
+	fmt.Fprintf(&b, "Updated %s\n", newsStampMarker)
 	if p.url != "" {
 		fmt.Fprintf(&b, "Page: %s\n", newsMD(p.url))
 	}
@@ -372,6 +377,9 @@ func renderNewsHTML(parts []newsPart, datas []newsData, title string) string {
 		d := datas[i]
 		multi := len(p.tenants) > 1
 		fmt.Fprintf(&b, "<section><h2>%s</h2>\n", esc(compactText(p.title, 72)))
+		if p.desc != "" {
+			fmt.Fprintf(&b, "<div><em>%s</em></div>\n", esc(p.desc))
+		}
 		if p.url != "" {
 			fmt.Fprintf(&b, "<div class=mut>%s</div>\n", esc(p.url))
 		}
@@ -517,7 +525,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		dir := "docs/news/"
 		if id != "" {
 			v := jobView(w, id)
-			p.title, p.url, dir = v.Title, v.NewsURL, v.NewsOut
+			p.title, p.desc, p.url, dir = v.Title, v.Description, v.NewsURL, v.NewsOut
 			if v.Summary != "" {
 				if p.summary, err = newsSummary(root, v.Summary); err != nil {
 					return err

@@ -427,3 +427,22 @@ func TestNewsTextShortHeaderBeforeCuttingName(t *testing.T) {
 		t.Fatalf("name truncated")
 	}
 }
+
+func TestNewsDescription(t *testing.T) {
+	p := newsPart{title: "T", desc: "Hi <b>|x * _y_ \x1b[31m"}
+	var d newsData
+	md := renderNewsMD(p, d, 10, 1000)
+	if !strings.Contains(md, "# T\n_Hi &lt;b&gt;\\|x \\* \\_y\\_ \x1b[31m_\n") {
+		t.Fatalf("md: %q", md)
+	}
+	if !strings.Contains(renderNewsHTML([]newsPart{p}, []newsData{d}, "T"), "<em>Hi &lt;b&gt;|x * _y_ \x1b[31m</em>") {
+		t.Fatal("html")
+	}
+	txt := renderNewsText(p, d, 80)
+	if !strings.Contains(txt, "\nHi <b>|x * _y_ [31m\n") {
+		t.Fatalf("text: %q", txt)
+	}
+	if strings.Contains(renderNewsMD(newsPart{title: "T"}, d, 10, 1000), "__") {
+		t.Fatal("empty description rendered")
+	}
+}

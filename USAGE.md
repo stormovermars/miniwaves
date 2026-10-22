@@ -330,6 +330,7 @@ mw jobs show [ID] [-j]              # effective values (defaults applied) and th
 | Key | Default | Rule |
 |---|---|---|
 | `title` | the id | up to 120 characters |
+| `description` | none | one line, up to 120 characters, no control characters; shown by `jobs show` and under the title in `mw news` |
 | `max_workers` | `4` | 1..32 |
 | `worktrees` | `on` | `on` or `off` |
 | `lock` | none | a command name only (`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`), never a command line |

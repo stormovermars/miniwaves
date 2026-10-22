@@ -183,6 +183,11 @@ func renderNewsText(p newsPart, d newsData, width int) string {
 		title += strings.Repeat("═", n)
 	}
 	b.WriteString(title + "\n")
+	if p.desc != "" {
+		for _, l := range newsWrap(c(p.desc), width, "", "") {
+			b.WriteString(l + "\n")
+		}
+	}
 	fmt.Fprintf(&b, "Updated %s\n", newsStampMarker)
 	if p.url != "" {
 		for _, l := range newsWrap("Page: "+c(p.url), width, "", "      ") {

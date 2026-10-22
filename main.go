@@ -403,7 +403,7 @@ mw jobs set ID KEY=VALUE...
 mw jobs show [ID] [-j]
 Coordinated-job config (data only; mw starts no sessions). Jobs live in .miniwaves.json, a tenant joins one with enable.
 -t repeats or takes a comma list. disable clears the tenants (all, or -t SLUG) and keeps the job's data.
-Keys (defaults): title (the id), max_workers 1..32 (4), worktrees on|off (on), lock (a command name, none),
+Keys (defaults): title (the id), description (none, one line ≤120), max_workers 1..32 (4), worktrees on|off (on), lock (a command name, none),
 news.out (docs/news/), news.url (http/https), summary (none), pane on|off (on), pane.style ([a-z0-9-]{1,32}).
 news.out and summary must be relative, inside the workspace (no .., no absolute path, no ~). An empty VALUE resets a key.
 Job ids match ^[a-z0-9][a-z0-9-]{0,31}$. Example: mw jobs enable tiny -t sheet,doc && mw jobs set tiny max_workers=3`,
