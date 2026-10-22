@@ -204,26 +204,48 @@ export const summaryParts = (a: Analysis, h: Headline, ready: number): { text: s
   return out
 }
 
+export type AlertWhat = 'New' | 'Done' | 'Blocked' | 'Needs you' | 'Review' | 'Milestone done'
+export type AlertLine = { what: AlertWhat; ref: string; title: string }
+
+/** The one alert text: `<job> ▸ <What>: <ref> <title>`; title cut at 60 chars, repeated neighbouring words collapsed, no timestamp. */
+export const formatAlert = (job: string, what: AlertWhat, ref: string, title: string): string => {
+  const words = `${ref} ${title}`.split(/\s+/).filter(w => w !== '')
+  const kept = words.filter((w, i) => i === 0 || w.toLowerCase() !== words[i - 1]!.toLowerCase())
+  const head = kept[0] ?? ''
+  let rest = kept.slice(1).join(' ')
+  if (rest.length > 60) rest = `${rest.slice(0, 59).trimEnd()}…`
+  return `${job} ▸ ${what}: ${`${head} ${rest}`.trim()}`
+}
+
+/** An item's short reference: tenant label + id (`S·A-9`), never `tenant:ID`. */
+export const itemRef = (labels: Record<string, string>, tenant: string, id: string) => (labels[tenant] ? `${labels[tenant]}·${id}` : id)
+
+/** A closed wave as an alert line: the wave label, then the title without its own leading label word. */
+export const waveAlert = (w: TidewatchWave, labels: Record<string, string>): AlertLine => ({
+  what: 'Milestone done',
+  ref: waveName(w, labels),
+  title: w.title.split(' ').slice(1).join(' ') || w.title,
+})
+
 export const diffChanges = (
   prev: TidewatchSnapshot,
   next: TidewatchSnapshot,
   labels: Record<string, string>,
-): { closed: string[]; changes: string[] } => {
-  const closed: string[] = []
-  const changes: string[] = []
+): { closed: AlertLine[]; changes: AlertLine[] } => {
+  const closed: AlertLine[] = []
+  const changes: AlertLine[] = []
   const prevWaves = new Map(prev.waves.map(w => [w.id, w]))
   for (const w of next.waves) {
     const old = prevWaves.get(w.id)
-    if (old !== undefined && old.state !== 'done' && w.state === 'done') {
-      closed.push(`Milestone closed: ${waveName(w, labels)} ${w.title}`)
-    }
+    if (old !== undefined && old.state !== 'done' && w.state === 'done') closed.push(waveAlert(w, labels))
   }
   const prevItems = new Map(prev.items.map(i => [`${i.tenant}:${i.id}`, i]))
   for (const i of next.items) {
     const old = prevItems.get(`${i.tenant}:${i.id}`)
-    if (old === undefined) changes.push(`New ${i.tenant}:${i.id} ${i.title}`)
-    else if (old.state !== i.state && i.state === 'done') changes.push(`Done ${i.tenant}:${i.id} ${i.title}`)
-    else if (old.state !== i.state && i.state === 'blocked') changes.push(`Blocked ${i.tenant}:${i.id} ${i.title}`)
+    const ref = itemRef(labels, i.tenant, i.id)
+    if (old === undefined) changes.push({ what: 'New', ref, title: i.title })
+    else if (old.state !== i.state && i.state === 'done') changes.push({ what: 'Done', ref, title: i.title })
+    else if (old.state !== i.state && i.state === 'blocked') changes.push({ what: 'Blocked', ref, title: i.title })
   }
   return { closed, changes }
 }
@@ -1009,7 +1031,7 @@ const refreshJob = async ($: any, job: TidewatchJob) => {
     if (old !== undefined) {
       const labels = tenantLabels(job.tenants.length > 0 ? job.tenants : [...new Set(next.waves.map(w => w.id.split(':')[0] ?? ''))])
       const { closed, changes } = diffChanges(old, next, labels)
-      const lines = [...closed, ...changes].map(l => `[${job.id}] ${l}`)
+      const lines = [...closed, ...changes].map(l => formatAlert(job.id, l.what, l.ref, l.title))
       const us0: UserSettings = await read($, userSettings)
       if (lines.length > 0 && us0.alertsEnabled && us0.alertMessage) {
         const shown = lines.slice(0, 4)
@@ -1030,10 +1052,10 @@ const refreshJob = async ($: any, job: TidewatchJob) => {
       const alerts: { key: string; text: string; isUrgent: boolean; kind: string }[] = [
         ...next.waves
           .filter(w => old.waves.some(o => o.id === w.id && o.state !== 'done') && w.state === 'done')
-          .map(w => ({ key: keyOf('closed', w.id.split(':')[0] ?? '', w.id.split(':')[1] ?? '', String(next.updatedAt)), text: `[${job.id}] Milestone closed: ${waveName(w, labels)} ${w.title}`, isUrgent: false, kind: 'done' })),
+          .map(w => ({ key: keyOf('closed', w.id.split(':')[0] ?? '', w.id.split(':')[1] ?? '', String(next.updatedAt)), text: ((l: AlertLine) => formatAlert(job.id, l.what, l.ref, l.title))(waveAlert(w, labels)), isUrgent: false, kind: 'done' })),
         ...needing.map(i => ({
           key: keyOf(i.state === 'blocked' ? 'blocked' : 'need', i.tenant, i.id, i.updated),
-          text: `[${job.id}] ${i.state === 'blocked' ? 'Blocked' : 'Needs you'}: ${i.tenant}:${i.id} ${i.title}`,
+          text: formatAlert(job.id, i.state === 'blocked' ? 'Blocked' : 'Needs you', itemRef(labels, i.tenant, i.id), i.title),
           isUrgent: true,
           kind: i.state === 'blocked' ? 'blocked' : 'ask',
         })),

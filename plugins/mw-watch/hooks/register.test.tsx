@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { formatAlert, diffChanges, tenantLabels } from './register'
 
 const PANE = {
   plugin: 'mw-watch',
@@ -194,8 +195,12 @@ test('two jobs: status, switching, alerts once, refresh, timer', async ($, on) =
   state.round = 1
   await clock.advance(60_000)
   const toasts = state.toasts.join('\n')
-  expect(toasts).toContain('[alpha] Milestone closed: C2')
-  expect(toasts).toContain('[demo] Milestone closed: D1')
+  expect(toasts).toContain('alpha ▸ Milestone done: C2')
+  expect(toasts).toContain('demo ▸ Milestone done: D1')
+  expect(toasts).toContain('alpha ▸ New: W·A-9 t')
+  expect(toasts).toContain('alpha ▸ New: W·A-8 t')
+  expect(toasts).not.toContain('tenant:')
+  expect(toasts).not.toContain('alpha-web:')
   // one alert per event (two milestones closed, one item blocked), kept in the store; only the person-needing one pings.
   // (this build of the engine has no ui.notify event to hook, so the store is where a test sees what was sent)
   const keys = state.store.get('notified') as string[]
@@ -1091,4 +1096,42 @@ test('user settings: pane.refresh=15s seeds the timer', async ($, on) => {
   const calls = state.alphaCalls
   await clock.advance(15_000)
   expect(state.alphaCalls).toBeGreaterThan(calls)
+})
+
+test('formatAlert: one line per kind, `<job> ▸ <What>: <ref> <title>`', () => {
+  expect(formatAlert('tiny', 'New', 'S·A-9', 'Import types')).toBe('tiny ▸ New: S·A-9 Import types')
+  expect(formatAlert('tiny', 'Done', 'S·A-9', 'Import types')).toBe('tiny ▸ Done: S·A-9 Import types')
+  expect(formatAlert('tiny', 'Blocked', 'S·A-9', 'Import types')).toBe('tiny ▸ Blocked: S·A-9 Import types')
+  expect(formatAlert('tiny', 'Needs you', 'S·A-9', 'Import types')).toBe('tiny ▸ Needs you: S·A-9 Import types')
+  expect(formatAlert('tiny', 'Review', 'S·A-9', 'Import types')).toBe('tiny ▸ Review: S·A-9 Import types')
+  expect(formatAlert('tiny', 'Milestone done', 'C2', 'Harness')).toBe('tiny ▸ Milestone done: C2 Harness')
+})
+
+test('formatAlert: title trimmed to 60 chars with an ellipsis', () => {
+  const long = 'x'.repeat(100)
+  const out = formatAlert('tiny', 'New', 'A-1', long)
+  expect(out).toBe(`tiny ▸ New: A-1 ${'x'.repeat(59)}…`)
+  expect(formatAlert('tiny', 'New', 'A-1', 'y'.repeat(60))).toBe(`tiny ▸ New: A-1 ${'y'.repeat(60)}`)
+})
+
+test('formatAlert: consecutive duplicate words collapse', () => {
+  expect(formatAlert('tiny', 'Milestone done', 'C2', 'C2 Harness')).toBe('tiny ▸ Milestone done: C2 Harness')
+})
+
+test('diffChanges: lines carry short refs, never a tenant: prefix', () => {
+  const labels = tenantLabels(['alpha-core', 'alpha-web'])
+  const snap = (items: any[], waves: any[]) => ({ items, waves, events: [], updatedAt: 0 }) as any
+  const it = (id: string, state: string) => ({ tenant: 'alpha-web', id, type: 'task', state, title: 'Import types', note: '', updated: '' })
+  const prev = snap([it('A-1', 'doing'), it('A-2', 'doing')], [{ id: 'alpha-core:WAV-002', title: 'C2 Harness', state: 'ready', members: '1/2', percent: 50, blocked: 0 }])
+  const next = snap([it('A-1', 'done'), it('A-2', 'blocked'), it('A-9', 'todo')], [{ id: 'alpha-core:WAV-002', title: 'C2 Harness', state: 'done', members: '2/2', percent: 100, blocked: 0 }])
+  const { closed, changes } = diffChanges(prev, next, labels)
+  const lines = [...closed, ...changes].map(l => formatAlert('alpha', l.what, l.ref, l.title))
+  expect(lines).toEqual([
+    'alpha ▸ Milestone done: C2 Harness',
+    'alpha ▸ Done: W·A-1 Import types',
+    'alpha ▸ Blocked: W·A-2 Import types',
+    'alpha ▸ New: W·A-9 Import types',
+  ])
+  expect(lines.join('\n')).not.toContain('tenant:')
+  expect(lines.join('\n')).not.toContain('alpha-web:')
 })
