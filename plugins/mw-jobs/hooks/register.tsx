@@ -4,6 +4,7 @@ import type { Register } from 'claude-code'
 import type { Counts, Entry, Tab, SwState, Favorites } from './switcher'
 import { pollPlan, rrSlice, attentionSort, badgeOf, cleanFavorites, countsShort, cutLabel, fitCols, hhmm as hhmmMs, inRange, keyCol, listFor, moveIn, newsLine, pagerLabel, paged, parseFavorites, pickLine, planBar, RANGES, summaryLine, toggleIn, totalsOf, PAGE } from './switcher'
 import type { ItemRow, MileRow } from './rows'
+import { buildIdIndex, splitIds, type IdIndex } from './ids'
 import { capN, cellWidth, cutCells, safeSlice, INVISIBLE, memberParts, tenantLabels, waveName, mileOf, waveToMile, mileName, mileCount, textBar, itemRow, itemName } from './rows'
 export { tenantLabels, waveName }
 import { parseItemDetail, parseWaveDetail } from './detail'
@@ -4097,6 +4098,34 @@ const loadDetail = async ($: any, r: MwJobsDetailRef) => {
 const detailTitle = (r: MwJobsDetailRef) => `mw ${r.kind === 'wave' ? 'milestone' : 'item'} · ${r.tenant}/${r.id}`
 
 /** A click on an item or a milestone: show it in the detail pane (from a pane: a fresh trail; from the detail pane itself: remember where to go back). */
+/** The ids that exist on a job's board (items and milestones of its snapshot), cached per snapshot. */
+const idIndexCache = new WeakMap<object, IdIndex>()
+const idIndexOf = (snap: MwJobsSnapshot): IdIndex => {
+  const hit = idIndexCache.get(snap)
+  if (hit !== undefined) return hit
+  const built = buildIdIndex(snap.items.map(i => ({ tenant: i.tenant, id: i.id })), snap.waves.map(w => ({ id: w.id, title: w.title })))
+  idIndexCache.set(snap, built)
+  return built
+}
+
+/** Text whose ids that exist on the board are link-style Buttons: an item id opens its detail panel, a milestone id its milestone panel. Unknown ids stay text. */
+const linkedText = (ui: any, $: any, jobId: string, text: string, index: IdIndex, key: string, from: 'jobs' | 'news' | 'detail', o: { dimColor?: boolean; color?: string; wrap?: 'wrap' | 'truncate-end' } = {}) => {
+  const { Box, Text, Button } = ui
+  const parts = splitIds(text, index)
+  if (!parts.some(p => p.ref !== undefined)) return <Text key={key} dimColor={o.dimColor} color={o.color} wrap={o.wrap ?? 'truncate-end'}>{text}</Text>
+  return (
+    <Box key={key} flexShrink={1} overflow="hidden">
+      {parts.map((p, i) =>
+        p.ref !== undefined ? (
+          <Button key={`${key}-id${i}`} plain dimColor={o.dimColor} label={p.text} onPress={() => void openDetail($, { kind: p.ref!.kind, jobId, tenant: p.ref!.tenant, id: p.ref!.id }, from)} />
+        ) : (
+          <Text key={`${key}-t${i}`} dimColor={o.dimColor} color={o.color}>{p.text}</Text>
+        ),
+      )}
+    </Box>
+  )
+}
+
 export const openDetail = async ($: any, r0: MwJobsDetailRef, from: 'jobs' | 'news' | 'detail') => {
   const r = { ...r0, ...splitRef(r0.tenant, r0.id) }
   await update($, detail, (d: MwJobsDetail) => (from === 'detail' ? { cur: r, trail: d.cur ? [...d.trail, d.cur].slice(-20) : d.trail, from: d.from } : { cur: r, trail: [], from }))
@@ -6206,6 +6235,15 @@ export const register: Register = (on, options) => {
       <Text {...sz("caption")} {...wt} color={color} dimColor={color === undefined}>{text.toUpperCase()}</Text>
     )
     const pid = (tenant: string, id: string) => (labels[tenant] ? `${labels[tenant]}·${id}` : id)
+    const idx = idIndexOf(snap)
+    const lt = (text: string, key: string, dim = false) => linkedText({ Box, Text, Button }, $, job.id, text, idx, key, 'jobs', { dimColor: dim })
+    // an item row's name: its id as a link, then the title with any other board ids linked
+    const itemName = (i: MwJobsItem, key: string) => (
+      <Box key={`iname-${key}`} gap={1} overflow="hidden">
+        <Button key={`iid-${key}`} plain label={pid(i.tenant, i.id)} onPress={() => void openDetail($, { kind: 'item', jobId: job.id, tenant: i.tenant, id: i.id }, 'jobs')} />
+        {lt(i.title, `ititle-${key}`)}
+      </Box>
+    )
     const dot = (key: string) => (a0.changed.has(key) ? <Text color="suggestion">●</Text> : <Text> </Text>)
     // one grid for the whole pane: name | status column (as wide as a bar) | right column
     const draw = (trim: number): { node: any; size: number } => {
@@ -6267,8 +6305,8 @@ export const register: Register = (on, options) => {
     const isMono = e.surface === 'terminal' || style === 'blocks'
 
     type Cell = { text?: string; color?: string; dim?: boolean; node?: unknown }
-    const gridRow = (key: string, name: string, nameColor: string | undefined, status: Cell | undefined, right: unknown, marker: unknown, open?: () => void, minRight?: number) => {
-      const nameNode = open !== undefined ? <Button key={`open-${key}`} plain label={name} onPress={open} /> : <Text color={nameColor} wrap="truncate-end">{name}</Text>
+    const gridRow = (key: string, name: string, nameColor: string | undefined, status: Cell | undefined, right: unknown, marker: unknown, open?: () => void, minRight?: number, nameOverride?: unknown) => {
+      const nameNode = nameOverride !== undefined ? (nameOverride as any) : open !== undefined ? <Button key={`open-${key}`} plain label={name} onPress={open} /> : <Text color={nameColor} wrap="truncate-end">{name}</Text>
       const statusNode = status === undefined ? null : status.node !== undefined ? (status.node as any) : (
         <Text color={status.color} dimColor={status.dim ?? status.color === undefined} wrap="wrap">{status.text}</Text>
       )
@@ -6308,7 +6346,7 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
-    const noteLine = (text: string) => (density === 'compact' || text === '' ? null : <Text dimColor wrap="truncate-end">{`  ${text}`}</Text>)
+    const noteLine = (text: string, key = text) => (density === 'compact' || text === '' ? null : <Box key={`note-${key}`}><Text dimColor>{'  '}</Text>{lt(text, `nl-${key}`, true)}</Box>)
     const barCell = (w: MwJobsWave, isNew: boolean): Cell => {
       const glyphs = ['█', '░']
       if (isMono) {
@@ -6433,8 +6471,8 @@ export const register: Register = (on, options) => {
               const k = `${i.tenant}:${i.id}`
               return (
                 <Box flexDirection="column">
-                  {gridRow(`need-${k}`, `! ${i.title}`, undefined, { text: 'needs you', color: 'error' }, <Text dimColor>{itemAge(i)}</Text>, dot(k))}
-                  {noteLine([i.tenant, i.id, i.note].filter(Boolean).join(' · '))}
+                  {gridRow(`need-${k}`, `! ${i.title}`, undefined, { text: 'needs you', color: 'error' }, <Text dimColor>{itemAge(i)}</Text>, dot(k), undefined, undefined, <Box key={`iname-need-${k}`} gap={1} overflow="hidden"><Text color="error">!</Text>{lt(i.title, `ititle-need-${k}`)}</Box>)}
+                  {noteLine([i.tenant, i.id, i.note].filter(Boolean).join(' · '), `need-${k}`)}
                 </Box>
               )
             })}
@@ -6448,8 +6486,8 @@ export const register: Register = (on, options) => {
               const k = `${i.tenant}:${i.id}`
               return (
                 <Box flexDirection="column">
-                  {gridRow(`rev-${k}`, `${pid(i.tenant, i.id)} ${i.title}`, undefined, { text: 'awaiting review', color: 'warning' }, <Text dimColor>{itemAge(i)}</Text>, dot(k))}
-                  {noteLine(i.note === 'awaiting review' ? '' : i.note)}
+                  {gridRow(`rev-${k}`, `${pid(i.tenant, i.id)} ${i.title}`, undefined, { text: 'awaiting review', color: 'warning' }, <Text dimColor>{itemAge(i)}</Text>, dot(k), undefined, undefined, itemName(i, `rev-${k}`))}
+                  {noteLine(i.note === 'awaiting review' ? '' : i.note, `rev-${k}`)}
                 </Box>
               )
             })}
@@ -6463,8 +6501,8 @@ export const register: Register = (on, options) => {
               const k = `${i.tenant}:${i.id}`
               return (
                 <Box flexDirection="column">
-                  {gridRow(`blk-${k}`, `${pid(i.tenant, i.id)} ${i.title}`, undefined, { text: 'blocked', color: 'error' }, <Text dimColor>{itemAge(i)}</Text>, dot(k))}
-                  {noteLine(i.note)}
+                  {gridRow(`blk-${k}`, `${pid(i.tenant, i.id)} ${i.title}`, undefined, { text: 'blocked', color: 'error' }, <Text dimColor>{itemAge(i)}</Text>, dot(k), undefined, undefined, itemName(i, `blk-${k}`))}
+                  {noteLine(i.note, `blk-${k}`)}
                 </Box>
               )
             })}
@@ -6476,7 +6514,7 @@ export const register: Register = (on, options) => {
             {label('In chat')}
             {a.chat.map(i => {
               const k = `${i.tenant}:${i.id}`
-              return gridRow(`chat-${k}`, `${pid(i.tenant, i.id)} ${i.title}`, undefined, { text: 'in chat' }, <Text dimColor>{itemAge(i)}</Text>, dot(k))
+              return gridRow(`chat-${k}`, `${pid(i.tenant, i.id)} ${i.title}`, undefined, { text: 'in chat' }, <Text dimColor>{itemAge(i)}</Text>, dot(k), undefined, undefined, itemName(i, `chat-${k}`))
             })}
           </Box>
         )}
@@ -6494,6 +6532,9 @@ export const register: Register = (on, options) => {
                 d.isStalled ? { text: 'stalled', color: 'warning' } : isCols ? { text: '' } : undefined,
                 <Text color={d.isStalled ? 'warning' : undefined} dimColor={!d.isStalled}>{age}</Text>,
                 dot(k),
+                undefined,
+                undefined,
+                itemName(d.item, `do-${k}`),
               )
             })}
           </Box>

@@ -6,6 +6,7 @@ import { REAL_BOARDS, REAL_BOARD_JOBS } from '../tests/fixtures/boards'
 import { SHOW_TSK001, SHOW_STR002, WAVE_002, WAVE_004 } from '../tests/fixtures/detail'
 import { parseItemDetail, parseWaveDetail } from './detail'
 import { REAL_DRAFT, SMALL_DRAFT, SMALL_RELEASE, STRESS_DRAFT, releases30, tenantsDraft, tenantSlug, manyJobs, jobDraft } from '../tests/fixtures/model'
+import { buildIdIndex, splitIds } from './ids'
 import { unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, groupToast, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
 import { REAL_USER_KEYS } from '../tests/fixtures/userkeys'
 
@@ -296,7 +297,7 @@ test('two jobs: status, switching, per-job alerts, refresh, timer', async ($, on
     // the ` -t slug` tail is gone, stories are not stalled or in progress, ids carry the tenant label
     expect(await ui.find({ type: 'Text', text: / -t / })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /A story/ })).toBeUndefined()
-    expect(await nameNode(ui, /S·A-1/)).toBeDefined()
+    expect(await nameNode(ui, /S·A-1/), `A-1 ${surface}`).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^1 in progress/ })).toBeUndefined()
     // 0/0 waves are one dim line
     if (surface === 'terminal') {
@@ -522,7 +523,7 @@ test('styles: normal and blocks; blocks is cell-counted on the terminal and a sh
   await run('style blocks')
   const meta = async () => {
     const u = await mount('desktop', { bodyColumns: 80 })
-    const m = (await jt(u)).includes('zetasheet · A-2') ? true : undefined
+    const m = (await jt(u)).includes('zetasheet · ') ? true : undefined
     await u.unmount()
     return m
   }
@@ -2143,6 +2144,28 @@ test('the panel button: news_out as a folder or a file; when $.fs.stat refuses, 
   expect(newsStatusPath(undefined, '~/b', '/h')).toBe('/h/b/docs/news/status.md')
   expect(newsStatusPath({ 'news.out': 'x/' }, '~/b', '/h')).toBe('/h/b/x/status.md')
   await main.unmount()
+})
+
+test('ids in titles and notes: an existing id is a Button that opens its detail, an unknown id stays Text (jobs pane, both surfaces)', async ($, on) => {
+  const { state } = rig($, on, true)
+  state.extra = [item('zetasheet', 'A-5', 'blocked', 'waits for A-2 and TSK-9999', iso(BASE - 600_000), 'task', 'Follow up on A-3 and BUG-404')]
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface } as never)
+    const buttons = (await ui.findAll({ type: 'Button' })).map((b: any) => String(b.props?.label))
+    expect(buttons, surface).toContain('A-3') // in the title
+    expect(buttons, surface).toContain('A-2') // in the note
+    expect(buttons, surface).not.toContain('BUG-404')
+    expect(buttons, surface).not.toContain('TSK-9999')
+    const texts = (await ui.findAll({ type: 'Text' })).map((t: any) => flat(t))
+    expect(texts.some((t: string) => t.includes('BUG-404')), surface).toBe(true)
+    expect(texts.some((t: string) => t.includes('TSK-9999')), surface).toBe(true)
+    const b = (await ui.findAll({ type: 'Button' })).find((x: any) => x.props?.label === 'A-3')
+    await ui.press({ key: b.props.key })
+    expect(state.opens.at(-1)).toMatchObject({ id: DETAIL_PANE, focus: true })
+    expect(state.runs).toContain('mw show A-3 -t zetasheet -j')
+    await ui.unmount()
+  }
 })
 
 test('an invalid or newer metrics file shows a one-line dim notice instead of the section', async ($, on) => {
@@ -4165,4 +4188,12 @@ test('settings: discover.home=false never scans ~', async ($, on) => {
   state.boardJobs = REAL_BOARD_JOBS
   await $.session.start({ cwd: '/work/x', surface: 'desktop', isInteractive: true })
   expect(state.runs.filter(r => r.startsWith('mw boards /home'))).toEqual([])
+})
+
+test('ids in text: existing item and wave ids are linked, wave labels map to a unique wave, unknown ids stay plain', () => {
+  const idx = buildIdIndex([{ tenant: 'a', id: 'TSK-057' }, { tenant: 'b', id: 'STR-6' }], [{ id: 'a:WAV-002', title: 'M4 Consolidation' }, { id: 'b:WAV-003', title: 'M5 Release' }, { id: 'b:WAV-004', title: 'M5 Again' }])
+  const parts = splitIds('See TSK-057 and S·STR-6, then WAV-002 (M4) or M5; TSK-999 is unknown', idx)
+  expect(parts.filter(p => p.ref).map(p => [p.text, p.ref!.kind, p.ref!.id])).toEqual([['TSK-057', 'item', 'TSK-057'], ['S·STR-6', 'item', 'STR-6'], ['WAV-002', 'wave', 'a:WAV-002'], ['M4', 'wave', 'a:WAV-002']])
+  expect(parts.map(p => p.text).join('')).toBe('See TSK-057 and S·STR-6, then WAV-002 (M4) or M5; TSK-999 is unknown')
+  expect(splitIds('nothing here', idx)).toEqual([{ text: 'nothing here' }])
 })
