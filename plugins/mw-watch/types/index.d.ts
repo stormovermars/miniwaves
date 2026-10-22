@@ -57,6 +57,16 @@ export type TidewatchSnapshot = {
   updatedAt: number
 }
 /** The fanfare footer's state: the per-user value wins over the board's. */
+/** The per-user mw settings the plugin honours. */
+export type TidewatchUserSettings = {
+  alertsEnabled: boolean
+  alertKinds: string[]
+  alertMessage: boolean
+  alertSound: boolean
+  discoverHome: boolean
+  discoverDepth: number
+  refresh: string | undefined
+}
 export type TidewatchFanfare = { enabled: boolean; use: string; sets: string[] }
 
 /** A colour for light and dark, each a #rgb, #rrggbb or #rrggbbaa string. */
@@ -92,7 +102,7 @@ declare module 'claude-code' {
       selected: string
       /** Sound and notifications off (toasts stay). */
       muted: boolean
-      /** Auto-refresh period: off, 30s, 1m or 5m (also kept in $.store). */
+      /** Auto-refresh period: off, 15s, 30s, 1m or 5m (also kept in $.store). */
       refreshEvery: string
       /** The seen cursor per job id (also kept in $.store): rows changed after it are marked new. */
       seen: Record<string, TidewatchSeen>
@@ -116,6 +126,8 @@ declare module 'claude-code' {
       fanfare: Record<string, TidewatchFanfare>
       /** Boards found by a scan or discovery that are not added yet. */
       found: TidewatchFound[]
+      /** The per-user settings read from `mw user get -j` (defaults when mw cannot say). */
+      userSettings: TidewatchUserSettings
     }
   }
 }

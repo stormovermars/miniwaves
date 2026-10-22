@@ -1020,3 +1020,75 @@ test('the tool.call hook only observes: the call goes through unchanged', async 
   expect(JSON.stringify(out)).not.toContain('deny')
   expect(input).toEqual({ tool: 'Bash', command: 'cd /work/b && mw list' })
 })
+
+// ---- per-user settings (`mw user get -j`) ----
+
+const userGet = (vals: Record<string, string>) => ({ keys: Object.entries(vals).map(([key, value]) => ({ key, value, default: value, source: 'user', group: key.split('.')[0], choices: [] })) })
+const withUser = (vals: Record<string, string> | 'fail', more?: (argv: string[]) => unknown) => (argv: string[]) => {
+  if (argv.join(' ') === 'user get -j') return vals === 'fail' ? raw('', 2) : ok(userGet(vals))
+  return more?.(argv)
+}
+
+test('user settings: discover.home=false means no home scan', async ($, on) => {
+  const { state } = rig($, on, { registry: null, extra: withUser({ 'discover.home': 'false' }, argv => (argv[0] === 'boards' ? ok(report(argv[1]!, [])) : undefined)) })
+  await start($)
+  await cmd($, '')
+  expect(boardRuns(state).some((r: string) => r.includes('/home/me'))).toBe(false)
+})
+
+test('user settings: discover.depth is passed through', async ($, on) => {
+  const { state } = rig($, on, { registry: null, extra: withUser({ 'discover.depth': '2' }, argv => (argv[0] === 'boards' ? ok(report(argv[1]!, [])) : undefined)) })
+  await start($)
+  await cmd($, '')
+  expect(boardRuns(state)).toContain('boards /home/me --depth 2 -j @/home/me')
+})
+
+test('user settings: an older mw (user get fails) keeps the defaults', async ($, on) => {
+  const { state } = rig($, on, { registry: null, extra: withUser('fail', argv => (argv[0] === 'boards' ? ok(report(argv[1]!, [])) : undefined)) })
+  await start($)
+  await cmd($, '')
+  expect(boardRuns(state)).toContain('boards /home/me --depth 4 -j @/home/me')
+  expect(state.toasts.length).toBe(0)
+})
+
+const alertRun = async ($: any, on: any, vals: Record<string, string>) => {
+  const { state, clock } = rig($, on, { extra: withUser(vals) })
+  await start($)
+  await cmd($, 'every 1m')
+  state.round = 1
+  await clock.advance(60_000)
+  return state
+}
+
+test('user settings: alerts.enabled=false suppresses sound and toasts', async ($, on) => {
+  const state = await alertRun($, on, { 'alerts.enabled': 'false' })
+  expect(state.sounds.length).toBe(0)
+  expect(state.toasts.length).toBe(0)
+})
+
+test('user settings: alerts.sound=false and alerts.kinds filter', async ($, on) => {
+  expect((await alertRun($, on, { 'alerts.sound': 'false' })).sounds.length).toBe(0)
+})
+
+test('user settings: alerts.kinds without blocked/ask stays silent', async ($, on) => {
+  expect((await alertRun($, on, { 'alerts.kinds': 'done,release' })).sounds.length).toBe(0)
+})
+
+test('user settings: pane.refresh=off means no poll timer; a saved override wins', async ($, on) => {
+  const { state, clock } = rig($, on, { extra: withUser({ 'pane.refresh': 'off' }) })
+  await start($)
+  const calls = state.alphaCalls
+  await clock.advance(600_000)
+  expect(state.alphaCalls).toBe(calls)
+  await cmd($, 'every 30s')
+  await clock.advance(30_000)
+  expect(state.alphaCalls).toBeGreaterThan(calls)
+})
+
+test('user settings: pane.refresh=15s seeds the timer', async ($, on) => {
+  const { state, clock } = rig($, on, { extra: withUser({ 'pane.refresh': '15s' }) })
+  await start($)
+  const calls = state.alphaCalls
+  await clock.advance(15_000)
+  expect(state.alphaCalls).toBeGreaterThan(calls)
+})

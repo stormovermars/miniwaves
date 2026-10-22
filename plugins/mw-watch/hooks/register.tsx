@@ -13,6 +13,7 @@ import type {
   TidewatchSnapshot,
   TidewatchAsk,
   TidewatchFanfare,
+  TidewatchUserSettings,
   TidewatchFound,
   TidewatchWave,
 } from '../types'
@@ -24,8 +25,21 @@ export const NEWS_MAX = 9500
 const DEFAULT_NEWS = 'docs/news/status.md'
 const jobsTitle = (id: string) => `mw jobs · ${id === '' ? 'no board' : id}`
 const newsTitle = (id: string) => `mw news · ${id}`
-const EVERY = ['off', '30s', '1m', '5m'] as const
-const EVERY_MS: Record<string, number> = { '30s': 30_000, '1m': 60_000, '5m': 300_000 }
+const EVERY = ['off', '15s', '30s', '1m', '5m'] as const
+const EVERY_MS: Record<string, number> = { '15s': 15_000, '30s': 30_000, '1m': 60_000, '5m': 300_000 }
+
+/** The per-user settings from `mw user get -j` that the plugin honours; the defaults are what it did before they existed. */
+export type UserSettings = TidewatchUserSettings
+const ALERT_KINDS = ['blocked', 'ask', 'review', 'done', 'release', 'metrics']
+const DEFAULT_SETTINGS: UserSettings = {
+  alertsEnabled: true,
+  alertKinds: ALERT_KINDS,
+  alertMessage: true,
+  alertSound: true,
+  discoverHome: true,
+  discoverDepth: 4,
+  refresh: undefined,
+}
 
 const registry = atom({ plugin: 'mw-watch', key: 'registry' } as const, { jobs: [], error: null })
 const snapshots = atom({ plugin: 'mw-watch', key: 'snapshots' } as const, {})
@@ -44,6 +58,7 @@ const stalledMin = atom({ plugin: 'mw-watch', key: 'stalledMin' } as const, 45)
 const newsAtom = atom({ plugin: 'mw-watch', key: 'news' } as const, {})
 const busy = atom({ plugin: 'mw-watch', key: 'busy' } as const, [])
 const foundAtom = atom({ plugin: 'mw-watch', key: 'found' } as const, [])
+const userSettings = atom({ plugin: 'mw-watch', key: 'userSettings' } as const, DEFAULT_SETTINGS)
 const fanfareAtom = atom({ plugin: 'mw-watch', key: 'fanfare' } as const, {})
 
 const two = (n: number) => (n < 10 ? `0${n}` : `${n}`)
@@ -995,7 +1010,8 @@ const refreshJob = async ($: any, job: TidewatchJob) => {
       const labels = tenantLabels(job.tenants.length > 0 ? job.tenants : [...new Set(next.waves.map(w => w.id.split(':')[0] ?? ''))])
       const { closed, changes } = diffChanges(old, next, labels)
       const lines = [...closed, ...changes].map(l => `[${job.id}] ${l}`)
-      if (lines.length > 0) {
+      const us0: UserSettings = await read($, userSettings)
+      if (lines.length > 0 && us0.alertsEnabled && us0.alertMessage) {
         const shown = lines.slice(0, 4)
         if (lines.length > 4) shown.push(`+${lines.length - 4} more`)
         $.ui.toast(shown.join('\n'), { timeoutMs: 8000 })
@@ -1011,29 +1027,32 @@ const refreshJob = async ($: any, job: TidewatchJob) => {
       void oldKeys
       const wasNeeding = new Set(needItems(old).map(i => `${i.tenant}:${i.id}`))
       const needing = needItems(next).filter(i => !wasNeeding.has(`${i.tenant}:${i.id}`))
-      const alerts: { key: string; text: string; isUrgent: boolean }[] = [
+      const alerts: { key: string; text: string; isUrgent: boolean; kind: string }[] = [
         ...next.waves
           .filter(w => old.waves.some(o => o.id === w.id && o.state !== 'done') && w.state === 'done')
-          .map(w => ({ key: keyOf('closed', w.id.split(':')[0] ?? '', w.id.split(':')[1] ?? '', String(next.updatedAt)), text: `[${job.id}] Milestone closed: ${waveName(w, labels)} ${w.title}`, isUrgent: false })),
+          .map(w => ({ key: keyOf('closed', w.id.split(':')[0] ?? '', w.id.split(':')[1] ?? '', String(next.updatedAt)), text: `[${job.id}] Milestone closed: ${waveName(w, labels)} ${w.title}`, isUrgent: false, kind: 'done' })),
         ...needing.map(i => ({
           key: keyOf(i.state === 'blocked' ? 'blocked' : 'need', i.tenant, i.id, i.updated),
           text: `[${job.id}] ${i.state === 'blocked' ? 'Blocked' : 'Needs you'}: ${i.tenant}:${i.id} ${i.title}`,
           isUrgent: true,
+          kind: i.state === 'blocked' ? 'blocked' : 'ask',
         })),
       ]
       const isMuted: boolean = await read($, muted)
       if (!isMuted && alerts.length > 0) {
+        const us: UserSettings = await read($, userSettings)
         const fresh = await claimAlerts($, alerts.map(a => a.key))
-        const send = alerts.filter(a => fresh.has(a.key))
+        // every event is remembered, so switching a kind on later does not replay old ones; only the allowed kinds go out
+        const send = us.alertsEnabled ? alerts.filter(a => fresh.has(a.key) && us.alertKinds.includes(a.kind)) : []
         // mw's own fanfare covers a closed milestone: the pane only pings for what needs a person
-        if (send.some(a => a.isUrgent)) {
+        if (us.alertSound && send.some(a => a.isUrgent)) {
           try {
             await $.audio.play({ asset: 'assets/Ping.aiff' })
           } catch {
             // no player: skip
           }
         }
-        for (const a of send.slice(0, 3)) {
+        for (const a of us.alertMessage ? send.slice(0, 3) : []) {
           try {
             await $.ui.notify(a.text, { title: job.title })
           } catch {
@@ -1073,6 +1092,59 @@ const refreshSelected = async ($: any) => {
   if (job) {
     await markSeen($, job.id)
     await refreshJob($, job)
+  }
+}
+
+const TRUE_FALSE = (v: unknown, d: boolean) => (v === 'true' ? true : v === 'false' ? false : d)
+
+/** Reads `mw user get -j`; an older mw (no `user get`) or any failure gives the defaults, silently. */
+const loadUserSettings = async ($: any): Promise<UserSettings> => {
+  let next = DEFAULT_SETTINGS
+  try {
+    const bin = await resolveMw($)
+    if (bin !== undefined) {
+      const r = (await $.process.run([bin, 'user', 'get', '-j'], { cwd: sessionCwd || '/', timeoutMs: 10_000 })) as { exitCode: number; stdout: string }
+      const keys = r.exitCode === 0 ? (parseJson(r.stdout) as { keys?: unknown } | undefined)?.keys : undefined
+      if (Array.isArray(keys)) {
+        const m = new Map<string, unknown>()
+        for (const k of keys) if (k !== null && typeof k === 'object' && typeof (k as { key?: unknown }).key === 'string') m.set((k as { key: string }).key, (k as { value?: unknown }).value)
+        const kinds = m.get('alerts.kinds')
+        const depth = Number(m.get('discover.depth'))
+        const refresh = m.get('pane.refresh')
+        next = {
+          alertsEnabled: TRUE_FALSE(m.get('alerts.enabled'), true),
+          alertKinds: typeof kinds === 'string' ? kinds.split(',').map(x => x.trim()).filter(x => x !== '') : ALERT_KINDS,
+          alertMessage: TRUE_FALSE(m.get('alerts.message'), true),
+          alertSound: TRUE_FALSE(m.get('alerts.sound'), true),
+          discoverHome: TRUE_FALSE(m.get('discover.home'), true),
+          discoverDepth: Number.isInteger(depth) && depth >= 1 && depth <= 6 ? depth : 4,
+          refresh: typeof refresh === 'string' && (EVERY as readonly string[]).includes(refresh) ? refresh : undefined,
+        }
+      }
+    }
+  } catch {
+    // older mw: defaults
+  }
+  await update($, userSettings, () => next)
+  return next
+}
+
+/** The saved per-pane refresh override, if the user ever pressed the button or ran `every`. */
+const savedEvery = async ($: any): Promise<string | undefined> => {
+  try {
+    const v = await $.store.get('refreshEvery')
+    return typeof v === 'string' && (EVERY as readonly string[]).includes(v) ? v : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Re-reads the settings and, when there is no per-pane override, takes pane.refresh as the refresh interval. */
+const syncSettings = async ($: any) => {
+  const us = await loadUserSettings($)
+  if (us.refresh !== undefined && (await savedEvery($)) === undefined) {
+    await update($, refreshEvery, () => us.refresh!)
+    await arm($)
   }
 }
 
@@ -1171,6 +1243,7 @@ const loadFanfare = async ($: any, board: string) => {
 const fanfareSet = async ($: any, board: string, kv: string[]) => {
   const r = await runMw($, board, ['user', 'set', ...kv])
   await loadFanfare($, board)
+  await syncSettings($)
   return r !== undefined && r.exitCode === 0
 }
 
@@ -1397,7 +1470,7 @@ const realDir = async ($: any, dir: string) => {
  * THE board finder (one function, same logic as the mw-jobs pane): tier 1 every board this
  * session used (live hook calls, subagents included, plus the transcript before the plugin loaded),
  * each resolved to its board root and deduped by real path, marked `session` and listed first;
- * tier 2 the session folder (and project root) looked at with --up --depth 3; tier 3, only when both are empty (and not `cheap`), the home folder at depth 4.
+ * tier 2 the session folder (and project root) looked at with --up --depth 3; tier 3, only when both are empty (and not `cheap`) and discover.home is on, the home folder at discover.depth (default 4).
  */
 export const findSessionBoards = async ($: any, opts: { cheap?: boolean } = {}): Promise<{ unsupported: boolean; found: TidewatchFound[] }> => {
   const found: TidewatchFound[] = []
@@ -1440,10 +1513,11 @@ export const findSessionBoards = async ($: any, opts: { cheap?: boolean } = {}):
     await take(r.found, false)
   }
   // tier 3
-  if (found.length === 0 && opts.cheap !== true) {
+  const us: UserSettings = await read($, userSettings)
+  if (found.length === 0 && opts.cheap !== true && us.discoverHome) {
     const home = await homeDir($)
     if (home !== '') {
-      const r = await discover($, home, ['--depth', '4'])
+      const r = await discover($, home, ['--depth', String(us.discoverDepth)])
       if (r.unsupported) return { unsupported: true, found: [] }
       await take(r.found, false)
     }
@@ -1594,6 +1668,7 @@ const styleCommand = async ($: any, rest: string) => {
 /** One command line: `/mw-watch [job | mute | every X | bigger|smaller|reset | style ... | add PATH | remove ID]`. */
 const runCommand = async ($: any, args: string) => {
   const word = args.trim()
+  await syncSettings($)
   if (word === 'mute') return toggleMute($)
   if (word === 'fanfare' || word.startsWith('fanfare ')) return fanfareCommand($, word.slice(7))
   if (word === 'style' || word.startsWith('style ')) return styleCommand($, word.slice(5).trim())
@@ -1609,7 +1684,7 @@ const runCommand = async ($: any, args: string) => {
     await stepBy($, word === 'bigger' ? 1 : word === 'smaller' ? -1 : 0)
     return { text: `mw-watch: size ${word === 'reset' ? 'default' : word}.` }
   }
-  const m = /^every\s+(off|30s|1m|5m)$/.exec(word)
+  const m = /^every\s+(off|15s|30s|1m|5m)$/.exec(word)
   if (m) {
     await setEvery($, m[1]!)
     return { text: `mw-watch: auto-refresh ${m[1]}.` }
@@ -1660,7 +1735,7 @@ const importOldStore = async ($: any) => {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'mw-watch', description: 'Live mw boards: /mw-watch [job | mute | every off|30s|1m|5m | bigger|smaller|reset | style NAME|list|new NAME|import PATH|export NAME PATH | add PATH | remove ID | fanfare on|off|next|use NAME|test]' })
+    await $.command.register({ name: 'mw-watch', description: 'Live mw boards: /mw-watch [job | mute | every off|15s|30s|1m|5m | bigger|smaller|reset | style NAME|list|new NAME|import PATH|export NAME PATH | add PATH | remove ID | fanfare on|off|next|use NAME|test]' })
     await $.command.register({ name: 'mw-fanfare', description: 'Fanfare: /mw-fanfare [on | off | next | use NAME | test]' })
     await $.command.register({ name: 'tidewatch', description: 'Deprecated alias of /mw-watch (same subcommands); the old name goes in the next release.' })
     sessionCwd = String((e as { cwd?: string }).cwd ?? '')
@@ -1685,6 +1760,8 @@ export const register: Register = on => {
       // defaults
     }
     await resolveMw($)
+    const us = await loadUserSettings($)
+    if (us.refresh !== undefined && (await savedEvery($)) === undefined) await update($, refreshEvery, () => us.refresh!)
     await loadRegistry($)
     if ((await read($, registry)).jobs.length === 0) await sessionDiscover($)
     void openJobs($)
