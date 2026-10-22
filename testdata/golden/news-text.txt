@@ -1,0 +1,49 @@
+══ Tiny <job> ══════════════════════════════════════════════════════════════════
+Updated <NOW> local
+Page: https://example.com/news?a=1&b=2
+
+── HEADLINE ────────────────────────────────────────────────────────────────────
+1 need you; 1 blocked; 1 in progress; 2 of 5 done.
+
+── ! NEEDS YOU ─────────────────────────────────────────────────────────────────
+▸ TSK-001 Doc work (doc): Keep | or cut `X`? @carol
+
+── ◐ BLOCKED ───────────────────────────────────────────────────────────────────
+▸ TSK-003 Wait for keys (news-app): needs <b>keys</b> second line
+
+── IN PROGRESS ─────────────────────────────────────────────────────────────────
+▸ TSK-001 Doc work (doc): @carol
+
+── ✓ MILESTONES ────────────────────────────────────────────────────────────────
+│ MILESTONE                 │ DONE/TOTAL │ STATE │ PROGRESS             │
+├───────────────────────────┼────────────┼───────┼──────────────────────┤
+│ WAV-001 First | milestone │ 1/2        │ ready │ ██████████░░░░░░░░░░ │
+
+── DECISIONS ───────────────────────────────────────────────────────────────────
+▸ 10-22 11:13 decide: CHR-001 Decisions (doc) @sir - Ship <it> (why: cheap)
+
+── LAST EVENTS ─────────────────────────────────────────────────────────────────
+▸ 10-22 11:13 decide: CHR-001 Decisions (doc) @sir - Ship <it> (why: cheap)
+▸ 10-22 11:06 created: CHR-001 Decisions (doc)
+▸ 10-22 10:59 ask: TSK-001 Doc work (doc) @carol - Keep | or cut `X`?
+▸ 10-22 10:52 start: TSK-001 Doc work (doc) @carol
+▸ 10-22 10:45 ready: TSK-001 Doc work (doc)
+▸ 10-22 10:38 created: TSK-001 Doc work (doc)
+▸ 10-22 10:31 block: TSK-003 Wait for keys (news-app) @bob - needs <b>keys</b> s
+▸ 10-22 10:24 start: TSK-003 Wait for keys (news-app) @bob
+▸ 10-22 10:17 ready: TSK-003 Wait for keys (news-app)
+▸ 10-22 10:10 created: TSK-003 Wait for keys (news-app)
+▸ 10-22 10:03 wave-add: TSK-002 Pipe | in `title` & more (news-app) - WAV-001
+▸ 10-22 09:56 ready: TSK-002 Pipe | in `title` & more (news-app)
+▸ 10-22 09:49 created: TSK-002 Pipe | in `title` & more (news-app)
+▸ 10-22 09:42 done: TSK-001 Fix <script>alert(1)</script> now (news-app) @alice 
+▸ 10-22 09:35 start: TSK-001 Fix <script>alert(1)</script> now (news-app) @alice
+▸ 10-22 09:28 wave-add: TSK-001 Fix <script>alert(1)</script> now (news-app) - W
+▸ 10-22 09:21 ready: TSK-001 Fix <script>alert(1)</script> now (news-app)
+▸ 10-22 09:14 created: TSK-001 Fix <script>alert(1)</script> now (news-app)
+▸ 10-22 09:07 created: WAV-001 First | milestone (news-app)
+
+┌─ Summary ────────────────────────────────────────────────────────────────┐
+│ Harness: 3 pass                                                              │
+│ <script>alert(1)</script> | ``` fence                                        │
+└──────────────────────────────────────────────────────────────────────────────┘

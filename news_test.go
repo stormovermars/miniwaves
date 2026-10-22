@@ -228,3 +228,157 @@ func TestNewsIsAWrite(t *testing.T) {
 		t.Fatal("news must take the write lock")
 	}
 }
+
+func newsTextOutput(t *testing.T, width string) string {
+	t.Helper()
+	args := []string{"news", "--job", "tiny", "--format", "text"}
+	if width != "" {
+		args = append(args, "--width", width)
+	}
+	return captureOutput(t, func() { runAll(t, args) })
+}
+
+func TestNewsTextGolden(t *testing.T) {
+	newsBoard(t)
+	t.Setenv("COLUMNS", "")
+	got := newsTextOutput(t, "80")
+	got = strings.ReplaceAll(got, time.Now().Format("2006-01-02 15:04"), "<NOW>")
+	checkGolden(t, "news-text", got)
+	for _, bad := range []string{"\x1b", "\r", "\\|", "&lt;", "&amp;"} {
+		if strings.Contains(got, bad) {
+			t.Fatalf("text output contains %q", bad)
+		}
+	}
+	for _, l := range strings.Split(got, "\n") {
+		if newsStrWidth(l) > 80 {
+			t.Fatalf("line wider than 80: %q", l)
+		}
+	}
+	if _, err := os.Stat("docs"); err == nil {
+		t.Fatal("text wrote the news.out default")
+	}
+}
+
+func TestNewsTextWidthClamp(t *testing.T) {
+	for _, c := range []struct {
+		flag, env string
+		want      int
+	}{
+		{"", "", 80}, {"10", "", 40}, {"500", "", 160}, {"", "100", 80}, {"60", "100", 60}, {"", "abc", 80},
+	} {
+		t.Setenv("COLUMNS", c.env)
+		if got, err := newsTextWidth(c.flag); err != nil || got != c.want {
+			t.Fatalf("%+v: %d %v", c, got, err)
+		}
+	}
+	if _, err := newsTextWidth("x"); err == nil {
+		t.Fatal("bad width accepted")
+	}
+	newsBoard(t)
+	for _, w := range []string{"10", "500"} {
+		max := map[string]int{"10": 40, "500": 160}[w]
+		for _, l := range strings.Split(newsTextOutput(t, w), "\n") {
+			if n := newsStrWidth(l); n > max {
+				t.Fatalf("width %s: %d cells: %q", w, n, l)
+			}
+		}
+	}
+}
+
+func TestNewsTextControlStripped(t *testing.T) {
+	if got := newsClean("a\x1b[31mred\x07\x00b‮c\tz\nq", false); got != "a[31mredbc z q" {
+		t.Fatalf("clean: %q", got)
+	}
+	p := newsPart{title: "T\x1b]0;x\x07itle", summary: "s\x1b[2Jum\nline"}
+	d := newsData{needs: []newsLine{{"A-1", "t", "evil \x1b[31m title", "d\x9bx"}}}
+	out := strings.ReplaceAll(renderNewsText(p, d, 80), newsStampMarker, "now")
+	for _, r := range out {
+		if r != '\n' && (r < 0x20 || (r >= 0x7f && r <= 0x9f) || r == 0x202e) {
+			t.Fatalf("control rune %U in output:\n%q", r, out)
+		}
+	}
+}
+
+func TestNewsTextWideRunes(t *testing.T) {
+	if newsStrWidth("日本語") != 6 || newsStrWidth("abc") != 3 || newsStrWidth("é") != 1 {
+		t.Fatal("rune widths")
+	}
+	if got := newsCut("日本語abc", 5); got != "日本" {
+		t.Fatalf("cut: %q", got)
+	}
+	d := newsData{needs: []newsLine{{"A-1", "t", strings.Repeat("日本語", 40), ""}}}
+	for _, l := range strings.Split(renderNewsText(newsPart{title: "日本語"}, d, 60), "\n") {
+		if newsStrWidth(l) > 60 {
+			t.Fatalf("wide line over 60 cells: %q", l)
+		}
+	}
+}
+
+func TestNewsTextTableAlignsSlash(t *testing.T) {
+	d := newsData{miles: []newsMile{
+		{"WAV-001", "a", "First", "1/2", "ready"}, {"WAV-002", "bb", "Second", "10/100", "doing"}, {"WAV-003", "c", "Third", "100/100", "done"},
+	}}
+	out := renderNewsText(newsPart{title: "J"}, d, 100)
+	slash, bar := -1, -1
+	n := 0
+	for _, l := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(l, "│ WAV-") {
+			continue
+		}
+		n++
+		rs := []rune(l)
+		si := -1
+		for i, r := range rs {
+			if r == '/' {
+				si = i
+			}
+		}
+		bi := strings.IndexAny(l, "█░")
+		bi = len([]rune(l[:bi]))
+		if slash == -1 {
+			slash, bar = si, bi
+		}
+		if si != slash || bi != bar {
+			t.Fatalf("misaligned (slash %d vs %d, bar %d vs %d): %q", si, slash, bi, bar, l)
+		}
+	}
+	if n != 3 {
+		t.Fatalf("rows: %d", n)
+	}
+}
+
+func TestNewsTextTableNarrow(t *testing.T) {
+	mk := func(tenants ...string) newsData {
+		var d newsData
+		for i, tn := range tenants {
+			d.miles = append(d.miles, newsMile{fmt.Sprintf("WAV-%03d", i+1), tn, "A very long milestone title for narrow terminals", "3/4", "ready"})
+		}
+		return d
+	}
+	for _, w := range []int{40, 50, 60, 80} {
+		for _, d := range []newsData{mk("one", "one"), mk("one", "two")} {
+			out := renderNewsText(newsPart{title: "J"}, d, w)
+			rows := 0
+			for _, l := range strings.Split(out, "\n") {
+				if newsStrWidth(l) > w {
+					t.Fatalf("w=%d over: %q", w, l)
+				}
+				if strings.HasPrefix(l, "│ WAV-") || strings.HasPrefix(l, "│ MILE") {
+					rows++
+					if !strings.Contains(l, "ready") && !strings.Contains(l, "STATE") {
+						t.Fatalf("w=%d state lost: %q", w, l)
+					}
+					if strings.Contains(l, "…") {
+						t.Fatalf("ellipsis: %q", l)
+					}
+				}
+			}
+			if rows != 3 {
+				t.Fatalf("w=%d rows %d:\n%s", w, rows, out)
+			}
+			if single := d.miles[0].Tenant == d.miles[1].Tenant; single == (strings.Count(strings.SplitN(out[strings.Index(out, "│ MILE"):], "\n", 2)[0], "│") == 6) {
+				t.Fatalf("w=%d tenant column wrong (single=%v)", w, single)
+			}
+		}
+	}
+}
