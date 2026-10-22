@@ -123,11 +123,8 @@ test('two jobs: status, switching, alerts once, refresh, timer', async ($, on) =
   await cmd($, 'style blocks')
 
   expect(state.toasts.length).toBe(0)
-  const status = String(state.statuses.at(-1))
-  expect(status).toContain('! alpha 1 need you · C2 5/6')
-  expect(status).toContain('W-M4 0/16')
-  expect(status).toContain(' │ demo ▸ D1 1/2')
-  expect(status).not.toContain('X9')
+  // the bottom bar belongs to mw-jobs: this plugin draws no status
+  expect(state.statuses).toEqual([])
   // mw is always reached by its absolute path, never as a bare name
   expect([...state.argv0]).toEqual([MW])
 
@@ -253,7 +250,6 @@ test('an empty registry shows the how-to, no toast', async ($, on) => {
     await ui.unmount()
   }
   expect(state.toasts.length).toBe(0)
-  expect(String(state.statuses.at(-1))).toBe('undefined')
   expect((await cmd($, '')).text).toContain('no boards found')
 })
 
@@ -638,7 +634,6 @@ test('add and remove boards in the registry', async ($, on) => {
   expect(await ui.find({ key: 'job-fresh' })).toBeDefined()
   expect(await ui.find({ key: 'job-demo' })).toBeDefined()
   await ui.unmount()
-  expect(String(state.statuses.at(-1))).toContain('demo')
 
   expect((await cmd($, 'remove ghost')).text).toContain('unknown job "ghost"')
   expect((await cmd($, 'remove demo')).text).toBe('mw-watch: removed demo.')
@@ -647,7 +642,6 @@ test('add and remove boards in the registry', async ($, on) => {
   const empty = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await empty.find({ type: 'Text', text: /No boards yet/ })).toBeDefined()
   await empty.unmount()
-  expect(String(state.statuses.at(-1))).toBe('undefined')
 })
 
 // ---- the news pane ----
@@ -723,10 +717,6 @@ const jobsExtra = (argv: string[], cwd: string) =>
 test('jobs: one tab per job with pane on, a board with no jobs stays one job', async ($, on) => {
   const { state } = rig($, on, { extra: jobsExtra, files: { '/boards/alpha/docs/news/status.md': '# alpha news', '/boards/alpha/out/web.md': '# web news' } })
   await start($)
-  const status = String(state.statuses.at(-1))
-  expect(status).toContain('alpha-job')
-  expect(status).not.toContain('hidden')
-  expect(status).toContain('demo ▸')
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ key: 'job-alpha/alpha-job' })).toBeDefined()
   expect(await ui.find({ key: 'job-alpha/web' })).toBeDefined()
@@ -909,14 +899,16 @@ const FOUND = (dir: string, name: string, tenants: string[], error = '') => ({ d
 const report = (root: string, boards: unknown[]) => ({ root, boards, truncated: false, reason: '' })
 const boardRuns = (state: any) => state.runs.filter((r: string[]) => r[1] === 'boards').map((r: string[]) => r.slice(1).join(' '))
 
-test('bare /mw-watch with an empty registry discovers boards from the session folder', async ($, on) => {
+test('session start with an empty registry discovers the session folder board; no status line is drawn', async ($, on) => {
   const { state } = rig($, on, {
     registry: null,
     extra: argv => (argv[0] === 'boards' ? ok(report('/work', [FOUND('/work/proj', 'P', ['a', 'old', 'b']), FOUND('/work/bad', 'B', ['x'], 'unreadable')])) : undefined),
   })
   await start($)
-  expect((await cmd($, '')).text).toBe('mw-watch: found 1 board (proj).')
+  // found at session.start: no /mw-watch add, no ~ scan
   expect(boardRuns(state)).toEqual(['boards /work --up --depth 3 -j @/work'])
+  expect(state.statuses).toEqual([])
+  expect((await cmd($, '')).text).toBe('mw-watch pane opened.')
   const jobs = (state.store.get('registry') as { jobs: Record<string, { board: string; tenants: string[] }> }).jobs
   expect(jobs.proj).toMatchObject({ board: '/work/proj', tenants: ['a', 'b'] })
   expect(Object.keys(jobs)).toEqual(['proj'])
@@ -930,7 +922,8 @@ test('nothing near the session folder: the home folder is scanned', async ($, on
   })
   await start($)
   expect((await cmd($, '')).text).toContain('found 1 board (x)')
-  expect(boardRuns(state)).toEqual(['boards /work --up --depth 3 -j @/work', 'boards /home/me --depth 4 -j @/home/me'])
+  // session start looks at the session folder only (cheap); the bare command goes on to the home folder
+  expect(boardRuns(state)).toEqual(['boards /work --up --depth 3 -j @/work', 'boards /work --up --depth 3 -j @/work', 'boards /home/me --depth 4 -j @/home/me'])
 })
 
 test('an mw without `boards` falls back with a toast', async ($, on) => {
@@ -1011,6 +1004,8 @@ test('every board the session used is found first, deduped by real path, marked 
   await $.tool.call({ tool: 'Bash', command: 'mw -C /link/c ls', agentId: 'sub1' } as never)
   await $.tool.call({ tool: 'Bash', command: 'mw -C /real/c ls' } as never)
   await $.tool.call({ tool: 'Write', file_path: '/wt/d/.miniwaves/x' } as never)
+  // session start already registered the cheap finds; empty the registry so the bare command discovers again
+  for (const id of ['a', 'b', 'cwdboard']) await cmd($, `remove ${id}`)
   const text = (await cmd($, '')).text
   expect(text).toBe('mw-watch: found 5 boards (a [this session], b [this session], c [this session], d [this session], cwdboard).')
   expect(Object.keys((state.store.get('registry') as { jobs: object }).jobs)).toEqual(['a', 'b', 'c', 'd', 'cwdboard'])

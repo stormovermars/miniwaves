@@ -2,7 +2,7 @@
 
 Formerly `tidewatch` (renamed in 0.3.4; `/tidewatch` is a deprecated alias for one release, and your boards and settings are imported on first start).
 
-A live pane for your [miniwaves](../../README.md) (`mw`) boards: a status line, toasts, a ping when something needs a person, and a news page. It needs no setup: bare `/mw-watch` finds your boards and their tenants by itself.
+A live pane for your [miniwaves](../../README.md) (`mw`) boards: toasts, a ping when something needs a person, and a news page. It needs no setup: bare `/mw-watch` finds your boards and their tenants by itself.
 
 ## Install and open
 

@@ -189,28 +189,6 @@ export const summaryParts = (a: Analysis, h: Headline, ready: number): { text: s
   return out
 }
 
-export const statusSegment = (
-  job: TidewatchJob,
-  s: TidewatchSnapshot | undefined,
-  stale: number | undefined,
-) => {
-  if (s === undefined) return `${job.id} ▸ ${stale === undefined ? 'loading' : 'mw unavailable'}`
-  const labels = tenantLabels(job.tenants.length > 0 ? job.tenants : [...new Set(s.waves.map(w => w.id.split(':')[0] ?? ''))])
-  const needs = needItems(s).length
-  const parts = s.waves
-    .filter(w => w.state !== 'done' && memberParts(w).total > 0)
-    .map(w => `${waveName(w, labels)} ${w.members}`)
-  if (needs > 0) parts.unshift(`${needs} need you`)
-  const doing = s.items.filter(i => i.state === 'doing').length
-  const blocked = s.items.filter(i => i.state === 'blocked').length
-  parts.push(`${doing} doing`)
-  if (blocked > 0) parts.push(`${blocked} blocked`)
-  const tail = stale === undefined ? '' : ` (stale since ${hhmm(stale)})`
-  return needs > 0
-    ? `! ${job.id} ${parts.join(' · ')}${tail}`
-    : `${job.id} ▸ ${parts.join(' · ')}${tail}`
-}
-
 export const diffChanges = (
   prev: TidewatchSnapshot,
   next: TidewatchSnapshot,
@@ -877,7 +855,7 @@ const openJobs = async ($: any) => {
 }
 
 const openNews = async ($: any, wanted: string) => {
-  const reg = await loadRegistry($)
+  const reg = await registryWithDiscovery($)
   if (reg.jobs.length === 0) return { text: 'mw-watch: no boards yet. Add one with /mw-watch add PATH.' }
   const id = wanted !== '' ? wanted : await read($, selected)
   const job = findJob(reg.jobs, id)
@@ -886,17 +864,6 @@ const openNews = async ($: any, wanted: string) => {
   await loadNews($, job)
   await $.ui.open({ id: NEWS_PANE, title: newsTitle(job.name || job.id), focus: true })
   return { text: `mw-watch: news pane opened for ${job.id}.` }
-}
-
-const renderStatus = async ($: any) => {
-  const reg: TidewatchRegistry = await read($, registry)
-  if (reg.jobs.length === 0) {
-    $.ui.status(undefined)
-    return
-  }
-  const snaps: Record<string, TidewatchSnapshot> = await read($, snapshots)
-  const stale: Record<string, number> = await read($, staleSince)
-  $.ui.status(reg.jobs.map(j => statusSegment(j, snaps[j.id], stale[j.id])).join(' │ '))
 }
 
 const setBusy = async ($: any, id: string, on: boolean) => {
@@ -1002,7 +969,6 @@ const refreshJob = async ($: any, job: TidewatchJob) => {
 
     if (hasNothing) {
       await update($, staleSince, (s: Record<string, number>) => ({ ...s, [job.id]: s[job.id] ?? now }))
-      await renderStatus($)
       return
     }
     const next: TidewatchSnapshot = {
@@ -1019,7 +985,6 @@ const refreshJob = async ($: any, job: TidewatchJob) => {
       const { [job.id]: was, ...rest } = s
       return isOk ? rest : { ...rest, [job.id]: was ?? now }
     })
-    await renderStatus($)
     const cursors: Record<string, TidewatchSeen> = await read($, seen)
     if (cursors[job.id] === undefined) {
       await update($, seen, (m: Record<string, TidewatchSeen>) => ({ ...m, [job.id]: { ts: now, harness: harnessBase(next) } }))
@@ -1091,7 +1056,6 @@ const refreshAll = async ($: any) => {
     const sel: string = await read($, selected)
     await refreshStyleNames($)
     await resolveStyle($, await read($, styleName))
-    await renderStatus($)
     const cur = reg.jobs.find(j => j.id === sel)
     if (cur !== undefined && (await read($, newsAtom))[cur.id] !== undefined) await loadNews($, cur)
     await Promise.all([...new Set(reg.jobs.map(j => j.board))].map(b => loadFanfare($, b)))
@@ -1245,7 +1209,7 @@ const fanfareTest = async ($: any, board: string): Promise<{ ok: boolean; reason
 }
 
 const fanfareCommand = async ($: any, rest: string) => {
-  const reg = await loadRegistry($)
+  const reg = await registryWithDiscovery($)
   const id: string = await read($, selected)
   const job = reg.jobs.find(j => j.id === id) ?? reg.jobs[0]
   if (job === undefined) return { text: 'mw-watch: no boards yet. Add one with /mw-watch add PATH.' }
@@ -1283,7 +1247,7 @@ const fanfareSlash = async ($: any, args: string) => {
     const r = await fanfareCommand($, w === 'next' || w === 'cycle' ? 'next' : w)
     return { text: r.text.replace('/mw-watch fanfare', '/mw-fanfare') }
   }
-  const reg = await loadRegistry($)
+  const reg = await registryWithDiscovery($)
   const id: string = await read($, selected)
   const job = reg.jobs.find(j => j.id === id) ?? reg.jobs[0]
   if (job === undefined) return { text: 'mw-watch: no boards yet. Run /mw-watch first.' }
@@ -1433,9 +1397,9 @@ const realDir = async ($: any, dir: string) => {
  * THE board finder (one function, same logic as the mw-jobs pane): tier 1 every board this
  * session used (live hook calls, subagents included, plus the transcript before the plugin loaded),
  * each resolved to its board root and deduped by real path, marked `session` and listed first;
- * tier 2 the session folder (and project root) looked at with --up --depth 3; tier 3, only when both are empty, the home folder at depth 4.
+ * tier 2 the session folder (and project root) looked at with --up --depth 3; tier 3, only when both are empty (and not `cheap`), the home folder at depth 4.
  */
-export const findSessionBoards = async ($: any): Promise<{ unsupported: boolean; found: TidewatchFound[] }> => {
+export const findSessionBoards = async ($: any, opts: { cheap?: boolean } = {}): Promise<{ unsupported: boolean; found: TidewatchFound[] }> => {
   const found: TidewatchFound[] = []
   const seen = new Set<string>()
   const take = async (list: TidewatchFound[], session: boolean) => {
@@ -1476,7 +1440,7 @@ export const findSessionBoards = async ($: any): Promise<{ unsupported: boolean;
     await take(r.found, false)
   }
   // tier 3
-  if (found.length === 0) {
+  if (found.length === 0 && opts.cheap !== true) {
     const home = await homeDir($)
     if (home !== '') {
       const r = await discover($, home, ['--depth', '4'])
@@ -1500,6 +1464,20 @@ const autoDiscover = async ($: any): Promise<string> => {
   const reg = await readRegistry($)
   const label = (id: string) => (used.has(reg.jobs.find(j => j.id === id)?.board ?? '') ? `${id} [this session]` : id)
   return `mw-watch: found ${listIds(added.length)} (${added.map(label).join(', ')}).`
+}
+
+/** Session start: the cheap sources only (boards the session used, the session folder), never the home folder. */
+const sessionDiscover = async ($: any) => {
+  const res = await findSessionBoards($, { cheap: true })
+  if (!res.unsupported) await addFound($, res.found)
+}
+
+/** The registry, after zero-setup discovery when it is empty, so "no boards yet" is only said when discovery found nothing. */
+const registryWithDiscovery = async ($: any): Promise<TidewatchRegistry> => {
+  const reg = await loadRegistry($)
+  if (reg.jobs.length > 0) return reg
+  await autoDiscover($)
+  return loadRegistry($)
 }
 
 const scanCommand = async ($: any, dir: string): Promise<{ text: string }> => {
@@ -1557,7 +1535,6 @@ const removeBoard = async ($: any, id: string) => {
   await update($, seen, drop)
   await saveSeen($)
   await loadRegistry($)
-  await renderStatus($)
   return { text: `mw-watch: removed ${id}.` }
 }
 
@@ -1709,6 +1686,7 @@ export const register: Register = on => {
     }
     await resolveMw($)
     await loadRegistry($)
+    if ((await read($, registry)).jobs.length === 0) await sessionDiscover($)
     void openJobs($)
     await arm($)
     await refreshAll($)
