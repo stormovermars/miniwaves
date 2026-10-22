@@ -164,3 +164,34 @@ func TestSessionRoleCeremonyGoldens(t *testing.T) {
 		}
 	}
 }
+
+// The docs and the prompts must agree on the ceremony names, and the added PROTOCOL.md prose must not
+// turn into protocol steps.
+func TestCeremonyDocs(t *testing.T) {
+	usage, err := os.ReadFile("USAGE.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proto, err := os.ReadFile("PROTOCOL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range ceremonyNames {
+		if !strings.Contains(string(usage), "`"+n+"`") {
+			t.Errorf("USAGE.md does not document ceremony %q", n)
+		}
+	}
+	for _, want := range []string{"### Ceremonies", "`ready_min`", "never read from repo files", "Steps only a human performs"} {
+		if !strings.Contains(string(usage), want) {
+			t.Errorf("USAGE.md missing %q", want)
+		}
+	}
+	for _, step := range []string{"merge", "push", "tag"} {
+		if !strings.Contains(string(proto), "| "+step+" |") {
+			t.Errorf("PROTOCOL.md does not list human-only step %q", step)
+		}
+	}
+	if len(defaultProtocol) != 11 {
+		t.Errorf("default protocol has %d steps, want 11", len(defaultProtocol))
+	}
+}

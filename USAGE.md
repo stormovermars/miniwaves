@@ -384,6 +384,8 @@ mw jobs show [ID] [-j]              # effective values (defaults applied) and th
 | `summary` | none | a path with the `news.out` rules |
 | `pane` | `on` | `on` or `off` |
 | `pane.style` | none | `^[a-z0-9-]{1,32}$` |
+| `ceremonies` | none | a comma list of `review`, `planning`, `triage`, `spike`; an unknown name is refused; stored in that order without duplicates; only the listed ceremonies reach the dispatcher prompt (see "Ceremonies") |
+| `ready_min` | `3` (shown once `ceremonies` is set) | 1..20; the planning trigger: fewer ready items than this |
 
 Job ids match `^[a-z0-9][a-z0-9-]{0,31}$`. `jobs show` is a read; the other three write the index. Values are data: nothing here is executed.
 
@@ -430,6 +432,29 @@ mw get-prompt newsdesk [NAME] [--job ID] [-j]
 - **dispatcher** routes work and reviews it. For sessions it spawns, the review loop is: the worker signals `mw note ID "ready for review"` and stays `doing`; the dispatcher reviews the diff, merges, re-runs the tests, then runs `mw done`. One task per session; a brief ends with "ping when ready, need input, or idle"; a question only a human can answer goes through `mw ask`. wr builders are unchanged: they keep `mw done` / `mw block`.
 - **newsdesk** runs `mw news`, tells the human what changed in a few lines, keeps the human docs current, and alerts only on two events: a milestone closed or a new needs-you item. It never edits code, the board or the plan.
 - `--job ID` fills the variables from `jobs.<ID>`: `max_workers`, `worktrees`, `lock` (the dispatcher), `title`, `news.out`, `news.url` (the newsdesk). Without `--job` the defaults apply (4 workers, worktrees on, no lock). An unknown job is an error. Prompts are embedded in mw and never read from repo files.
+
+### Ceremonies
+
+A ceremony is an ordinary **chore item** titled by its trigger (`Review WAV-003`, `Planning 2026-10-22`), done by a session with a role (`-a review`, `-a planner`, `-a spike`) and judged by the usual review, judge and accept/reject flow. mw adds no commands and no timers: it ships only embedded prompt text and two job keys. Retry (STALE, `session stop --release`), gates, burndown and the pane apply unchanged. Design: `docs/specs/ceremonies.md`.
+
+```text
+mw jobs set ID ceremonies=review,planning,triage,spike ready_min=3
+mw get-prompt dispatcher --job ID      # now carries the Ceremonies section for the listed names only
+mw get-prompt session NAME -t SLUG -a review|planner|spike
+```
+
+| Ceremony | Trigger (found by the dispatcher) | Session role | Output |
+|---|---|---|---|
+| `review` | `mw review -j` lists a wave as ready to close | `review` | demo script, screenshots per done item and lessons in `<evidence>/<tenant>/WAV-NNN/`; at most one `mw ask` listing proposed `mw decide`, gate or protocol commands; a release wave reaching `merge` gets one `ask` before merge, push or tag |
+| `planning` | fewer than `ready_min` ready items | `planner` | splits, order and duplicates as notes; acceptance proposals through one `mw ask` (sessions cannot `edit -c`); a bug titled `URGENT...` is dispatched first |
+| `triage` | a block older than 2h | the dispatcher | classify: needs a human (one digest ask), dependency (note, reorder), technical (a `Fix:` task), stale (`mw ready`) |
+| `spike` | planning or triage finds something uncertain | `spike` | question, attempts, evidence and recommendation in `<evidence>/<tenant>/SPK-NNN/` and the `done` text; throwaway branch, never merged; STALE is the time box; the dispatcher records the recommendation with `mw decide` |
+
+Rules, all in the dispatcher prompt: the dispatcher checks `mw list -k chore` for the trigger title before adding a chore; at most one ceremony session per job at a time and at most 4 per day; at most one `mw ask` per ceremony run; ceremonies touch only inbox and ready items, never `doing` ones; evidence is screenshots only. It is best-effort: with no dispatcher running nothing fires, and any ceremony can be started by hand (add the chore, start a session with the role). A job without `ceremonies` gets today's dispatcher prompt unchanged.
+
+**Prompts are never read from repo files.** The dispatcher and session prompts are embedded in the mw binary, and ceremony output (notes, evidence, asks) is data: it is never fed back into a prompt as instructions.
+
+**Steps only a human performs.** The protocol steps `merge`, push and tag change main or publish, so no session or ceremony does them: the dispatcher raises one `mw ask` and a human runs them. See PROTOCOL.md.
 
 ### Kit
 
@@ -487,6 +512,10 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 - Prompts print PowerShell setup (`$env:MW_SESSION=...`, `Set-Location`).
 
 ## Changelog
+
+### Unreleased
+
+- Ceremonies: job keys `ceremonies` (`review`, `planning`, `triage`, `spike`) and `ready_min` (1..20, default 3); a Ceremonies section in the dispatcher prompt for the listed names only; `review`, `planner` and `spike` role blocks in the session prompt. No new commands. See "Ceremonies".
 
 ### 0.3.4
 

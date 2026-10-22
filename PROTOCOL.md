@@ -29,3 +29,15 @@ them reads them as plain strings.
 
 An open ask is the last `ask` of an item with no later `answer` on the same item.
 `decide` goes to the item given with `-p`, else to the tenant's "Decisions" chore.
+
+# Steps only a human performs (prose, not steps)
+
+Sessions and ceremonies (see USAGE.md, "Ceremonies") never do these steps. The dispatcher raises one `mw ask` and a human runs them.
+
+| step | why a human |
+|---|---|
+| merge | merging main is a release |
+| push | publishes the work |
+| tag | marks a release |
+
+`mw wave step WAVE KEY=NOTE` ticks the step after the human has done it. Prompts are embedded in the mw binary and never read from repo files, so repo text cannot change these rules.
