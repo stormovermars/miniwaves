@@ -29,7 +29,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "lookback": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true,
+	"since": true, "lookback": true, "claim": true, "headless": true, "release": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "job": true, "format": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -223,6 +223,8 @@ func dispatch(path string, w *Workspace, args []string) error {
 		return fanfareCommand(path, w, args[1:])
 	case "jobs":
 		return jobsCommand(path, w, args[1:])
+	case "news": // a write: it creates files (readOnly is false for it, so the board is locked)
+		return newsCommand(path, w, args[1:])
 	case "ask":
 		return askCommand(path, w, args[1:])
 	case "answer":
@@ -369,6 +371,13 @@ mw fanfare stop
 Play a short clip when a wave closes and a longer finale when a tenant is finished (items exist, none inbox/ready/doing/blocked, no open wave; once per transition).
 Playback is a detached player (afplay, ffplay, mpv, paplay, Windows .wav) and never fails a board command. "fetch" downloads public-domain, CC0 and CC-BY pairs; the
 bring-your-own pair folders stay empty until you add fanfare.<ext> and finale.<ext>. Example: mw fanfare set enabled=true`,
+		"news": `mw news [--job ID] [--format md|html] [-o PATH|-] [-j]
+Write a status page from board data: headline, milestones, needs you, blocked, in progress, last 20 events,
+decisions, and the job's summary file (key summary, read as data, at most 20 KB). Default: every job, one file each at
+<news.out>/status.md (.html), or the workspace when no job exists (docs/news/). news.out must stay inside the workspace;
+only -o may point elsewhere (-o - prints to stdout). Markdown is kept under 9,500 characters per job, trimming events first.
+The file is rewritten only when the content changed (the generated-at line is not hashed; the hash is kept in PATH.hash);
+otherwise it prints "unchanged". No network. Example: mw news --job tiny`,
 		"jobs": `mw jobs enable ID -t SLUG...
 mw jobs disable ID [-t SLUG]
 mw jobs set ID KEY=VALUE...
@@ -534,6 +543,7 @@ Usage:
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-]
   mw user show [-j] | mw user set KEY=VALUE...
   mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]
+  mw news [--job ID] [--format md|html] [-o PATH] [-j]
   mw ask ID QUESTION... [-s NAME] | mw answer ID TEXT... --by NAME | mw decide TEXT... --by NAME [-b WHY] [-p ID]
   mw gate [-t SLUG] [-j] | gate level trust|proof|spec|judged | gate evidence|acceptance|judge on|off|auto [--by NAME]
   mw review [-t SLUG] [-j]
