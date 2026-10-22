@@ -19,7 +19,7 @@ Schema 8 stores each tenant in its own file: `.miniwaves.json` is the index, ite
 
 ## Schema 9 (0.3.0)
 
-Schema 9 changes no file layout: `mw migrate` rewrites the index with `"version":9` (backup `.miniwaves.json.bak8`) and nothing else. It exists because 0.3.0 adds index keys (`jobs`, a tenant's `job`, fanfare `sets` and `use`) that a 0.2.8 or older mw drops when it saves the index. A 0.2.8 mw refuses a schema 9 board ("workspace schema 9 is newer than this mw supports: upgrade mw") instead of rewriting it, and 0.3.0 refuses a schema 8 board until you run `mw migrate`. Upgrade every machine and CI image to 0.3.0 before migrating the committed board.
+Schema 9 changes no file layout: `mw migrate` rewrites the index with `"version":9` (backup `.miniwaves.json.bak8`) and nothing else. It exists because 0.3.0 adds index keys (`jobs`, a tenant's `job`, fanfare `sets` and `use`) that a 0.2.8 or older mw drops when it saves the index. Job keys written by 0.2.9-dev builds with dotted names (`news.out`, `news.url`, `pane.style`) are read as before and rewritten as `news_out`, `news_url`, `pane_style` (idempotent; unknown job keys are kept). A 0.2.8 mw refuses a schema 9 board ("workspace schema 9 is newer than this mw supports: upgrade mw") instead of rewriting it, and 0.3.0 refuses a schema 8 board until you run `mw migrate`. Upgrade every machine and CI image to 0.3.0 before migrating the committed board.
 
 ## One mw version per workspace
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
@@ -32,6 +33,74 @@ type JobConfig struct {
 	Summary     string `json:"summary,omitempty"`
 	Pane        string `json:"pane,omitempty"`
 	PaneStyle   string `json:"pane_style,omitempty"`
+
+	extra map[string]json.RawMessage // keys this mw does not know: kept, written back
+}
+
+// jobDotted maps the 0.2.9-dev dotted storage keys to their snake_case names.
+var jobDotted = map[string]string{"news.out": "news_out", "news.url": "news_url", "pane.style": "pane_style"}
+
+// UnmarshalJSON reads the snake_case keys, falls back to the old dotted ones when the new one is missing,
+// and keeps unknown keys. Writing always uses the snake_case names, so a save migrates the board.
+func (c *JobConfig) UnmarshalJSON(b []byte) error {
+	type plain JobConfig
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	known := map[string]bool{}
+	for _, k := range []string{"title", "description", "max_workers", "worktrees", "lock", "news_out", "news_url", "summary", "pane", "pane_style"} {
+		known[k] = true
+	}
+	for old, nw := range jobDotted {
+		if v, ok := raw[old]; ok {
+			if _, has := raw[nw]; !has {
+				var s string
+				if json.Unmarshal(v, &s) != nil {
+					return fmt.Errorf("job key %s: want a string", old)
+				}
+				switch nw {
+				case "news_out":
+					p.NewsOut = s
+				case "news_url":
+					p.NewsURL = s
+				case "pane_style":
+					p.PaneStyle = s
+				}
+			}
+			delete(raw, old)
+		}
+	}
+	for k := range known {
+		delete(raw, k)
+	}
+	p.extra = nil
+	if len(raw) > 0 {
+		p.extra = raw
+	}
+	*c = JobConfig(p)
+	return nil
+}
+
+// MarshalJSON writes the known keys, then the kept unknown ones.
+func (c JobConfig) MarshalJSON() ([]byte, error) {
+	type plain JobConfig
+	b, err := json.Marshal(plain(c))
+	if err != nil || len(c.extra) == 0 {
+		return b, err
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	for k, v := range c.extra {
+		m[k] = v
+	}
+	return json.Marshal(m)
 }
 
 // JobView is a job with its defaults applied and its tenants listed.
