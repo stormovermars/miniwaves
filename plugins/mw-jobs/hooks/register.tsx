@@ -2224,30 +2224,49 @@ const readMetrics = async ($: any, path: string): Promise<MetricsResult | undefi
 }
 
 
-export type AlertEvent = { type: AlertType; text: string; who?: string; key?: string }
+/** What an alert is about; alerts.kinds (an mw key) picks among these. Decided from the item's structured field, never from the text. */
+export type AlertKind = 'ask' | 'review' | 'blocked' | 'done' | 'new' | 'release' | 'metrics'
+export type AlertEvent = { type: AlertType; kind: AlertKind; text: string; who?: string; key?: string }
+
+export const ALERT_TITLE_MAX = 60
+/** `<job> ▸ <What>: <ref> <title>`: the one text of every alert (toast and pane row). The ref is dropped when the title already starts with it; the title is cut to 60 characters. */
+export const alertText = (job: string, what: string, ref: string, title: string): string => {
+  const t = title.replace(/\s+/g, ' ').trim()
+  const bare = ref.includes('\u00b7') ? ref.slice(ref.indexOf('\u00b7') + 1) : ref
+  const dup = ref !== '' && [ref, bare].some(r => t === r || t.startsWith(`${r} `))
+  const cut = t.length > ALERT_TITLE_MAX ? `${t.slice(0, ALERT_TITLE_MAX - 1).trimEnd()}\u2026` : t
+  const tail = [dup ? '' : ref, cut].filter(Boolean).join(' ')
+  return `${job} \u25b8 ${what}${tail !== '' ? `: ${tail}` : ''}`
+}
+const itemRef = (labels: Record<string, string>, tenant: string, id: string) => (labels[tenant] ? `${labels[tenant]}\u00b7${id}` : id)
 
 /**
  * "Now" events from two news models of one job: needs you, review, blocked, done, closed milestones and new items that are in
  * `next` and were not in `old`. Keyed by type + tenant:id + event time. Draft changes alone are not alerts; these are items.
  */
-export const modelEvents = (job: { id: string }, old: Model, next: Model): AlertEvent[] => {
+export const modelEvents = (job: { id: string; tenants?: string[] }, old: Model, next: Model): AlertEvent[] => {
   const out: AlertEvent[] = []
-  const add = (type: AlertType, label: string, oldList: MList, list: MList, kind: string) => {
+  const lists = [next.happened.closed_milestones, next.now.needs, next.now.review, next.now.blocked, next.happened.done, next.happened.new_items]
+  const tenants = job.tenants !== undefined && job.tenants.length > 0 ? job.tenants : [...new Set(lists.flatMap(l => l.items.map(i => i.tenant)))]
+  const labels = tenantLabels(tenants)
+  const add = (type: AlertType, what: string, ak: AlertKind, oldList: MList, list: MList, kind: string) => {
     const was = new Set(oldList.items.map(i => `${i.tenant}:${i.id}`))
     for (const i of list.items) {
       const k = `${i.tenant}:${i.id}`
       if (was.has(k)) continue
-      out.push({ type, text: `[${job.id}] ${label}: ${k} ${i.title}`, who: `${i.tenant} ${i.id}`, key: `${kind}|${k}|${i.since}` })
+      out.push({ type, kind: ak, text: alertText(job.id, what, itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `${kind}|${k}|${i.since}` })
     }
   }
-  add('milestone', 'Milestone closed', old.happened.closed_milestones, next.happened.closed_milestones, 'milestone')
-  add('needs', 'Needs Sir', old.now.needs, next.now.needs, 'needs')
-  add('needs', 'Review', old.now.review, next.now.review, 'review')
-  add('needs', 'Blocked', old.now.blocked, next.now.blocked, 'blocked')
-  add('done', 'Done', old.happened.done, next.happened.done, 'done')
-  add('new', 'New', old.happened.new_items, next.happened.new_items, 'new')
+  add('milestone', 'Milestone done', 'done', old.happened.closed_milestones, next.happened.closed_milestones, 'milestone')
+  add('needs', 'Needs you', 'ask', old.now.needs, next.now.needs, 'needs')
+  add('needs', 'Review', 'review', old.now.review, next.now.review, 'review')
+  add('needs', 'Blocked', 'blocked', old.now.blocked, next.now.blocked, 'blocked')
+  add('done', 'Done', 'done', old.happened.done, next.happened.done, 'done')
+  add('new', 'New', 'new', old.happened.new_items, next.happened.new_items, 'new')
   return out
 }
+
+const metricEvent = (jobId: string, d: { line: string; who: string }): AlertEvent => ({ type: 'metric', kind: 'metrics', text: `${jobId} \u25b8 Metrics drop: ${d.line}`, who: d.who, key: `metric|${d.line}` })
 
 /** The last draft model polled per job: the baseline the next poll's events are measured against (first sight is silent). */
 const lastDrafts = new Map<string, Model>()
@@ -2255,30 +2274,35 @@ const lastDrafts = new Map<string, Model>()
 /** A release being cut: the refresh that follows runs once the one in flight is done. */
 const forceAfter = new Set<string>()
 
-const legacyEvents = (job: MwJobsJob, old: MwJobsSnapshot, next: MwJobsSnapshot): Array<{ type: AlertType; text: string; who?: string }> => {
-      const labels = tenantLabels(job.tenants.length > 0 ? job.tenants : [...new Set(next.waves.map(w => w.id.split(':')[0] ?? ''))])
-      const { closed, changes } = diffChanges(old, next, labels)
-      const oldKeys = new Map(old.items.map(i => [`${i.tenant}:${i.id}`, i]))
-      const flag = (x: MwJobsItem, snapOf: MwJobsSnapshot) => x.state === 'blocked' || askMap(snapOf).has(`${x.tenant}:${x.id}`)
-      const needsSir = next.items.filter(i => {
-        const was = oldKeys.get(`${i.tenant}:${i.id}`)
-        return i.state !== 'done' && !isReview(i) && flag(i, next) && (was === undefined || !flag(was, old))
-      })
-      // every change line is routed by its type's setting: toast, notify, both or off
-      const whoOf = (l: string) => {
-        const m = /^(?:Done|New) (\S+):(\S+)/.exec(l)
-        return m ? `${m[1]} ${m[2]}` : '-'
-      }
-      return [
-        ...closed.map(l => {
-          const w = next.waves.find(x => l.includes(x.title))
-          return { type: 'milestone' as const, text: `[${job.id}] ${l}`, who: w ? w.id.replace(':', ' ') : '-' }
-        }),
-        ...needsSir.map(i => ({ type: 'needs' as const, text: `[${job.id}] ${i.state === 'blocked' ? 'Blocked' : 'Needs Sir'}: ${i.tenant}:${i.id} ${i.title}`, who: `${i.tenant} ${i.id}` })),
-        ...changes.filter(l => l.startsWith('Done ')).map(l => ({ type: 'done' as const, text: `[${job.id}] ${l}`, who: whoOf(l) })),
-        ...changes.filter(l => l.startsWith('New ')).map(l => ({ type: 'new' as const, text: `[${job.id}] ${l}`, who: whoOf(l) })),
-        ...metricDrops(old.metrics, next.metrics).map(d => ({ type: 'metric' as const, text: `[${job.id}] ${d.line}`, who: d.who })),
-      ]
+const legacyEvents = (job: MwJobsJob, old: MwJobsSnapshot, next: MwJobsSnapshot): AlertEvent[] => {
+  const labels = tenantLabels(job.tenants.length > 0 ? job.tenants : [...new Set(next.waves.map(w => w.id.split(':')[0] ?? ''))])
+  const oldKeys = new Map(old.items.map(i => [`${i.tenant}:${i.id}`, i]))
+  const oldWaves = new Map(old.waves.map(w => [w.id, w]))
+  const flag = (x: MwJobsItem, snapOf: MwJobsSnapshot) => x.state === 'blocked' || askMap(snapOf).has(`${x.tenant}:${x.id}`)
+  const out: AlertEvent[] = []
+  for (const w of next.waves) {
+    const was = oldWaves.get(w.id)
+    if (was !== undefined && was.state !== 'done' && w.state === 'done') {
+      out.push({ type: 'milestone', kind: 'done', text: alertText(job.id, 'Milestone done', waveName(w, labels), w.title), who: w.id.replace(':', ' '), key: `milestone|${w.id}` })
+    }
+  }
+  for (const i of next.items) {
+    const was = oldKeys.get(`${i.tenant}:${i.id}`)
+    const k = `${i.tenant}:${i.id}`
+    if (i.state !== 'done' && !isReview(i) && flag(i, next) && (was === undefined || !flag(was, old))) {
+      const blocked = i.state === 'blocked'
+      out.push({ type: 'needs', kind: blocked ? 'blocked' : 'ask', text: alertText(job.id, blocked ? 'Blocked' : 'Needs you', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `${blocked ? 'blocked' : 'needs'}|${k}` })
+    }
+  }
+  for (const i of next.items) {
+    const was = oldKeys.get(`${i.tenant}:${i.id}`)
+    if (was !== undefined && was.state !== i.state && i.state === 'done') out.push({ type: 'done', kind: 'done', text: alertText(job.id, 'Done', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `done|${i.tenant}:${i.id}` })
+  }
+  for (const i of next.items) {
+    if (!oldKeys.has(`${i.tenant}:${i.id}`)) out.push({ type: 'new', kind: 'new', text: alertText(job.id, 'New', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `new|${i.tenant}:${i.id}` })
+  }
+  out.push(...metricDrops(old.metrics, next.metrics).map(d => metricEvent(job.id, d)))
+  return out
 }
 
 const inFlightP = new Map<string, Promise<void>>()
@@ -2409,7 +2433,7 @@ const refreshJobRun = async ($: any, job: MwJobsJob): Promise<void> => {
       const events: AlertEvent[] = []
       if (modelMode) {
         // from a news model: a new release, metric drops, and the "now" events (needs, review, blocked, done, milestones, new) against the last poll; first sight is silent
-        events.push(...relEv, ...(old?.model !== undefined ? metricDrops(old.metrics, next.metrics).map(d => ({ type: 'metric' as const, text: `[${job.id}] ${d.line}`, who: d.who })) : []), ...(baseline !== undefined ? modelEvents(job, baseline, mentry!.draft!) : []))
+        events.push(...relEv, ...(old?.model !== undefined ? metricDrops(old.metrics, next.metrics).map(d => metricEvent(job.id, d)) : []), ...(baseline !== undefined ? modelEvents(job, baseline, mentry!.draft!) : []))
       } else if (old !== undefined) {
         events.push(...legacyEvents(job, old, next), ...relEv)
       }
@@ -2436,47 +2460,24 @@ const refreshJobRun = async ($: any, job: MwJobsJob): Promise<void> => {
           // store unavailable
         }
       }
-      // the mw keys: alerts.kinds picks the kinds, alerts.sound and alerts.message act separately
+      // the mw keys: alerts.kinds picks the kinds, alerts.sound and alerts.message act separately; alerts.enabled=false (mute) silences all of it
       const sw0 = await alertSwitches($)
-      const kept = sw0.kinds === null ? fresh : fresh.filter(x => { const k = alertKind(x); return k === '' || sw0.kinds!.has(k) })
-      const plan0 = planAlerts(kept, sw0.sound ? opts : { ...opts, alertSound: 'off' }, isMuted, job.alerts)
-      const plan = sw0.message ? plan0 : { ...plan0, toast: [], toastAll: [], notify: [] }
-      // every alert that is raised (and so every one that plays a sound) is also a row at the top of both panes, until dismissed
-      if (sw0.message && !isMuted) await addAlertRows($, job, kept.filter(x => modeFor(opts, x.type) !== 'off'))
-      if (plan.sound !== undefined) {
+      const kept = fresh.filter(x => alertAllowed(sw0, x.kind))
+      const plan = planAlerts(kept, { enabled: !isMuted, message: sw0.message, sound: sw0.sound }, job.alerts)
+      // every raised alert is a row at the top of both panes (and one grouped toast), until dismissed; the sound is the one asset; no system notification
+      if (plan.lines.length > 0) await addAlertRows($, job, kept)
+      if (plan.sound) {
         try {
-          await $.audio.play({ asset: `assets/${plan.sound}.aiff` })
+          await $.audio.play({ asset: 'assets/alert.wav' })
         } catch {
           // no player: skip
         }
       }
-      // a notification that no channel sent (the desktop app has no terminal: reason no-surface) falls back to the same grouped toast
-      const unsent: string[] = []
-      for (const text of plan.notify) {
-        let sent = false
-        try {
-          sent = (await $.ui.notify(text, { title: job.title })).isSent === true
-        } catch {
-          sent = false
-        }
-        if (!sent) unsent.push(text)
-      }
-      const toastLines = [...plan.toastAll, ...unsent.filter(t => !plan.toastAll.includes(t))]
       // alerts.log: one line per raised alert, how it was delivered
       const nowIso = new Date(await $.clock.now()).toISOString()
-      const logLines = kept
-        .filter(x => modeFor(opts, x.type) !== 'off')
-        .map(x => {
-          const mode = modeFor(opts, x.type)
-          const toastOn = mode.includes('toast')
-          const notifyOn = mode.includes('notify')
-          const gated = isMuted || job.alerts.notify === false
-          const sentNote = plan.notify.includes(x.text)
-          const delivered = toastOn && notifyOn ? (gated ? 'toast' : unsent.includes(x.text) ? 'toast-fallback' : sentNote ? 'toast+notify' : 'toast+capped') : toastOn ? 'toast' : gated ? 'muted' : unsent.includes(x.text) ? 'toast-fallback' : sentNote ? 'notify' : 'capped'
-          return alertLine(nowIso, x.type, x.who ?? '-', x.text, delivered)
-        })
-      await appendLog($, job.id, 'alerts.log', logLines)
-      if (toastLines.length > 0) $.ui.toast(groupToast(toastLines).join('\n'), { timeoutMs: 8000 })
+      const delivered = isMuted ? 'muted' : sw0.message ? (plan.sound ? 'row+toast+sound' : 'row+toast') : plan.sound ? 'sound' : 'none'
+      await appendLog($, job.id, 'alerts.log', kept.map(x => alertLine(nowIso, x.type, x.who ?? '-', x.text, delivered)))
+      if (plan.lines.length > 0) $.ui.toast(groupToast(plan.lines).join('\n'), { timeoutMs: 8000 })
     }
   } catch {
     // never throw out of a timer
@@ -2820,26 +2821,20 @@ export const parseUserKeys = (text: string | undefined): CfgKey[] | undefined =>
 export const cycleNext = (choices: string[], cur: string): string => choices[(choices.indexOf(cur) + 1) % choices.length] ?? cur
 
 /** alerts.kinds: a comma list, or `all`; one kind toggled, written back as `all` when every kind is on. */
-export const kindsOf = (value: string, choices: string[]): string[] => (value.trim() === 'all' ? [...choices] : value.split(',').map(s => s.trim()).filter(s => choices.length === 0 || choices.includes(s)))
+export const kindsOf = (value: string, choices: string[]): string[] => (value.trim() === 'all' ? [...choices] : value.trim() === 'none' ? [] : value.split(',').map(s => s.trim()).filter(s => choices.length === 0 || choices.includes(s)))
 export const kindsToggle = (value: string, choices: string[], kind: string): string => {
   const on = new Set(kindsOf(value, choices))
   if (on.has(kind)) on.delete(kind)
   else on.add(kind)
   const list = choices.filter(c => on.has(c))
-  return list.length === choices.length ? 'all' : list.join(',')
+  return list.length === choices.length ? 'all' : list.length === 0 ? 'none' : list.join(',')
 }
 
-/** Which alerts.kinds an alert belongs to; '' for one no kind covers (new items), which always passes. */
-export const alertKind = (x: { type: string; text: string; key?: string }): string => {
-  const k = (x.key ?? '').split('|')[0]
-  if (k === 'needs' || / Needs Sir: /.test(x.text)) return 'ask'
-  if (k === 'review' || / Review: /.test(x.text)) return 'review'
-  if (k === 'blocked' || / Blocked: /.test(x.text)) return 'blocked'
-  if (/ Release \d+ is out$/.test(x.text)) return 'release'
-  if (x.type === 'done' || x.type === 'milestone') return 'done'
-  if (x.type === 'metric') return 'metrics'
-  return ''
-}
+/** Which alerts.kinds an alert belongs to: the structured kind it was raised with ('' for none). */
+export const alertKind = (x: { kind?: string }): string => x.kind ?? ''
+/** Whether a kind may alert: no list (older mw), no kind, a kind mw does not know yet (`new` until mw lists it), or one that is on. */
+export const alertAllowed = (sw: { kinds: Set<string> | null; choices: string[] }, kind: string): boolean =>
+  sw.kinds === null || kind === '' || (sw.choices.length > 0 && !sw.choices.includes(kind)) || sw.kinds.has(kind)
 
 /** The key values last applied to the panes: a key is applied again only when its value changes (so a pane's own choice stays). */
 const cfgApplied = new Map<string, string>()
@@ -2997,12 +2992,13 @@ const initSettings = async ($: any) => {
 }
 
 /** The alert switches: kinds (null: all), message rows/toasts/notifications, sound. */
-const alertSwitches = async ($: any): Promise<{ kinds: Set<string> | null; message: boolean; sound: boolean }> => {
+const alertSwitches = async ($: any): Promise<{ kinds: Set<string> | null; choices: string[]; message: boolean; sound: boolean }> => {
   const s: CfgState = await read($, settings)
-  if (s.ok !== true) return { kinds: null, message: true, sound: true }
+  if (s.ok !== true) return { kinds: null, choices: [], message: true, sound: true }
   const k = s.keys.find(x => x.key === 'alerts.kinds')
   return {
     kinds: k === undefined ? null : new Set(kindsOf(k.value, k.choices)),
+    choices: k?.choices ?? [],
     message: s.keys.find(x => x.key === 'alerts.message')?.value !== 'false',
     sound: s.keys.find(x => x.key === 'alerts.sound')?.value !== 'false',
   }
@@ -3484,7 +3480,7 @@ const doReleaseRun = async ($: any, job: MwJobsJob) => {
 }
 
 /** The alert for a new release: one alertNew per job and release, baseline on first sight. Draft changes raise none. */
-const releaseEvents = async ($: any, job: MwJobsJob, entry: NewsEntry): Promise<Array<{ type: AlertType; text: string; who?: string }>> => {
+const releaseEvents = async ($: any, job: MwJobsJob, entry: NewsEntry): Promise<AlertEvent[]> => {
   const known = ((await read($, relKnown)) as Record<string, number>)[job.id]
   if (known !== undefined && known >= entry.latest) return []
   await update($, relKnown, (m: Record<string, number>) => ({ ...m, [job.id]: entry.latest }))
@@ -3494,7 +3490,7 @@ const releaseEvents = async ($: any, job: MwJobsJob, entry: NewsEntry): Promise<
     // store unavailable
   }
   if (known === undefined || entry.latest === 0) return []
-  return [{ type: 'new', text: `[${job.id}] Release ${entry.latest} is out`, who: `release ${entry.latest}` }]
+  return [{ type: 'new', kind: 'release', text: alertText(job.id, `Issue ${entry.latest} published`, '', ''), who: `release ${entry.latest}`, key: `release|${entry.latest}` }]
 }
 
 // ---- the news pane from the news model: navigation, the release list, and the page in the chosen style ----
@@ -5037,10 +5033,6 @@ export type AlertType = 'milestone' | 'needs' | 'done' | 'new' | 'metric'
 let opts: Record<string, unknown> = {}
 /** The registry file: the `registry` option, else ~/.mw/jobs.json. A missing file is normal. */
 const registryPath = (): string => (typeof opts.registry === 'string' && opts.registry.trim() !== '' ? opts.registry.trim() : REGISTRY_DEFAULT)
-export const modeFor = (o: Record<string, unknown>, t: AlertType): string => {
-  const v = String(o[`alert${t[0]!.toUpperCase()}${t.slice(1)}`] ?? 'notify')
-  return ['toast+notify', 'toast', 'notify', 'off'].includes(v) ? v : 'notify'
-}
 
 /** How many alerted lines are kept per job in $.store. */
 export const ALERT_KEEP = 200
@@ -5054,27 +5046,15 @@ export const groupToast = (lines: string[]): string[] => {
   return out
 }
 
-/** At most 3 notifications, then one summary: "+147 more". */
-export const notifyLines = (lines: string[]): string[] => (lines.length > 3 ? [...lines.slice(0, 3), `+${lines.length - 3} more`] : lines)
-
-/** What one refresh does with its change lines: the grouped toast, up to 3 notifications, and the sound. */
+/** What one refresh does with its alerts: the grouped toast lines (and rows), and whether the sound plays. */
 export const planAlerts = (
-  events: Array<{ type: AlertType; text: string; who?: string }>,
-  o: Record<string, unknown>,
-  muted: boolean,
-  jobAlerts: { sound?: boolean; notify?: boolean },
-): { toast: string[]; toastAll: string[]; notify: string[]; sound: 'Glass' | 'Ping' | undefined } => {
-  const toastLines = events.filter(x => modeFor(o, x.type).includes('toast')).map(x => x.text)
-  const toast = groupToast(toastLines)
-  const fired = events.filter(x => modeFor(o, x.type) !== 'off')
-  const live = !muted && fired.length > 0
-  return {
-    toast,
-    toastAll: toastLines,
-    notify: live && jobAlerts.notify !== false ? notifyLines(events.filter(x => modeFor(o, x.type).includes('notify')).map(x => x.text)) : [],
-    sound: live && jobAlerts.sound !== false && String(o.alertSound ?? 'on') !== 'off' ? (fired.some(x => x.type === 'milestone') ? 'Glass' : 'Ping') : undefined,
-  }
-}
+  events: AlertEvent[],
+  sw: { enabled: boolean; message: boolean; sound: boolean },
+  jobAlerts: { sound?: boolean },
+): { lines: string[]; sound: boolean } => ({
+  lines: sw.enabled && sw.message ? events.map(x => x.text) : [],
+  sound: sw.enabled && sw.sound && jobAlerts.sound !== false && events.length > 0,
+})
 
 // =====================================================================================
 // MANY JOBS, MANY TENANTS: the top bars, the summary pages (⌂), the pickers (☰), favorites

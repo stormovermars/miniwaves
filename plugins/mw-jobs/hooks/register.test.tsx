@@ -6,7 +6,7 @@ import { REAL_BOARDS, REAL_BOARD_JOBS } from '../tests/fixtures/boards'
 import { SHOW_TSK001, SHOW_STR002, WAVE_002, WAVE_004 } from '../tests/fixtures/detail'
 import { parseItemDetail, parseWaveDetail } from './detail'
 import { REAL_DRAFT, SMALL_DRAFT, SMALL_RELEASE, STRESS_DRAFT, releases30, tenantsDraft, tenantSlug, manyJobs, jobDraft } from '../tests/fixtures/model'
-import { monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, groupToast, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
+import { alertText, alertAllowed, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, groupToast, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
 import { REAL_USER_KEYS } from '../tests/fixtures/userkeys'
 
 declare const console: { log: (...a: unknown[]) => void }
@@ -229,7 +229,7 @@ const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, cho
   return { state, clock }
 }
 
-test('two jobs: status, switching, per-job alerts, refresh, timer', { options: { alertMilestone: 'toast+notify' } }, async ($, on) => {
+test('two jobs: status, switching, per-job alerts, refresh, timer', async ($, on) => {
   const { state, clock } = rig($, on, true)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.command.run({ command: 'jobs', args: 'style blocks', origin: { kind: 'user' }, presentation: {} } as never)
@@ -320,11 +320,11 @@ test('two jobs: status, switching, per-job alerts, refresh, timer', { options: {
   state.round = 1
   await clock.advance(60_000)
   const toasts = state.toasts.join('\n')
-  expect(toasts).toContain('[zeta] Milestone closed: C2')
-  expect(toasts).toContain('[demo] Milestone closed: D1')
-  // sound + notify only for zeta (demo's flags are off)
+  expect(toasts).toContain('zeta ▸ Milestone done: C2 Harness')
+  expect(toasts).toContain('demo ▸ Milestone done: D1 Only')
+  // sound only for zeta (demo's flag is off)
   expect(state.sounds.length).toBe(1)
-  expect(state.sounds[0]).toContain('Glass')
+  expect(state.sounds[0]).toContain('alert.wav')
   // no osascript fallback, ever
   expect(state.osa.length).toBe(0)
   expect(state.runs.some(r => r.includes('osascript'))).toBe(false)
@@ -1358,41 +1358,40 @@ test('a pane that is not placed toasts why', async ($, on) => {
   await nu.unmount()
 })
 
-test('planAlerts routes each type by its setting; mute and per-job switches still override', () => {
+test('planAlerts: a row and toast per alert, one sound; mute, alerts.message, alerts.sound and the per-job switch override', () => {
   const ev = [
-    { type: 'milestone' as const, text: 'm1' },
-    { type: 'needs' as const, text: 'n1' },
-    { type: 'done' as const, text: 'd1' },
-    { type: 'new' as const, text: 'w1' },
+    { type: 'milestone' as const, kind: 'done' as const, text: 'm1' },
+    { type: 'needs' as const, kind: 'ask' as const, text: 'n1' },
   ]
-  // defaults: notify only, no toast
-  expect(planAlerts(ev, {}, false, {})).toMatchObject({ toast: [], notify: ['m1', 'n1', 'd1', '+1 more'], sound: 'Glass' })
-  const o = { alertMilestone: 'toast', alertNeeds: 'toast+notify', alertDone: 'off', alertNew: 'notify' }
-  expect(planAlerts(ev, o, false, {})).toMatchObject({ toast: ['m1', 'n1'], notify: ['n1', 'w1'], sound: 'Glass' })
-  // off is silent: no toast, no notify, no sound
-  const off = { alertMilestone: 'off', alertNeeds: 'off', alertDone: 'off', alertNew: 'off' }
-  expect(planAlerts(ev, off, false, {})).toMatchObject({ toast: [], notify: [], sound: undefined })
-  // sound: Ping without a milestone, off by setting, muted or per-job
-  expect(planAlerts([ev[2]!], {}, false, {}).sound).toBe('Ping')
-  expect(planAlerts(ev, { alertSound: 'off' }, false, {}).sound).toBeUndefined()
-  expect(planAlerts(ev, {}, true, {})).toMatchObject({ toast: [], notify: [], sound: undefined })
-  expect(planAlerts(ev, { alertMilestone: 'toast' }, true, {}).toast).toEqual(['m1'])
-  expect(planAlerts(ev, {}, false, { notify: false, sound: false })).toMatchObject({ toast: [], notify: [], sound: undefined })
-  // at most 3 notifications, and a toast of 4 lines plus "+N more"
-  const many = Array.from({ length: 7 }, (_, i) => ({ type: 'new' as const, text: `x${i}` }))
-  expect(planAlerts(many, {}, false, {}).notify).toEqual(['x0', 'x1', 'x2', '+4 more'])
-  expect(planAlerts(many, { alertNew: 'toast' }, false, {}).toast).toEqual(['x0', 'x1', 'x2', 'x3', '+3 more'])
+  const on = { enabled: true, message: true, sound: true }
+  expect(planAlerts(ev, on, {})).toEqual({ lines: ['m1', 'n1'], sound: true })
+  expect(planAlerts(ev, { ...on, enabled: false }, {})).toEqual({ lines: [], sound: false })
+  expect(planAlerts(ev, { ...on, message: false }, {})).toEqual({ lines: [], sound: true })
+  expect(planAlerts(ev, { ...on, sound: false }, {})).toEqual({ lines: ['m1', 'n1'], sound: false })
+  expect(planAlerts(ev, on, { sound: false })).toEqual({ lines: ['m1', 'n1'], sound: false })
+  expect(planAlerts([], on, {})).toEqual({ lines: [], sound: false })
 })
 
-test('notify-only: an unsent notification (no channel in the test engine) falls back to one grouped toast; sound plays; no osascript', async ($, on) => {
+test('alertText: `<job> ▸ <What>: <ref> <title>`, no repeated ref, title cut to 60', () => {
+  expect(alertText('demo', 'New', 'S·A-9', 'Import types')).toBe('demo ▸ New: S·A-9 Import types')
+  expect(alertText('demo', 'Done', 'D·STR-002', 'Parse the header')).toBe('demo ▸ Done: D·STR-002 Parse the header')
+  expect(alertText('demo', 'Milestone done', 'C2', 'C2 Harness')).toBe('demo ▸ Milestone done: C2 Harness')
+  expect(alertText('demo', 'Milestone done', 'S·M4', 'M4 Consolidation')).toBe('demo ▸ Milestone done: M4 Consolidation')
+  expect(alertText('demo', 'Release 5', '', '')).toBe('demo ▸ Release 5')
+  const long = alertText('demo', 'Blocked', 'A-1', 'x'.repeat(80))
+  expect(long).toBe(`demo ▸ Blocked: A-1 ${'x'.repeat(59)}…`)
+  expect(alertText('demo', 'Needs you', 'A-1', '  two\n lines  ')).toBe('demo ▸ Needs you: A-1 two lines')
+})
+
+test('an alert is one grouped toast and a pane row; the sound plays; no OS notification or osascript', async ($, on) => {
   const { state, clock } = rig($, on, true)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   state.round = 1
   await clock.advance(60_000)
   // nothing is lost: the milestone alert lands as a toast, once per job, and nothing is logged to the transcript
-  expect(state.toasts).toHaveLength(1)
-  expect(state.toasts.join('\n')).toContain('[zeta] Milestone closed: C2')
-  expect(state.toasts.join('\n')).not.toContain('[demo]')
+  expect(state.toasts).toHaveLength(2)
+  expect(state.toasts.join('\n')).toContain('zeta ▸ Milestone done: C2 Harness')
+  expect(state.toasts.join('\n')).toContain('demo ▸ Milestone done: D1 Only')
   expect(state.logs).toEqual([])
   expect(state.sounds.length).toBe(1)
   expect(state.osa.length).toBe(0)
@@ -1401,7 +1400,7 @@ test('notify-only: an unsent notification (no channel in the test engine) falls 
 
 test('BUG-010: an alert that plays a sound also shows a row on top of the jobs and news panes, and stays after the toast; x dismisses it', async ($, on) => {
   const { state, clock } = rig($, on, true)
-  // the toast is gone after 8 s and an OS notification can be silent or hidden: the row is what stays (ui.notify cannot be faked on 2.1.285)
+  // the toast is gone after 8 s: the row is what stays. There is no OS notification.
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ju = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
   expect(await ju.find({ key: 'alerts' })).toBeUndefined()
@@ -1409,14 +1408,14 @@ test('BUG-010: an alert that plays a sound also shows a row on top of the jobs a
   await clock.advance(60_000)
   expect(state.sounds.length).toBe(1)
   const textJ = JSON.stringify(await ju.find({ key: 'alerts' }))
-  expect(textJ).toContain('[zeta] Milestone closed: C2')
+  expect(textJ).toContain('zeta ▸ Milestone done: C2 Harness')
   const nu = await $.ui.mount({ ...NEWS_PANE, surface: 'desktop' } as never)
-  expect(JSON.stringify(await nu.find({ key: 'alerts' }))).toContain('[zeta] Milestone closed: C2')
+  expect(JSON.stringify(await nu.find({ key: 'alerts' }))).toContain('zeta ▸ Milestone done: C2 Harness')
   console.log(`@@SHOT ${JSON.stringify({ name: 'jobs-alert-rows', cols: 80, tree: treeOf((await ju.findAll({ type: 'Box' }))[0]) })}`)
   console.log(`@@SHOT ${JSON.stringify({ name: 'news-alert-rows', cols: 80, tree: treeOf((await nu.findAll({ type: 'Box' }))[0]) })}`)
   // it stays: a later redraw still has it
   await clock.advance(60_000)
-  expect(JSON.stringify(await ju.find({ key: 'alerts' }))).toContain('Milestone closed: C2')
+  expect(JSON.stringify(await ju.find({ key: 'alerts' }))).toContain('Milestone done: C2')
   // x dismisses it, in both panes, and the store forgets it
   const xs = JSON.stringify(await ju.find({ key: 'alerts' })).match(/alert-x-[0-9-]+/g) ?? []
   expect(xs.length).toBeGreaterThan(0)
@@ -1439,7 +1438,7 @@ test('BUG-010: several alerts stack newest first (a new alert lands above the sa
   await clock.advance(60_000)
   expect(state.sounds.length).toBe(1)
   const t = JSON.stringify(await ju.find({ key: 'alerts' }))
-  const iNew = t.indexOf('Milestone closed: C2')
+  const iNew = t.indexOf('Milestone done: C2')
   expect(iNew).toBeGreaterThanOrEqual(0)
   expect(iNew).toBeLessThan(t.indexOf('older alert 0'))
   // 4 new + 5 saved: 5 shown, "+4 more"
@@ -1454,25 +1453,6 @@ test('BUG-010: saved alert rows are checked and capped at 20', async () => {
   const rows = parseAlertRows(Array.from({ length: 25 }, (_, i) => ({ id: `r${i}`, at: i, job: 'zeta', type: 'new', text: `t${i}` })))
   expect(rows.length).toBe(ALERT_ROWS_MAX)
   expect(parseAlertRows([{ id: 1 }, null, 'x'])).toEqual([])
-})
-
-test('every type off is silent', { options: { alertMilestone: 'off', alertNeeds: 'off', alertDone: 'off', alertNew: 'off' } }, async ($, on) => {
-  const { state, clock } = rig($, on, true)
-  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  state.round = 1
-  await clock.advance(60_000)
-  expect(state.toasts).toEqual([])
-  expect(state.sounds).toEqual([])
-  expect(state.osa.length).toBe(0)
-})
-
-test('toast mode gives a grouped toast and no notification path', { options: { alertMilestone: 'toast', alertSound: 'off' } }, async ($, on) => {
-  const { state, clock } = rig($, on, true)
-  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  state.round = 1
-  await clock.advance(60_000)
-  expect(state.toasts.join('\n')).toContain('Milestone closed: C2')
-  expect(state.sounds).toEqual([])
 })
 
 test('▦ jobs raises the jobs pane by the same path as ▤ news: data first, then open with focus; news is not closed', async ($, on) => {
@@ -1715,7 +1695,7 @@ test('one change alerts exactly once across both panes, refreshes, timers and a 
   await nws.press({ key: 'news-refresh' })
   await clock.advance(30_000)
   await clock.advance(30_000)
-  const milestone = state.toasts.filter(t => t.includes('[zeta] Milestone closed: C2'))
+  const milestone = state.toasts.filter(t => t.includes('zeta ▸ Milestone done: C2 Harness'))
   expect(milestone).toHaveLength(1)
   expect(state.sounds).toHaveLength(1)
   // a reload re-running session.start does not alert again, and the keys sit in the store
@@ -1723,7 +1703,7 @@ test('one change alerts exactly once across both panes, refreshes, timers and a 
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await clock.advance(30_000)
   expect(state.toasts.length).toBe(before)
-  expect(JSON.stringify(state.store.get('alerted'))).toContain('Milestone closed: C2')
+  expect(JSON.stringify(state.store.get('alerted'))).toContain('milestone|zeta-corpus:WAV-002')
   // the mute button is in both panes and shares one state
   expect((await jobs.find({ key: 'mute' }))?.props.label).toBe('🔔')
   expect((await nws.find({ key: 'mute' }))?.props.label).toBe('🔔')
@@ -1762,8 +1742,8 @@ test('alerts.log gets one line per alert (no duplicates); failures are logged on
   await clock.advance(60_000)
   const log = state.files.get(`${LOGDIR}/alerts.log`) ?? ''
   const lines = log.trim().split('\n')
-  expect(lines.filter(l => l.includes('Milestone closed: C2'))).toHaveLength(1)
-  expect(lines[0]).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z  milestone  zeta-corpus WAV-002  \[zeta\] Milestone closed: C2 .*  -> toast-fallback$/)
+  expect(lines.filter(l => l.includes('Milestone done: C2'))).toHaveLength(1)
+  expect(lines[0]).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z  milestone  zeta-corpus WAV-002  zeta ▸ Milestone done: C2 Harness  -> row\+toast\+sound$/)
   // everything written sits under the job's log folder
   expect([...state.files.keys()].every(k => k.startsWith('/home/.mw/logs/'))).toBe(true)
   // a failure is logged once, however often it repeats
@@ -1835,7 +1815,7 @@ test('log files rotate to .1 past 1 MB, keeping one old copy', async ($, on) => 
   expect(state.files.get(`${LOGDIR}/alerts.log.1`)).toBe('x'.repeat(LOG_MAX + 10))
   const fresh = state.files.get(`${LOGDIR}/alerts.log`) ?? ''
   expect(fresh.length).toBeLessThan(2000)
-  expect(fresh).toContain('Milestone closed: C2')
+  expect(fresh).toContain('Milestone done: C2')
   expect(state.files.has(`${LOGDIR}/alerts.log.2`)).toBe(false)
 })
 
@@ -2179,7 +2159,7 @@ test('news model: a new release raises one alertNew; draft changes raise no aler
   await clock.advance(60_000)
   await clock.advance(60_000)
   const quiet = state.toasts.length
-  expect(state.toasts.filter(t => t.includes('Release'))).toHaveLength(0)
+  expect(state.toasts.filter(t => t.includes('Issue'))).toHaveLength(0)
   // the draft changes: a new item needs you and one is done. These are "now" events and alert once each (A2); the release/metric rules stay
   const d = JSON.parse(SMALL_DRAFT)
   d.now.needs.items.push({ tenant: 'zetadoc', id: 'TSK-099', title: 'Another question', note: 'x', since: '2026-10-22T10:00:00', by: 'z' })
@@ -2187,8 +2167,8 @@ test('news model: a new release raises one alertNew; draft changes raise no aler
   d.happened.done.items.push({ tenant: 'zetadoc', id: 'TSK-098', title: 'Something done' })
   state.draft = JSON.stringify(d)
   await clock.advance(60_000)
-  expect(state.toasts.filter(t => t.includes('Needs Sir: zetadoc:TSK-099'))).toHaveLength(1)
-  expect(state.toasts.filter(t => t.includes('Done: zetadoc:TSK-098') || t.includes('Done zetadoc:TSK-098'))).toHaveLength(1)
+  expect(state.toasts.filter(t => t.includes('Needs you: TSK-099 Another question'))).toHaveLength(1)
+  expect(state.toasts.filter(t => t.includes('Done: TSK-098 Something done'))).toHaveLength(1)
   const after = state.toasts.length
   await clock.advance(60_000)
   expect(state.toasts.length).toBe(after)
@@ -2196,9 +2176,9 @@ test('news model: a new release raises one alertNew; draft changes raise no aler
   // release 4 appears in the folder: one alert, and not a second one on the next tick
   seedReleases(state, 4)
   await clock.advance(60_000)
-  expect(state.toasts.filter(t => t.includes('[zeta] Release 4 is out'))).toHaveLength(1)
+  expect(state.toasts.filter(t => t.includes('zeta ▸ Issue 4 published'))).toHaveLength(1)
   await clock.advance(60_000)
-  expect(state.toasts.filter(t => t.includes('Release 4 is out'))).toHaveLength(1)
+  expect(state.toasts.filter(t => t.includes('Issue 4 published'))).toHaveLength(1)
   // a metric drop (good 40 -> 39) alerts once
   d.metrics.sections[0].rows[0].good = 39
   state.draft = JSON.stringify(d)
@@ -2344,7 +2324,7 @@ test('T1: 150 needs is the same number in the status line, the headline and both
   await news.unmount()
 })
 
-test('A1 + A2: new needs alert in model mode; notify sends 3 and a "+N more" summary; the rest is logged as capped, not muted', async ($, on) => {
+test('A1 + A2: new needs alert in model mode; one toast of 4 lines and a "+N more" summary; every alert is logged, none muted', async ($, on) => {
   const { state, clock } = rig($, on, true)
   state.draft = withNeeds(0)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -2354,8 +2334,8 @@ test('A1 + A2: new needs alert in model mode; notify sends 3 and a "+N more" sum
   await clock.advance(60_000)
   const log = [...state.files.entries()].filter(([k]) => k.endsWith('/alerts.log')).map(([, v]) => v).join('\n')
   expect(state.toasts.length).toBeGreaterThan(before)
-  expect(state.toasts.join('\n')).toContain('+47 more')
-  expect((log.match(/capped/g) ?? []).length).toBe(47)
+  expect(state.toasts.join('\n')).toContain('+46 more')
+  expect((log.match(/row\+toast/g) ?? []).length).toBe(50)
   expect(log).not.toContain('muted')
 })
 
@@ -3954,7 +3934,7 @@ test('settings: alerts.message and alerts.sound act separately; alerts.kinds dro
   await a.clock.advance(60_000)
   // no sound, but the message row is there
   expect(a.state.sounds).toEqual([])
-  expect(JSON.stringify(await ju.find({ key: 'alerts' }))).toContain('Milestone closed: C2')
+  expect(JSON.stringify(await ju.find({ key: 'alerts' }))).toContain('Milestone done: C2')
   await ju.unmount()
 })
 
@@ -4040,10 +4020,15 @@ test('settings: pure helpers', async () => {
   expect(cycleNext(['a', 'b'], 'zz')).toBe('a')
   expect(kindsToggle('all', ['a', 'b', 'c'], 'b')).toBe('a,c')
   expect(kindsToggle('a,c', ['a', 'b', 'c'], 'b')).toBe('all')
-  expect(alertKind({ type: 'needs', text: '[t] Review: x:Y-1 t', key: 'review|x:Y-1|s' })).toBe('review')
-  expect(alertKind({ type: 'new', text: '[t] Release 3 is out' })).toBe('release')
-  expect(alertKind({ type: 'milestone', text: '[t] Milestone closed: C2' })).toBe('done')
-  expect(alertKind({ type: 'new', text: '[t] New x:Y' })).toBe('')
+  expect(alertKind({ kind: 'review' })).toBe('review')
+  expect(alertKind({})).toBe('')
+  const sw = { kinds: new Set(['ask', 'blocked']), choices: ['ask', 'review', 'blocked', 'done'] }
+  expect(alertAllowed(sw, 'ask')).toBe(true)
+  expect(alertAllowed(sw, 'review')).toBe(false)
+  expect(alertAllowed(sw, 'new')).toBe(true) // mw does not list `new` yet: allowed
+  expect(alertAllowed({ kinds: null, choices: [] }, 'review')).toBe(true)
+  expect(kindsToggle('ask', ['ask', 'review'], 'ask')).toBe('none')
+  expect(kindsOf('none', ['ask', 'review'])).toEqual([])
 })
 
 test('settings: discover.home=false never scans ~', async ($, on) => {
