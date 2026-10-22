@@ -837,6 +837,9 @@ func TestBuiltinFanfareWhenNoPairs(t *testing.T) {
 	if b, _ := os.ReadFile(p.Fanfare); len(b) != len(defaultFanfareWAV) {
 		t.Fatal("wav not written")
 	}
+	if runtime.GOOS == "windows" {
+		return // Windows plays through the built-in PowerShell SoundPlayer, not a looked-up player
+	}
 	lookPath = func(string) (string, error) { return "", errors.New("none") }
 	if _, err := pickPairOrBuiltin(FanfareConfig{}, t.TempDir(), func(int) int { return 0 }); err == nil {
 		t.Fatal("want error with no player")
