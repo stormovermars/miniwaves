@@ -79,3 +79,22 @@ func TestMigrateDottedJobKeys(t *testing.T) {
 		t.Fatalf("unknown job key dropped: %s", b3)
 	}
 }
+
+// 8 -> 9 writes only the index: a tenant file that a rewrite would normalize stays byte for byte.
+func TestMigrate8To9LeavesTenantFilesAlone(t *testing.T) {
+	path := inTempDir(t)
+	runAll(t, []string{"init", "Jobs app"}, []string{"tenant", "add", "sheet", "Sheet"}, []string{"add", "task", "X", "-t", "sheet"})
+	b, _ := os.ReadFile(path)
+	os.WriteFile(path, []byte(strings.Replace(string(b), `"version":9`, `"version":8`, 1)), 0o600)
+	tp := tenantPath(path, "sheet")
+	tb, _ := os.ReadFile(tp)
+	odd := append(append([]byte{}, tb...), '\n', '\n', ' ') // a rewrite would drop this
+	os.WriteFile(tp, odd, 0o600)
+	runAll(t, []string{"migrate"})
+	if ta, _ := os.ReadFile(tp); string(ta) != string(odd) {
+		t.Fatal("migrate 8->9 rewrote a tenant file")
+	}
+	if a, _ := os.ReadFile(path); !strings.Contains(string(a), `"version":9`) {
+		t.Fatal("index not migrated")
+	}
+}

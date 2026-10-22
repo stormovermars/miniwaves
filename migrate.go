@@ -58,7 +58,8 @@ func migrateCommand(args []string) error {
 			return err
 		}
 		for i := range w.Tenants {
-			w.Tenants[i].loaded = true
+			// 8 -> 9 changes only the index: tenant files are not rewritten (only the index lock is held)
+			w.Tenants[i].loaded = from != currentSchema-1
 		}
 		if err := splitOldArchive(path); err != nil {
 			return err
