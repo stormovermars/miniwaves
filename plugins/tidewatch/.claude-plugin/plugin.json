@@ -1,6 +1,6 @@
 {
   "name": "tidewatch",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Retired. tidewatch was replaced by mw-jobs; run mw update --plugins to switch.",
   "author": { "name": "stormovermars" },
   "homepage": "https://github.com/stormovermars/miniwaves",
