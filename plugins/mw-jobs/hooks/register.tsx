@@ -5830,6 +5830,22 @@ const barGroup = (ui: any, o: BarIn) => {
 
 const tabsOf = (rows: Entry[]): Tab[] => rows.map(e => ({ id: e.id, label: e.id, needs: e.needs, review: e.review }))
 
+/** The title row both job panes share: the job title (one job) or the job bar, then `¦` and the page toggle last (News > / < Jobs). One builder so the rows cannot drift. */
+const titleRow = (ui: any, $: any, o: { pane: 'jobs' | 'news'; job: MwJobsJob; jobCount: number; entries: Entry[]; favs: string[]; cols: number; swAll: Record<string, SwState>; busy?: boolean }) => {
+  const { Box, Text, Button } = ui
+  return (
+    <Box alignItems="center" gap={2} flexWrap="wrap">
+      {o.jobCount < 2 && <Text bold wrap="truncate-end">{o.job.title}</Text>}
+      {jobBar(ui, $, { pane: o.pane, entries: o.entries, current: o.job.id, favs: o.favs, cols: o.cols, reserve: 14, swAll: o.swAll })}
+      {o.busy === true && <Text dimColor>refreshing…</Text>}
+      <Text key="sep-nav" dimColor>{'\u00a6'}</Text>
+      {o.pane === 'jobs'
+        ? <Button key="news" plain label={NEWS_LABEL} onPress={() => void openNews($, o.job.id)} />
+        : <Button key="back-jobs" plain label={JOBS_LABEL} onPress={() => void backToJobs($, o.job.id)} />}
+    </Box>
+  )
+}
+
 /**
  * The job bar: `⌂ | tabs…` when everything fits, else `⌂ | favorites… | +N | ◂ | job | ▸ | ☰ N`. One job: no group.
  * Order is attention order. The ⌂ opens the all-jobs summary page.
@@ -6339,12 +6355,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
-          <Box alignItems="center" gap={2} flexWrap="wrap">
-            <Text bold wrap="truncate-end">{job.title}</Text>
-            <Text key="sep-nav" dimColor>{'\u00a6'}</Text>
-            <Button key="back-jobs" plain label={JOBS_LABEL} onPress={() => void backToJobs($, job.id)} />
-          </Box>
-          {reg.jobs.length > 1 && <Box alignItems="center" gap={2} flexWrap="wrap">{jobBar({ Box, Text, Button }, $, { pane: 'news', entries: jobEntries, current: job.id, favs: favAll.jobs, cols: barCols, reserve: 0, swAll })}</Box>}
+          {titleRow({ Box, Text, Button }, $, { pane: 'news', job, jobCount: reg.jobs.length, entries: jobEntries, favs: favAll.jobs, cols: barCols, swAll })}
           {(tenantRowsAll.length > 1 || tsel !== '') && (
             <Box alignItems="center" gap={2} flexWrap="wrap">
               {tenantBar({ Box, Text, Button }, $, { pane: 'news', job, entries: tenantRowsAll, current: tsel, favs: favAll.tenants[job.id] ?? [], cols: barCols, swAll })}
@@ -6463,13 +6474,7 @@ export const register: Register = (on, options) => {
     const descText = (((await read($, jobDesc)) as Record<string, string>)[job.id] || job.description || '').replace(/\s+/g, ' ')
     const header = (
       <Box flexDirection="column">
-        <Box alignItems="center" gap={2} flexWrap="wrap">
-          {reg.jobs.length < 2 && <Text {...wt} wrap="truncate-end">{job.title}</Text>}
-          {jobBar({ Box, Text, Button }, $, { pane: 'jobs', entries, current: job.id, favs: favAll.jobs, cols: barCols, reserve: 14, swAll })}
-          {isBusy && <Text dimColor>refreshing…</Text>}
-          <Text key="sep-nav" dimColor>{'\u00a6'}</Text>
-          <Button key="news" plain label={NEWS_LABEL} onPress={() => void openNews($, job.id)} />
-        </Box>
+        {titleRow({ Box, Text, Button }, $, { pane: 'jobs', job, jobCount: reg.jobs.length, entries, favs: favAll.jobs, cols: barCols, swAll, busy: isBusy })}
         {(tenantRowsAll.length > 1 || tsel !== '') && (
           <Box alignItems="center" gap={2} flexWrap="wrap">
             {tenantBar({ Box, Text, Button }, $, { pane: 'jobs', job, entries: tenantRowsAll, current: tsel, favs: favAll.tenants[job.id] ?? [], cols: barCols, swAll })}

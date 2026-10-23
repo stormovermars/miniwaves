@@ -612,7 +612,8 @@ test('titles follow the job, and the news pane renders docs/news/status.md with 
   const nsrc = await srcOf(nu as never)
   expect(nsrc).toContain('Status')
   expect(nsrc).toContain('good')
-  expect(await nu.find({ type: 'Text', text: /^Zeta consolidation$/ })).toBeDefined()
+  // BUG-015: with several jobs the title row is the job bar (as in the jobs pane), no separate title
+  expect(await nu.find({ type: 'Text', text: /^Zeta consolidation$/ })).toBeUndefined()
   expect((await nu.find({ type: 'Link' }))?.props.href).toBe('https://example.com/news')
   await nu.press({ key: 'news-refresh' })
   expect(nonNews()).toBe(runsBefore)
@@ -1689,7 +1690,7 @@ test('mw md header: Page link gone, soft breaks kept, emphasis without markers, 
   await cmd($, 'every 30s')
   const nu = await $.ui.mount({ ...NEWS_PANE, surface: 'desktop' } as never)
   const texts = (await nu.findAll({ type: 'Text' })).map((x: any) => String(x.text))
-  expect(texts).toContain('Zeta consolidation')
+  expect(texts).not.toContain('Zeta consolidation')
   const svgs = await allText(nu)
   expect(svgs).not.toContain('Consolidate ZetaSheet')
   expect(svgs).toContain('Updated 2026-10-22 13:24 local')
@@ -4586,6 +4587,11 @@ test('BUG-014: the page toggle is uniform: same slot (last, after ¦) on both ti
   expect(nk.at(-2)?.children?.[0]).toBe('¦')
   expect(jk.at(-2)?.children?.[0]).toBe('¦')
   expect(nk.at(-1)?.props.plain).toBe(jk.at(-1)?.props.plain)
+  // BUG-015: toggle and job bar share ONE row in both panes; the news pane has no separate title row above the bar
+  const hasBar = (ks: any[]) => JSON.stringify(ks).includes('"jobs-all"')
+  expect(hasBar(nk)).toBe(true)
+  expect(hasBar(jk)).toBe(true)
+  expect(nk.some((c: any) => c?.props?.bold === true)).toBe(false)
   // no dot (nor a ◂) anywhere in the news title row
   expect(JSON.stringify(nk)).not.toMatch(/●|◂/)
   await nu.press({ key: 'back-jobs' })
