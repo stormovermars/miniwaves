@@ -72,6 +72,7 @@ const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, cho
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
   // TSK-033: the machine has no HOME and no USERPROFILE; the home folder reaches the plugin only through `mw dirs -j`
   on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' || e.name === 'USERPROFILE' ? undefined : '/home' }))
+  on('fs.exists', (_: any, e: any) => ({ value: ((state as any).existing ?? []).includes(String(e.path)) }))
   on('fs.write', (_: any, e: any) => { if (state.failWrite) return { deny: 'EACCES' }; state.files.set(String(e.path), String(e.text)); return { value: undefined } })
   on('fs.read', (_: any, e: any) => {
     if (state.files.has(String(e.path))) return { value: state.files.get(String(e.path)) }
@@ -105,6 +106,12 @@ const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, cho
     // the OS probe and the mw lookup are plumbing: the test machine is macOS and mw is found by name
     if (cmd.startsWith('/usr/bin/stat -f %HT ')) return { value: { exitCode: 0, stdout: `${(state as any).osKind ?? 'Regular File'}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
     if (cmd === 'mw dirs -j') return ok({ docs: '/home/docs' })
+    // the home folder comes from a spawned shell, never from env APIs or mw
+    if (cmd === '/bin/sh -c printf %s "$HOME"') {
+      ;(state as any).homeCalls = ((state as any).homeCalls ?? 0) + 1
+      if (((state as any).homeFails ?? 0) >= (state as any).homeCalls) { if ((state as any).homeMode === 'empty') return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }; return { deny: 'timeout' } }
+      return { value: { exitCode: 0, stdout: '/home', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
+    }
     if (cmd === 'uname -s') return { value: { exitCode: 0, stdout: 'Darwin\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
     if (cmd === '/bin/sh -c command -v mw' && (state as any).mwPath !== undefined) return { value: { exitCode: 0, stdout: `${(state as any).mwPath}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
     if (cmd === '/bin/sh -c command -v mw') return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
@@ -4457,3 +4464,23 @@ test('TSK-033: the opener is argv only: open -t on macOS, xdg-open on Linux, not
   expect(openerArgv('linux', '/b/s.md')).toEqual(['xdg-open', '/b/s.md'])
   expect(openerArgv('windows', 'C:\\b\\s.md')).toEqual(['notepad.exe', 'C:\\b\\s.md'])
 })
+
+test('TSK-033: mw is not on PATH but sits in <home>/.local/bin: the home comes from a spawned shell, not from mw', async ($, on) => {
+  const { state } = rig($, on, true)
+  ;(state as any).existing = ['/home/.local/bin/mw']
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(state.runs.some(r => r.startsWith('/home/.local/bin/mw '))).toBe(true)
+  expect(state.runs.includes('mw dirs -j')).toBe(false)
+})
+
+for (const mode of ['timeout', 'empty']) {
+  test(`TSK-033: a home lookup that ends in ${mode} is not cached: a later call finds mw`, async ($, on) => {
+    const { state } = rig($, on, true)
+    ;(state as any).existing = ['/home/.local/bin/mw']
+    ;(state as any).homeFails = 2
+    ;(state as any).homeMode = mode
+    await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+    expect((state as any).homeCalls).toBeGreaterThan(2)
+    expect(state.runs.some(r => r.startsWith('/home/.local/bin/mw '))).toBe(true)
+  })
+}

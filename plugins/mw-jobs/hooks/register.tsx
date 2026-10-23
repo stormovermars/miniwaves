@@ -103,20 +103,20 @@ const expand = (path: string, home: string, base?: string) => {
 }
 
 let homeCache: string | undefined
-/** The home folder, from mw only (the parent of `mw dirs -j`'s docs folder); the plugin never reads HOME or USERPROFILE. '' when mw cannot say. */
+/** The home folder from a spawned shell (`printf %s "$HOME"`, or `echo %USERPROFILE%` on Windows); the plugin never reads HOME or USERPROFILE through env APIs, and never asks mw (resolveMw needs the home itself). Never cached when empty or failed: the next call asks again. */
 const homeOf = async ($: any): Promise<string> => {
-  if (homeCache !== undefined) return homeCache
+  if (homeCache !== undefined && homeCache !== '') return homeCache
   let home = ''
   try {
-    const r = await proc($, ['mw', 'dirs', '-j'], { cwd: '/', timeoutMs: 5000 })
-    const v = r.exitCode === 0 ? (parseJson(String(r.stdout)) as Record<string, unknown> | undefined) : undefined
-    const docs = typeof v?.docs === 'string' ? v.docs : ''
-    const cut = Math.max(docs.lastIndexOf('/'), docs.lastIndexOf('\\'))
-    if (isAbs(docs) && cut > 0) home = docs.slice(0, cut)
+    const os = await osKind($)
+    const r = await $.process.run(os === 'windows' ? ['cmd', '/c', 'echo %USERPROFILE%'] : ['/bin/sh', '-c', 'printf %s "$HOME"'], { cwd: '/', timeoutMs: 5000 })
+    const out = r.exitCode === 0 ? String(r.stdout ?? '').trim() : ''
+    if (isAbs(out) && !out.includes('%')) home = out.replace(/[\\/]+$/, '')
   } catch {
     home = ''
   }
-  return (homeCache = home)
+  if (home !== '') homeCache = home
+  return home
 }
 
 let osCache: 'windows' | 'mac' | 'linux' | undefined
@@ -159,6 +159,8 @@ const resolveMw = async ($: any): Promise<string | undefined> => {
     // fall through to the known folders
   }
   const home = await homeOf($)
+  // no home yet (a timeout, an empty answer): do not keep "not found"; the next call probes again
+  if (home === '') mwProbed = false
   let local = ''
   try {
     local = (await $.env.get('LOCALAPPDATA')) ?? ''
