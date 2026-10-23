@@ -2132,11 +2132,11 @@ test('the panel button: news_out as a folder or a file; when $.fs.stat refuses, 
     expect(await m2.find({ key: 'panel' }), out).toBeUndefined()
     await m2.unmount()
   }
-  // mw's own news.path wins; an .html file is allowed; a ../ news.path is refused
-  expect(newsStatusPath({ 'news.path': '/b/docs/news/status.html' }, '/b', '/h')).toBe('/b/docs/news/status.html')
-  expect(newsStatusPath({ 'news.path': '/b/../x/s.md' }, '/b', '/h')).toBeUndefined()
-  expect(newsStatusPath({ 'news.path': '/b/run.command' }, '/b', '/h')).toBeUndefined()
-  expect(newsStatusPath({ 'news.path': '/b/Some.app' }, '/b', '/h')).toBeUndefined()
+  // mw's own news_path wins; an .html file is allowed; a ../ news_path is refused
+  expect(newsStatusPath({ news_path: '/b/docs/news/status.html' }, '/b', '/h')).toBe('/b/docs/news/status.html')
+  expect(newsStatusPath({ news_path: '/b/../x/s.md' }, '/b', '/h')).toBeUndefined()
+  expect(newsStatusPath({ news_path: '/b/run.command' }, '/b', '/h')).toBeUndefined()
+  expect(newsStatusPath({ news_path: '/b/Some.app' }, '/b', '/h')).toBeUndefined()
   state.jobShow = { 'news.out': 'out/news.md' }
   lastJobShowReset()
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })

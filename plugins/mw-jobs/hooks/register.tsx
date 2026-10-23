@@ -4064,12 +4064,12 @@ const openMain = async ($: any, focus = false, first?: string) => {
   if (first === 'news' && job) await $.ui.open({ id: NEWS_PANE, title: await newsTitleOf($, job.id), focus: true })
 }
 
-/** The news file the panel button opens: `news.path` from `mw jobs show -j` (mw's own answer), else the job's `news_out` inside the board
+/** The news file the panel button opens: `news_path` from `mw jobs show -j` (mw's own answer), else the job's `news_out` inside the board
  * (a folder holds status.md; a file is itself), else docs/news/status.md. Undefined (button hidden) for an absolute or `..` news_out, or a file that is not .md/.html. */
 export const newsStatusPath = (js: Record<string, unknown> | undefined, board: string, home: string): string | undefined => {
   const base = expand(board, home)
   const okExt = (p: string) => /\.(md|html)$/i.test(p)
-  const given = js && (js['news.path'] ?? js.news_path)
+  const given = js && js.news_path
   if (typeof given === 'string' && given !== '') {
     const full = isAbs(given) ? given : `${base}/${given}`
     return /(^|[\\/])\.\.([\\/]|$)/.test(full) || !okExt(full) ? undefined : full
