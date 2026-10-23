@@ -4687,12 +4687,23 @@ const askGroup = async ($: any, job: MwJobsJob, kind: 'needs' | 'review') => {
   await fillComposer($, askGroupText(kind, items, snap, countsOf(snap)[kind]))
 }
 
+/** The top row's two attention indicators: always shown, `!N` and `\u25d0N` (N may be 0, then dimmed and inert). */
+export const attentionLabels = (needs: number, review: number) => ({
+  needs: { label: `!${needs}`, live: needs > 0 },
+  review: { label: `\u25d0${review}`, live: review > 0 },
+})
+
 const askIcons = (ui: any, $: any, job: MwJobsJob, needs: number, review: number) => {
   const { Button } = ui
-  const out: any[] = []
-  if (needs > 0) out.push(tipped(ui, 'ask-needs', <Button key="ask-needs" plain label={`!${needs}`} variant="primary" onPress={() => void askGroup($, job, 'needs')} />, 'Ask in chat about what needs you'))
-  if (review > 0) out.push(tipped(ui, 'ask-review', <Button key="ask-review" plain label={`\u25d0${review}`} dimColor onPress={() => void askGroup($, job, 'review')} />, 'Ask in chat about items to review'))
-  return out
+  const l = attentionLabels(needs, review)
+  return [
+    l.needs.live
+      ? tipped(ui, 'ask-needs', <Button key="ask-needs" plain label={l.needs.label} variant="primary" onPress={() => void askGroup($, job, 'needs')} />, 'Ask in chat about what needs you')
+      : tipped(ui, 'ask-needs', <Button key="ask-needs" plain label={l.needs.label} dimColor onPress={() => $.ui.toast('Jobs: nothing needs you.', { timeoutMs: 3000 })} />, 'Nothing needs you'),
+    l.review.live
+      ? tipped(ui, 'ask-review', <Button key="ask-review" plain label={l.review.label} dimColor onPress={() => void askGroup($, job, 'review')} />, 'Ask in chat about items to review')
+      : tipped(ui, 'ask-review', <Button key="ask-review" plain label={l.review.label} dimColor onPress={() => $.ui.toast('Jobs: nothing to review.', { timeoutMs: 3000 })} />, 'Nothing to review'),
+  ]
 }
 
 /** One compact row of "? ID" buttons under the Svg: needs, review and blocked items, at most 6. */

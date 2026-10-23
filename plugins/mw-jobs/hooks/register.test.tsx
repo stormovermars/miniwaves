@@ -7,7 +7,7 @@ import { SHOW_TSK001, SHOW_STR002, WAVE_002, WAVE_004 } from '../tests/fixtures/
 import { parseItemDetail, parseWaveDetail } from './detail'
 import { REAL_DRAFT, SMALL_DRAFT, SMALL_RELEASE, STRESS_DRAFT, releases30, tenantsDraft, tenantSlug, manyJobs, jobDraft } from '../tests/fixtures/model'
 import { buildIdIndex, splitIds } from './ids'
-import { unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, metricChanges, metricAlerts, legacyEvents, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, toastBubbles, stopVisible, parseFanfare, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
+import { unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, metricChanges, metricAlerts, legacyEvents, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, attentionLabels, capAlerted, toastBubbles, stopVisible, parseFanfare, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
 import { REAL_USER_KEYS } from '../tests/fixtures/userkeys'
 
 declare const console: { log: (...a: unknown[]) => void }
@@ -1595,12 +1595,17 @@ test('top-bar !N and ◐N icons fill one combined question in both panes; news h
     await clock.advance(2500)
     await ui.unmount()
   }
-  // hidden at zero
+  // shown dimmed at zero
   state.hide = ['A-2', 'A-3', 'TSK-9']
   await clock.advance(60_000)
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
-  expect(await ui.find({ key: 'ask-needs' })).toBeUndefined()
-  expect(await ui.find({ key: 'ask-review' })).toBeUndefined()
+  expect((await ui.find({ key: 'ask-needs' }))?.props.label).toBe('!0')
+  expect((await ui.find({ key: 'ask-review' }))?.props.label).toBe('◐0')
+  expect((await ui.find({ key: 'ask-needs' }))?.props.dimColor).toBe(true)
+  const fills = state.fills.length
+  await ui.press({ key: 'ask-needs' })
+  await ui.press({ key: 'ask-review' })
+  expect(state.fills.length).toBe(fills)
   await ui.unmount()
 })
 
@@ -4513,4 +4518,11 @@ test('legacy alerts: an item that is new and already in review alerts once, as R
   expect(legacyEvents(job, snap([]), snap([it('review')])).map(e => e.kind)).toEqual(['review'])
   expect(legacyEvents(job, snap([]), snap([it('doing')])).map(e => e.kind)).toEqual(['new'])
   expect(legacyEvents(job, snap([]), snap([it('review')], { 't:T-9': {} })).map(e => e.kind)).toEqual(['new'])
+})
+
+test('attention labels: 0/0, 1/0, 0/2, 3/2', () => {
+  expect(attentionLabels(0, 0)).toEqual({ needs: { label: '!0', live: false }, review: { label: '◐0', live: false } })
+  expect(attentionLabels(1, 0)).toEqual({ needs: { label: '!1', live: true }, review: { label: '◐0', live: false } })
+  expect(attentionLabels(0, 2)).toEqual({ needs: { label: '!0', live: false }, review: { label: '◐2', live: true } })
+  expect(attentionLabels(3, 2)).toEqual({ needs: { label: '!3', live: true }, review: { label: '◐2', live: true } })
 })
