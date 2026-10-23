@@ -98,8 +98,9 @@ const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, cho
   on('ui.toast', (_: any, e: any) => { state.toasts.push(e.text); return { value: undefined } })
   on('ui.status', (_: any, e: any) => { state.statuses.push(e.text); return { value: undefined } })
   on('audio.play', (_: any, e: any) => { state.sounds.push(JSON.stringify(e)); return { value: undefined } })
-  on('process.run', (_: any, e: any) => {
+  on('process.run', async (_: any, e: any) => {
     const cmd = e.argv.join(' ')
+    if ((state as any).gate !== undefined && cmd.startsWith('mw boards')) await (state as any).gate
     // the OS probe and the mw lookup are plumbing: the test machine is macOS and mw is found by name
     if (cmd.startsWith('/usr/bin/stat -f %HT ')) return { value: { exitCode: 0, stdout: `${(state as any).osKind ?? 'Regular File'}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
     if (cmd === 'uname -s') return { value: { exitCode: 0, stdout: 'Darwin\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
@@ -4346,4 +4347,29 @@ test('TSK-064: alerts raise a toast and a sound and start no OS banner process (
   const banner = /osascript|notify-send|terminal-notifier|toast|BurntToast|display notification/i
   expect(state.runs.filter(r => banner.test(r))).toEqual([])
   expect(state.osa.length).toBe(0)
+})
+
+// TSK-063: the model called mw_panes_open right after the plugin was installed and got no tool.call answer: the call waited on a
+// cold board discovery (and on the awaited session.start behind it). It must answer at once, and the pane must still open later.
+test('TSK-063: mw_panes_open answers while the first board discovery is still running, and the pane opens once the boards are known', async ($, on) => {
+  const { state, clock } = rig($, on, false)
+  state.boards = { '/home': REAL_BOARDS }
+  state.boardJobs = REAL_BOARD_JOBS
+  let release: () => void = () => undefined
+  ;(state as any).gate = new Promise<void>(r => { release = r })
+  const started = $.session.start({ cwd: '/work/x', surface: 'desktop', isInteractive: true })
+  let answer: any
+  let settled = false
+  const call = ($.tool.call({ tool: 'mcp__mw-jobs__mw_panes_open', pane: 'jobs' } as never) as Promise<any>).then(r => { answer = r; settled = true }, err => { answer = { error: String(err) }; settled = true })
+  await clock.advance(20_000)
+  // still no boards: an answer (not a hang) that says so and what to do
+  expect(settled).toBe(true)
+  expect(JSON.stringify(answer)).toMatch(/still|loading|looking|discover/i)
+  // the discovery finishes: the same call now opens the pane
+  release()
+  await started
+  await call
+  const again = (await $.tool.call({ tool: 'mcp__mw-jobs__mw_panes_open', pane: 'jobs' } as never)) as any
+  expect(JSON.stringify(again)).not.toMatch(/deny|no jobs registered/)
+  expect(state.opens.at(-1)?.id).toBe('mw-jobs')
 })

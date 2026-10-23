@@ -30,6 +30,8 @@ import type {
 } from '../types'
 
 const PANE = 'mw-jobs'
+/** How long mw_panes_open waits for the job list before it answers "still looking". */
+const PANES_OPEN_WAIT_MS = 5000
 const NEWS_PANE = 'mw-news'
 /** The one detail pane both panes open (an item or a milestone), read only. */
 export const DETAIL_PANE = 'mw-detail'
@@ -5863,7 +5865,11 @@ export const register: Register = (on, options) => {
     const input = e as { pane?: unknown; job?: unknown }
     if (input.pane !== 'jobs' && input.pane !== 'news') return { deny: 'pane must be "jobs" or "news"' }
     if (input.job !== undefined && typeof input.job !== 'string') return { deny: 'job must be a job id string' }
-    const reg = await loadRegistry($)
+    // a cold board discovery can take minutes (`mw boards ~`): never hold the model's call for it. Wait a few seconds, then answer.
+    const loading = loadRegistry($)
+    loading.catch(() => undefined)
+    const reg: MwJobsRegistry | undefined = await Promise.race([loading, $.clock.sleep(PANES_OPEN_WAIT_MS).then(() => undefined)])
+    if (reg === undefined) return { result: 'The mw jobs pane is still looking for your boards. Call mw_panes_open again in a few seconds.' }
     if (input.job !== undefined && !reg.jobs.some(j => j.id === input.job)) return { deny: `unknown job "${String(input.job).slice(0, 60)}" (${idList(reg.jobs.map(j => j.id)) || 'none registered'})` }
     if (reg.jobs.length === 0) return { deny: 'no jobs registered' }
     const r = (await runCommand($, input.pane === 'news' ? `news${input.job ? ` ${input.job}` : ''}` : (input.job ?? ''), undefined)) as { text?: string }
