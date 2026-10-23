@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -68,5 +69,8 @@ func TestGoldenJobsShow(t *testing.T) {
 	)
 	got := captureOutput(t, func() { runAll(t, []string{"jobs", "show", "-j"}) })
 	checkGolden(t, "jobs-show-j", norm(got))
-	checkGolden(t, "jobs-show-toon", norm(captureOutput(t, func() { runAll(t, []string{"jobs", "show", "tiny"}) })))
+	// TOON quotes a value with a colon (a Windows drive path): unquote the pinned root so the golden is the same on every OS
+	unq := regexp.MustCompile(`"(<root>[^"]*)"`)
+	toon := unq.ReplaceAllString(norm(captureOutput(t, func() { runAll(t, []string{"jobs", "show", "tiny"}) })), "$1")
+	checkGolden(t, "jobs-show-toon", toon)
 }
