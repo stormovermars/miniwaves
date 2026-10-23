@@ -4491,3 +4491,12 @@ test('news_path "" means mw refused the path: no button, even with a news_out; a
   expect(newsStatusPath({ news_out: 'x/' }, '/b', '/h')).toBe('/b/x/status.md')
   expect(newsStatusPath({}, '/b', '/h')).toBe('/b/docs/news/status.md')
 })
+
+test('legacy alerts: an item that is new and already in review alerts once, as Review (not also New); answered in chat now it says New', () => {
+  const job = { id: 'zeta', title: 'Zeta', board: '/b', tenants: ['t'], news: '', summary: '', coordinator: '', desk: '', alerts: {} } as any
+  const snap = (items: any[], inChat?: any) => ({ waves: [], items, events: [], asks: [], inChat, updatedAt: 1 }) as any
+  const it = (state: string) => ({ tenant: 't', id: 'T-9', type: 'task', state, title: 'Fresh', note: '', updated: '2026-10-22T10:00:00Z' })
+  expect(legacyEvents(job, snap([]), snap([it('review')])).map(e => e.kind)).toEqual(['review'])
+  expect(legacyEvents(job, snap([]), snap([it('doing')])).map(e => e.kind)).toEqual(['new'])
+  expect(legacyEvents(job, snap([]), snap([it('review')], { 't:T-9': {} })).map(e => e.kind)).toEqual(['new'])
+})

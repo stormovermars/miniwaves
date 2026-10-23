@@ -2431,14 +2431,14 @@ export const legacyEvents = (job: MwJobsJob, old: MwJobsSnapshot, next: MwJobsSn
   }
   for (const i of next.items) {
     const was = oldKeys.get(`${i.tenant}:${i.id}`)
-    if (isReview(i) && (was === undefined || !isReview(was))) out.push({ type: 'needs', kind: 'review', text: alertText(job.id, 'Review', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `review|${i.tenant}:${i.id}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
+    if (isReviewIn(i, next) && (was === undefined || !isReviewIn(was, old))) out.push({ type: 'needs', kind: 'review', text: alertText(job.id, 'Review', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `review|${i.tenant}:${i.id}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
   }
   for (const i of next.items) {
     const was = oldKeys.get(`${i.tenant}:${i.id}`)
     if (was !== undefined && was.state !== i.state && i.state === 'done') out.push({ type: 'done', kind: 'done', text: alertText(job.id, 'Done', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `done|${i.tenant}:${i.id}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
   }
   for (const i of next.items) {
-    if (!oldKeys.has(`${i.tenant}:${i.id}`)) out.push({ type: 'new', kind: 'new', text: alertText(job.id, 'New', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `new|${i.tenant}:${i.id}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
+    if (!oldKeys.has(`${i.tenant}:${i.id}`) && !isReviewIn(i, next)) out.push({ type: 'new', kind: 'new', text: alertText(job.id, 'New', itemRef(labels, i.tenant, i.id), i.title), who: `${i.tenant} ${i.id}`, key: `new|${i.tenant}:${i.id}`, ref: itemRef(labels, i.tenant, i.id), link: { kind: 'item', tenant: i.tenant, id: i.id } })
   }
   out.push(...metricAlerts(job.id, old.metrics, next.metrics))
   return out
