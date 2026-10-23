@@ -138,13 +138,14 @@ func TestSessionRoleCeremonyGoldens(t *testing.T) {
 	rh, _ := filepath.EvalSymlinks(home)
 	norm := func(s string) string { return osNorm(replacePath(replacePath(s, dir, r, "<DIR>"), home, rh, "<HOME>")) }
 	cap := func(args ...string) string { return norm(captureOutput(t, func() { runAll(t, args) })) }
+	runAll(t, []string{"jobs", "set", "tiny", "ceremonies=review,planning,triage,spike"})
 	wantIn := map[string][]string{
 		"review":  {"`Review WAV-NNN`", "WAV-NNN/", "lessons.md", "Screenshots only", "at most one `mw ask`", "never accept or reject"},
 		"planner": {"`Planning YYYY-MM-DD`", "never `doing` ones", "`mw edit -c` is for humans", "one `mw ask` digest", "screenshots only"},
 		"spike":   {"SPK-NNN/", "throwaway branch", "never merged", "STALE", "Screenshots only", "At most one `mw ask`"},
 	}
 	for _, role := range []string{"review", "planner", "spike"} {
-		got := cap("get-prompt", "session", "s-"+role, "-a", role)
+		got := cap("get-prompt", "session", "s-"+role, "-a", role, "-t", "sheet")
 		rolesGolden(t, "session-"+role, got)
 		for _, want := range wantIn[role] {
 			if !strings.Contains(got, want) {
@@ -162,6 +163,44 @@ func TestSessionRoleCeremonyGoldens(t *testing.T) {
 		if got := cap("get-prompt", "session", "s-"+role, "-a", role); strings.Contains(got, "Ceremony role") {
 			t.Errorf("%s prompt has a ceremony block", role)
 		}
+	}
+}
+
+// A ceremony role block renders only when the tenant's job lists that ceremony.
+func TestSessionRoleBlockNeedsCeremony(t *testing.T) {
+	rolesBoard(t)
+	roles := map[string]string{"review": "review", "planner": "planning", "spike": "spike"}
+	prompt := func(role string) string {
+		return captureOutput(t, func() { runAll(t, []string{"get-prompt", "session", "s-" + role + "-x", "-a", role, "-t", "sheet"}) })
+	}
+	// job without ceremonies: no block for any role
+	for role := range roles {
+		if got := prompt(role); strings.Contains(got, "Ceremony role") {
+			t.Errorf("job without ceremonies: %s prompt has a ceremony block", role)
+		}
+	}
+	// only the listed ceremony renders its own block
+	for role, cer := range roles {
+		runAll(t, []string{"jobs", "set", "tiny", "ceremonies=" + cer})
+		for other := range roles {
+			got := prompt(other)
+			if has := strings.Contains(got, "Ceremony role "+other); has != (other == role) {
+				t.Errorf("ceremonies=%s: %s block present=%v", cer, other, has)
+			}
+		}
+	}
+	// triage alone activates none of the three role blocks
+	runAll(t, []string{"jobs", "set", "tiny", "ceremonies=triage"})
+	for role := range roles {
+		if strings.Contains(prompt(role), "Ceremony role") {
+			t.Errorf("ceremonies=triage: %s has a block", role)
+		}
+	}
+	// a tenant outside any job gets none either
+	runAll(t, []string{"tenant", "add", "loose", "Loose"})
+	got := captureOutput(t, func() { runAll(t, []string{"get-prompt", "session", "s-loose", "-a", "review", "-t", "loose"}) })
+	if strings.Contains(got, "Ceremony role") {
+		t.Errorf("job-less tenant has a ceremony block")
 	}
 }
 

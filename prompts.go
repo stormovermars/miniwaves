@@ -62,7 +62,21 @@ func buildSessionPrompt(path string, w *Workspace, t *Tenant, id, role string, h
 		dir = filepath.Dir(path)
 	}
 	gs := gateStates(w, t)
-	return promptWith(w, "session", promptData{Role: role, ID: id, Slug: t.Slug, Session: id, Headless: headless, TenantName: compactText(t.Name, 72),
+	// A ceremony role block renders only when the tenant's job lists that ceremony.
+	var cer promptData
+	if _, ok := w.Jobs[t.Job]; ok && t.Job != "" {
+		for _, n := range jobView(w, t.Job).Ceremonies {
+			switch n {
+			case "review":
+				cer.CerReview = true
+			case "planning":
+				cer.CerPlanning = true
+			case "spike":
+				cer.CerSpike = true
+			}
+		}
+	}
+	return promptWith(w, "session", promptData{CerReview: cer.CerReview, CerPlanning: cer.CerPlanning, CerSpike: cer.CerSpike, Role: role, ID: id, Slug: t.Slug, Session: id, Headless: headless, TenantName: compactText(t.Name, 72),
 		Setup:        sessionSetup(runtime.GOOS, dir, id, t.Slug, role),
 		GateEvidence: byName(gs, "evidence").Effective, GateAcceptance: byName(gs, "acceptance").Effective, GateJudge: byName(gs, "judge").Effective,
 		EvidenceDir:    filepath.Join(workspaceFolders(w).Evidence, t.Slug, "<ID>") + string(filepath.Separator),
