@@ -97,6 +97,38 @@ func TestKitBuildlockShell(t *testing.T) {
 	}
 }
 
+// A lock folder without a pid file is stale only after a minute: a fresh one is a live owner between mkdir and the pid write.
+func TestKitBuildlockPidlessStale(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh lock")
+	}
+	path := inTempDir(t)
+	runAll(t, []string{"init", "Kit app"}, []string{"init", "--kit", "coordinated", "--job", "tiny"})
+	script := filepath.Join(filepath.Dir(path), "buildlock.sh")
+	lock := filepath.Join(t.TempDir(), "lock")
+	t.Setenv("BUILDLOCK_DIR", lock)
+	t.Setenv("BUILDLOCK_TIMEOUT", "2")
+	if err := os.Mkdir(lock, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if code := runShell(t, script, "true"); code != 75 {
+		t.Fatalf("fresh pid-less lock: exit %d, want 75 (must not be taken over)", code)
+	}
+	old := time.Now().Add(-3 * time.Minute)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if code := runShell(t, script, "sh", "-c", "exit 3"); code != 3 {
+		t.Fatalf("old pid-less lock: exit %d, want 3 (taken over)", code)
+	}
+	if _, err := os.Stat(lock); err == nil {
+		t.Fatal("lock not released")
+	}
+	if _, err := os.Stat(lock + ".takeover"); err == nil {
+		t.Fatal("takeover folder left behind")
+	}
+}
+
 // Eight waiters on one stale lock must still run one at a time (the takeover is an atomic rename), and a live
 // owner that kill -0 cannot signal (pid 1) is never mistaken for a dead one: the wait times out, no spin.
 func TestKitBuildlockTakeoverRace(t *testing.T) {

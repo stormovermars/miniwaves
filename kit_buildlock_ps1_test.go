@@ -133,6 +133,32 @@ func TestKitBuildlockPowerShell(t *testing.T) {
 	}
 }
 
+// A lock folder without a pid file is stale only after a minute.
+func TestKitBuildlockPowerShellPidlessStale(t *testing.T) {
+	pwsh, script, lock := ps1Setup(t)
+	if err := os.MkdirAll(lock, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BUILDLOCK_TIMEOUT", "2")
+	if code := runPS1(t, pwsh, script, "exit"); code != 75 {
+		t.Fatalf("fresh pid-less lock: exit %d, want 75", code)
+	}
+	old := time.Now().Add(-3 * time.Minute)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BUILDLOCK_HELPER_CODE", "3")
+	if code := runPS1(t, pwsh, script, "exit"); code != 3 {
+		t.Fatalf("old pid-less lock: exit %d, want 3", code)
+	}
+	if _, err := os.Stat(lock); err == nil {
+		t.Fatal("lock not released")
+	}
+	if _, err := os.Stat(lock + ".takeover"); err == nil {
+		t.Fatal("takeover folder left behind")
+	}
+}
+
 // Four waiters on one stale lock run strictly one at a time: a second holder would fail the helper's mkdir (exit 9).
 func TestKitBuildlockPowerShellTwoWaiterTakeover(t *testing.T) {
 	pwsh, script, lock := ps1Setup(t)

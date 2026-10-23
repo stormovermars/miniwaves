@@ -2,7 +2,7 @@
 # Usage: ./buildlock.ps1 COMMAND [ARGS...]   (exit code = the command's; 75 = timed out waiting)
 # Env: BUILDLOCK_DIR (lock folder), BUILDLOCK_TIMEOUT (seconds to wait, default 1800).
 # The lock is a folder published by one rename (Directory.Move fails when the target exists, so exactly one waiter wins, and
-# the pid file is already inside when the lock appears); a lock whose owner process is gone is taken over, one waiter at a time.
+# the pid file is already inside when the lock appears); a lock whose owner process is gone, or that has no pid file for over a minute, is taken over, one waiter at a time.
 # No param() block: it would make this an advanced script and bind the wrapped command's -v, -o, -e to common parameters.
 if ($args.Count -lt 1) { [Console]::Error.WriteLine('usage: buildlock.ps1 COMMAND [ARGS...]'); exit 2 }
 $Command = $args[0]
@@ -11,6 +11,12 @@ $lock = if ($env:BUILDLOCK_DIR) { $env:BUILDLOCK_DIR } else { Join-Path ([System
 $timeout = if ($env:BUILDLOCK_TIMEOUT) { [int]$env:BUILDLOCK_TIMEOUT } else { 1800 }
 $waited = 0
 # New-Item is check-then-create and can succeed for two waiters at once; a rename onto an existing, non-empty folder cannot.
+# A lock folder with no pid file that is older than a minute: its owner died before writing it.
+function Test-PidlessOld([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return $false }
+  if (Test-Path -LiteralPath (Join-Path $Path 'pid')) { return $false }
+  return ((Get-Date) - (Get-Item -LiteralPath $Path).LastWriteTime).TotalSeconds -gt 60
+}
 function New-Claim([string]$Path) {
   $tmp = "$Path.$PID.tmp"
   try {
@@ -28,14 +34,14 @@ while ($true) {
   if (New-Claim $lock) { break }
   $owner = $null
   try { $owner = [int](Get-Content -Path (Join-Path $lock 'pid') -ErrorAction Stop) } catch {}
-  if ($owner -and -not (Get-Process -Id $owner -ErrorAction SilentlyContinue)) {
+  if (($owner -and -not (Get-Process -Id $owner -ErrorAction SilentlyContinue)) -or (-not $owner -and (Test-PidlessOld $lock))) {
     # only the holder of $lock.takeover removes a stale lock, so the lock cannot be replaced under us;
     # re-read the owner first, another waiter may have finished the takeover already
     $mutex = "$lock.takeover"
     if (New-Claim $mutex) {
       $now = $null
       try { $now = [int](Get-Content -Path (Join-Path $lock 'pid') -ErrorAction Stop) } catch {}
-      if ($now -eq $owner) { Remove-Item -Recurse -Force $lock -ErrorAction SilentlyContinue }
+      if (($now -eq $owner) -and ($owner -or (Test-PidlessOld $lock))) { Remove-Item -Recurse -Force $lock -ErrorAction SilentlyContinue }
       Remove-Item -Recurse -Force $mutex -ErrorAction SilentlyContinue
       continue
     }
