@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sort"
 	"strconv"
 	"syscall"
 	"time"
@@ -22,6 +23,20 @@ import (
 // JSON array) replaces alerts.exec: it is the stub the tests use. An empty alerts.on selects nothing.
 
 const alertExecTimeout = 30 * time.Second
+
+// alertExecWaitDelay bounds how long Run waits for the child's pipes after it is killed or exits: a grandchild that
+// keeps stderr open must not hang the feed.
+var alertExecWaitDelay = 5 * time.Second
+
+// The first read of a "from now" feed is retried while the board is mid-write.
+const followStartAttempts = 5
+
+var followStartBackoff = 200 * time.Millisecond
+
+// fatalFollowError marks an error that retrying cannot fix (bad options).
+type fatalFollowError struct{ err error }
+
+func (e *fatalFollowError) Error() string { return e.err.Error() }
 
 // alertArgv is the command to run: MW_ALERT_EXEC when set, else alerts.exec of the user config.
 func alertArgv() ([]string, error) {
@@ -73,6 +88,7 @@ func runAlertExec(argv []string, r logRow, errw io.Writer) {
 	cmd := exec.CommandContext(ctx, argv[0], append(append([]string{}, argv[1:]...), f.Name())...)
 	cmd.Stdin = nil // the null device
 	cmd.Stderr = errw
+	cmd.WaitDelay = alertExecWaitDelay
 	if err := cmd.Run(); err != nil {
 		fmt.Fprintf(errw, "mw: alerts.exec %s (%s %s): %v\n", argv[0], r.Item, r.Action, err)
 	}
@@ -122,52 +138,90 @@ func logFollow(o map[string]string, out, errw io.Writer, poll time.Duration, sto
 	if err != nil {
 		return err
 	}
+	// The tenant list is fixed at start (-A included): a tenant added later is not followed. Each tenant keeps its
+	// own cursor, so a tenant that disappears (archive) and reappears (restore) does not replay its history.
 	var slugs []string
-	pick := func(w *Workspace) ([]*Tenant, error) {
-		if slugs == nil {
-			if o["all"] == "true" {
-				if o["tenant"] != "" {
-					return nil, errors.New("mw log -A cannot be combined with -t")
-				}
-				for _, t := range shown(w, o) {
-					slugs = append(slugs, t.Slug)
-				}
-			} else {
-				t, err := selectTenantRaw(w, o)
-				if err != nil {
-					return nil, err
-				}
-				slugs = []string{t.Slug}
-			}
+	curs := map[string]string{}
+	pick := func(w *Workspace) error {
+		if slugs != nil {
+			return nil
 		}
-		var ts []*Tenant
+		if o["all"] == "true" {
+			if o["tenant"] != "" {
+				return errors.New("mw log -A cannot be combined with -t")
+			}
+			for _, t := range shown(w, o) {
+				slugs = append(slugs, t.Slug)
+			}
+		} else {
+			t, err := selectTenantRaw(w, o)
+			if err != nil {
+				return err
+			}
+			slugs = []string{t.Slug}
+		}
 		for _, s := range slugs {
-			if t, err := tenantBySlug(w, s); err == nil {
-				ts = append(ts, t)
-			}
+			curs[s] = o["since"]
 		}
-		return ts, nil
+		return nil
 	}
-	cursor := o["since"]
 	_, hasSince := o["since"]
 	step := func() ([]logRow, error) {
 		w, err := load(path)
 		if err != nil {
 			return nil, err
 		}
-		ts, err := pick(w)
-		if err != nil {
-			return nil, err
+		if err := pick(w); err != nil {
+			return nil, &fatalFollowError{err}
 		}
-		rows, next, err := logSince(ts, cursor, 0)
-		if err != nil {
-			return nil, err
+		var all []logRow
+		next := map[string]string{}
+		for _, s := range slugs {
+			t, err := tenantBySlug(w, s)
+			if err != nil {
+				continue // gone for now: keep its cursor for when it comes back
+			}
+			rows, c, err := logSince([]*Tenant{t}, curs[s], 0)
+			if err != nil {
+				return nil, err
+			}
+			all = append(all, rows...)
+			next[s] = c
 		}
-		cursor = next
-		return rows, nil
+		for s, c := range next { // commit only after every tenant read cleanly
+			curs[s] = c
+		}
+		sort.SliceStable(all, func(i, j int) bool {
+			x, y := parseTS(all[i].At), parseTS(all[j].At)
+			if !x.Equal(y) {
+				return x.Before(y)
+			}
+			if all[i].Tenant != all[j].Tenant {
+				return all[i].Tenant < all[j].Tenant
+			}
+			return all[i].Item < all[j].Item
+		})
+		return all, nil
 	}
-	if !hasSince { // from now: take the cursor, deliver nothing
-		if _, err := step(); err != nil {
+	if !hasSince { // from now: take the cursors, deliver nothing; a board mid-write is retried a few times
+		var err error
+		for i := 0; i < followStartAttempts; i++ {
+			if _, err = step(); err == nil {
+				break
+			}
+			var fe *fatalFollowError
+			if errors.As(err, &fe) {
+				return fe.err
+			}
+			if i < followStartAttempts-1 {
+				select {
+				case <-stop:
+					return nil
+				case <-time.After(time.Duration(i+1) * followStartBackoff):
+				}
+			}
+		}
+		if err != nil {
 			return err
 		}
 	}
