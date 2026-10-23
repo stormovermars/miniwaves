@@ -7,6 +7,7 @@ import type { ItemRow, MileRow } from './rows'
 import { buildIdIndex, splitIds, type IdIndex, type IdRef } from './ids'
 import { capN, cellWidth, cutCells, safeSlice, INVISIBLE, memberParts, tenantLabels, waveName, mileOf, waveToMile, mileName, mileCount, textBar, itemRow, itemName } from './rows'
 export { tenantLabels, waveName }
+import { THUMB_MAX, THUMB_PX, BIG_PX, imagesFromLs, evidenceRoots, textEvidence, thumbKey, imgDecision, toggleOpen, imageSvg, thumbArgv, imageOpenerArgv } from './evidence'
 import { parseItemDetail, parseWaveDetail } from './detail'
 import { abbr, topOf, filterModel, tenantHidden, withTenantHidden, refOf, bulletin, bulletinMd, changeCount, flowLines, metricLines, newsMd, newsSegments, nowSheet, parseModel, relHeadline, releaseDate, shortLines, snapshotFromModel, total, BULLETIN_MAX, GOPHER_MIN } from './bulletin'
 import { agileJobs, agileNews, kanbanJobs, kanbanNews, flowText } from './flow'
@@ -83,6 +84,10 @@ const fanfare = atom({ plugin: 'mw-jobs', key: 'fanfare' } as const, {})
 const usedBoards = atom({ plugin: 'mw-jobs', key: 'usedBoards' } as const, [])
 const detail = atom({ plugin: 'mw-jobs', key: 'detail' } as const, { cur: null, trail: [], from: 'jobs' })
 const detailData = atom({ plugin: 'mw-jobs', key: 'detailData' } as const, {})
+/** TSK-071: the image files found under each item's evidence (per detail key), the thumbnails and expanded pictures read so far (base64 JPEG per path|mtime|px; '' = could not be made), the one picture open. */
+const evImages = atom({ plugin: 'mw-jobs', key: 'evImages' } as const, {})
+const evPics = atom({ plugin: 'mw-jobs', key: 'evPics' } as const, {})
+const evOpen = atom({ plugin: 'mw-jobs', key: 'evOpen' } as const, '')
 const alertRows = atom({ plugin: 'mw-jobs', key: 'alertRows' } as const, [])
 const settings = atom({ plugin: 'mw-jobs', key: 'settings' } as const, { ok: null, keys: [], hint: '', err: {} })
 
@@ -4223,6 +4228,88 @@ const loadDetail = async ($: any, r: MwJobsDetailRef) => {
     }
   }
   await update($, detailData, (m: Record<string, { text?: string; why?: string }>) => ({ ...m, [detailKey(r)]: next }))
+  if (r.kind === 'item' && next.text !== undefined && job !== undefined) await loadEvidence($, r, job, home, next.text)
+}
+
+/** TSK-071: finds the image files under an item's evidence (read only: `ls`, `stat`) and makes their thumbnails (macOS sips, cached per path+mtime). Anything that fails leaves a text link. */
+const loadEvidence = async ($: any, r: MwJobsDetailRef, job: MwJobsJob, home: string, text: string) => {
+  const it = parseItemDetail(text, r.tenant)
+  if (it === undefined) return
+  const roots = evidenceRoots(it.evidence, it.evidenceDir, it.evidenceFiles)
+  if (roots.length === 0) return
+  const os = await osKind($)
+  const found: Record<string, Array<{ path: string; mtime: string }>> = {}
+  let left = THUMB_MAX
+  for (const root of roots) {
+    if (left <= 0) break
+    const path = expand(root, home, expand(job.board, home))
+    let out = ''
+    try {
+      const ls = await proc($, os === 'windows' ? ['cmd', '/c', 'dir', '/b', path] : ['/bin/ls', '-1p', '--', path], { timeoutMs: 10_000 })
+      out = ls.exitCode === 0 ? String(ls.stdout ?? '') : ''
+    } catch {
+      out = ''
+    }
+    const files = imagesFromLs(path, out, left)
+    const list: Array<{ path: string; mtime: string }> = []
+    for (const f of files) {
+      let mtime = '0'
+      if (os !== 'windows') {
+        try {
+          const st = await proc($, os === 'mac' ? ['/usr/bin/stat', '-f', '%m', f] : ['stat', '-c', '%Y', f], { timeoutMs: 5000 })
+          if (st.exitCode === 0) mtime = String(st.stdout ?? '').trim() || '0'
+        } catch {
+          mtime = '0'
+        }
+      }
+      list.push({ path: f, mtime })
+    }
+    left -= list.length
+    if (list.length > 0) found[root] = list
+  }
+  await update($, evImages, (m: Record<string, unknown>) => ({ ...m, [detailKey(r)]: found }))
+  if (os === 'mac') for (const list of Object.values(found)) for (const f of list) await ensurePic($, f.path, f.mtime, THUMB_PX)
+}
+
+/** One picture as base64 JPEG at `px` into the cache (once per path+mtime+px); '' when it cannot be made. */
+const ensurePic = async ($: any, path: string, mtime: string, px: number) => {
+  const key = thumbKey(path, mtime, px)
+  const have = (await read($, evPics)) as Record<string, string>
+  if (have[key] !== undefined) return
+  let b64 = ''
+  try {
+    const out = await proc($, thumbArgv(path, px), { timeoutMs: 15_000 })
+    b64 = out.exitCode === 0 ? String(out.stdout ?? '').trim() : ''
+  } catch {
+    b64 = ''
+  }
+  await update($, evPics, (m: Record<string, string>) => ({ ...m, [key]: b64 }))
+}
+
+/** A click on a picture: it opens big (made now when it is not cached; one open at a time) or, open, closes. A picture too big for an Svg opens in the OS viewer instead. */
+const toggleEvidence = async ($: any, path: string, mtime: string) => {
+  const cur = (await read($, evOpen)) as string
+  const next = toggleOpen(cur, path)
+  if (next === '') {
+    await update($, evOpen, () => '')
+    return
+  }
+  await ensurePic($, path, mtime, BIG_PX)
+  const big = ((await read($, evPics)) as Record<string, string>)[thumbKey(path, mtime, BIG_PX)] ?? ''
+  if (imgDecision(big) === 'svg') {
+    await update($, evOpen, () => next)
+    return
+  }
+  const why = await checkPlainFile($, path, false)
+  if (why !== '') {
+    $.ui.toast(`Jobs: not opening ${path.split(/[\\/]/).pop()}, ${why === 'missing' ? 'it is gone' : why}.`, { timeoutMs: 6000 })
+    return
+  }
+  try {
+    await proc($, imageOpenerArgv(await osKind($), path))
+  } catch {
+    // no opener
+  }
 }
 
 const detailTitle = (r: MwJobsDetailRef) => `mw ${r.kind === 'wave' ? 'milestone' : 'item'} · ${r.tenant}/${r.id}`
@@ -4338,7 +4425,43 @@ const detailBack = async ($: any) => {
 const STATE_TONE: Record<string, string | undefined> = { blocked: 'error', needs: 'error', review: 'warning', doing: 'warning', done: 'success', closed: 'success' }
 
 /** The detail pane's tree: title row ending in ¦ < Back, then the item's or the milestone's fields as selectable Text. */
-const detailTree = (ui: any, $: any, d: MwJobsDetail, data: Record<string, { text?: string; why?: string }>, index: IdIndex = new Map()) => {
+type EvState = { images: Record<string, Record<string, Array<{ path: string; mtime: string }>>>; pics: Record<string, string>; open: string; canSvg: boolean }
+const NO_EV: EvState = { images: {}, pics: {}, open: '', canSvg: false }
+
+/** TSK-071: the evidence field: image files as thumbnails (click: expand in place, click again: collapse; the caption under the picture is the control, as an Svg takes no press), every other entry as text; no picture made (no Svg here, no sips, too big) is a button that opens the file. */
+const evidenceNodes = (ui: any, $: any, evidence: string[], images: Record<string, Array<{ path: string; mtime: string }>>, ev: EvState) => {
+  const { Box, Text, Button, Svg } = ui
+  const names = Object.fromEntries(Object.entries(images).map(([k, v]) => [k, v.map(x => x.path)]))
+  const rest = textEvidence(evidence, names)
+  const pics = Object.values(images).flat()
+  return (
+    <Box flexDirection="column">
+      {rest.slice(0, 8).map((e, i) => <Text key={`ev-${i}`} dimColor wrap="truncate-end">{e}</Text>)}
+      {pics.length > 0 && (
+        <Box key="ev-thumbs" flexWrap="wrap" gap={1}>
+          {pics.map((f, i) => {
+            const name = f.path.split(/[\\/]/).pop() ?? f.path
+            const isOpen = ev.open === f.path
+            const small = ev.pics[thumbKey(f.path, f.mtime, THUMB_PX)]
+            const big = ev.pics[thumbKey(f.path, f.mtime, BIG_PX)]
+            const b64 = isOpen && imgDecision(big) === 'svg' ? big : small
+            if (!ev.canSvg || imgDecision(b64) !== 'svg') return <Button key={`ev-img-${i}`} plain label={name} onPress={() => void toggleEvidence($, f.path, f.mtime)} />
+            const box = isOpen ? imageSvg(b64!, 480, 360) : imageSvg(b64!, 120, 90)
+            // an Svg is not pressable and a Button holds only text: the picture sits over its caption, and the caption is the control
+            return (
+              <Box key={`ev-img-${i}`} flexDirection="column" alignItems="flex-start">
+                <Svg source={box.source} alt={name} width={box.width} height={box.height} />
+                <Button plain label={`${isOpen ? 'Collapse' : 'Expand'} ${name}`} onPress={() => void toggleEvidence($, f.path, f.mtime)} />
+              </Box>
+            )
+          })}
+        </Box>
+      )}
+    </Box>
+  )
+}
+
+const detailTree = (ui: any, $: any, d: MwJobsDetail, data: Record<string, { text?: string; why?: string }>, index: IdIndex = new Map(), ev: EvState = NO_EV) => {
   const { Box, Text, Button, Link } = ui
   // free text with the board's ids as links (a milestone's own children and log included)
   const lk = (text: string, key: string, o: { dimColor?: boolean; color?: string; wrap?: 'wrap' | 'truncate-end' } = {}) => linkedText(ui, $, d.cur?.jobId ?? '', text, index, key, 'detail', o)
@@ -4374,7 +4497,7 @@ const detailTree = (ui: any, $: any, d: MwJobsDetail, data: Record<string, { tex
         {field('wave', 'milestone', it.wave === '' ? '\u2014' : <Button key="df-wave-open" plain label={it.wave} onPress={() => void openDetail($, { kind: 'wave', jobId: r.jobId, tenant: it.tenant, id: it.wave }, 'detail')} />)}
         {field('owner', 'owner', it.owner || '\u2014')}
         {it.reason !== null && field('reason', it.reason.label.toLowerCase(), lk(it.reason.text, 'df-reason', { wrap: 'wrap', color: it.reason.label === 'Blocked' ? 'error' : undefined }))}
-        {it.evidence.length > 0 && field('evidence', 'evidence', <Box flexDirection="column">{it.evidence.slice(0, 8).map((e, i) => <Text key={`ev-${i}`} dimColor wrap="truncate-end">{e}</Text>)}</Box>)}
+        {(it.evidence.length > 0 || Object.keys(ev.images[detailKey(r)] ?? {}).length > 0) && field('evidence', 'evidence', evidenceNodes(ui, $, it.evidence, ev.images[detailKey(r)] ?? {}, ev))}
         {it.ticket !== null && field('ticket', 'ticket', it.ticket.url !== '' ? <Link key="df-ticket-link" href={it.ticket.url}>{it.ticket.label}</Link> : it.ticket.label)}
         {it.acceptance !== '' && field('acc', 'acceptance', lk(it.acceptance, 'df-acc', { wrap: 'wrap' }))}
         {it.children.length > 0 && field('children', 'children', <Box flexDirection="column">{it.children.map(c => <Box key={`ch-${c.id}`} gap={1}>{itemBtn(`ch-open-${c.id}`, it.tenant, c.id, c.id)}<Text color={STATE_TONE[c.state]}>{c.state}</Text>{lk(c.title, `ch-title-${c.id}`)}</Box>)}</Box>)}
@@ -6039,7 +6162,8 @@ export const register: Register = (on, options) => {
     const dd = (await read($, detail)) as MwJobsDetail
     const snap = dd.cur === null ? undefined : (((await read($, snapshots)) as Record<string, MwJobsSnapshot>)[dd.cur.jobId])
     const dm = dd.cur === null ? undefined : (((await read($, newsModel)) as Record<string, NewsEntry>)[dd.cur.jobId])?.draft
-    return detailTree(ui, $, dd, (await read($, detailData)) as Record<string, { text?: string; why?: string }>, snap === undefined ? new Map() : idIndexOf(snap, dm))
+    const ev: EvState = { images: (await read($, evImages)) as EvState['images'], pics: (await read($, evPics)) as EvState['pics'], open: (await read($, evOpen)) as string, canSvg: e.surface !== 'terminal' }
+    return detailTree(ui, $, dd, (await read($, detailData)) as Record<string, { text?: string; why?: string }>, snap === undefined ? new Map() : idIndexOf(snap, dm), ev)
   }))
   on('ui.render', { component: 'Pane', requestId: SETTINGS_PANE }, async ($, e) => guardDraw('settings', $, e, async () => {
     const ui = $.ui.resolve(e) as any

@@ -219,6 +219,12 @@ declare module 'claude-code' {
       detail: MwJobsDetail
       /** What `mw show` / `mw wave show` returned per panel key (job|kind|tenant|id): the raw JSON text, or why it failed. */
       detailData: Record<string, { text?: string; why?: string }>
+      /** TSK-071: the image files found under each item's evidence, per panel key then per evidence entry ({ path, mtime }). */
+      evImages: Record<string, Record<string, Array<{ path: string; mtime: string }>>>
+      /** Base64 JPEG pictures per path|mtime|px ('' when one could not be made); a thumbnail and the expanded size. */
+      evPics: Record<string, string>
+      /** The evidence picture shown expanded (its path), or ''. */
+      evOpen: string
       /** Alerts shown as rows at the top of the jobs and news panes until dismissed, newest first. */
       alertRows: MwJobsAlertRow[]
       /** The per-user mw keys (`mw user get -j`); ok false with an older mw. */

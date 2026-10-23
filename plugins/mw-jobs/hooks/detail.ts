@@ -12,6 +12,9 @@ export type DItem = {
   /** The latest block reason (blocked), the done proof (done), or the last note. */
   reason: { label: string; text: string } | null
   evidence: string[]
+  /** The item's own evidence folder (absolute) and how many files it holds. */
+  evidenceDir: string
+  evidenceFiles: number
   ticket: { label: string; url: string } | null
   body: string
   acceptance: string
@@ -61,6 +64,8 @@ export const parseItemDetail = (text: string | undefined, tenant: string): DItem
     owner,
     reason,
     evidence: (Array.isArray(v.evidence) ? v.evidence : []).map(s).filter(Boolean),
+    evidenceDir: s(v.evidence_dir),
+    evidenceFiles: typeof v.evidence_files === 'number' ? v.evidence_files : 0,
     ticket: tl !== '' || tu !== '' ? { label: tl || tu, url: tu } : null,
     body: s(v.body),
     acceptance: s(v.acceptance),
