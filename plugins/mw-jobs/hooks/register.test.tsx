@@ -70,7 +70,8 @@ const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, cho
   on('prompt.fill', (_: any, e: any) => { state.fills.push({ text: e.text, mode: e.mode }); return { isFilled: state.fillOk } })
   on('ui.close', (_: any, e: any) => { state.closes.push(e.id); return { value: undefined } })
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
-  on('env.get', () => ({ value: '/home' }))
+  // TSK-033: the machine has no HOME and no USERPROFILE; the home folder reaches the plugin only through `mw dirs -j`
+  on('env.get', (_: any, e: any) => ({ value: e.name === 'HOME' || e.name === 'USERPROFILE' ? undefined : '/home' }))
   on('fs.write', (_: any, e: any) => { if (state.failWrite) return { deny: 'EACCES' }; state.files.set(String(e.path), String(e.text)); return { value: undefined } })
   on('fs.read', (_: any, e: any) => {
     if (state.files.has(String(e.path))) return { value: state.files.get(String(e.path)) }
@@ -103,6 +104,7 @@ const rig = ($: any, on: any, hasRegistry: boolean, registry: unknown = REG, cho
     if ((state as any).gate !== undefined && cmd.startsWith('mw boards')) await (state as any).gate
     // the OS probe and the mw lookup are plumbing: the test machine is macOS and mw is found by name
     if (cmd.startsWith('/usr/bin/stat -f %HT ')) return { value: { exitCode: 0, stdout: `${(state as any).osKind ?? 'Regular File'}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
+    if (cmd === 'mw dirs -j') return ok({ docs: '/home/docs' })
     if (cmd === 'uname -s') return { value: { exitCode: 0, stdout: 'Darwin\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
     if (cmd === '/bin/sh -c command -v mw' && (state as any).mwPath !== undefined) return { value: { exitCode: 0, stdout: `${(state as any).mwPath}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
     if (cmd === '/bin/sh -c command -v mw') return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, durationMs: 0 } }
@@ -1062,8 +1064,8 @@ test('every icon button has a hover tooltip card, hidden until hover', async ($,
   state.newsFiles.zeta = '# S\n\nx'
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const cases: Array<[any, Array<[string, string]>]> = [
-    [PANE, [['refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Fill: every list in full'], ['mute', 'Mute alerts'], ['panel', 'Open status.md in editor'], ['page', 'Open news page']]],
-    [NEWS_PANE, [['news-refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Fill: every list in full'], ['mute', 'Mute alerts'], ['panel', 'Open status.md in editor'], ['page', 'Open news page']]],
+    [PANE, [['refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Fill: every list in full'], ['mute', 'Mute alerts'], ['panel', 'Open the news file in the editor'], ['page', 'Open news page']]],
+    [NEWS_PANE, [['news-refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Fill: every list in full'], ['mute', 'Mute alerts'], ['panel', 'Open the news file in the editor'], ['page', 'Open news page']]],
   ]
   for (const [pane, items] of cases) {
     const ui = await $.ui.mount({ ...pane, surface: 'desktop' } as never)
@@ -2089,7 +2091,7 @@ test('mw is run by its absolute path when found, and the opener is per OS', asyn
   expect(state.absRuns.every(r => r.startsWith('/opt/tools/bin/mw '))).toBe(true)
   expect(openerArgv('mac', '/a/b.md')).toEqual(['open', '-t', '/a/b.md'])
   expect(openerArgv('linux', '/a/b.md')).toEqual(['xdg-open', '/a/b.md'])
-  expect(openerArgv('windows', 'C:\\a\\b.md')).toEqual(['cmd', '/c', 'start', '', 'C:\\a\\b.md'])
+  expect(openerArgv('windows', 'C:\\a\\b.md')).toEqual(['notepad.exe', 'C:\\a\\b.md'])
   expect(isAbs('/x')).toBe(true)
   expect(isAbs('C:\\x')).toBe(true)
   expect(isAbs('C:/x')).toBe(true)
@@ -2109,7 +2111,7 @@ test('the panel button: news_out as a folder or a file; when $.fs.stat refuses, 
   state.newsFiles.zeta = '# S'
   state.jobShow = { 'news.out': 'out/pages' }
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const main = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  let main = await $.ui.mount({ ...PANE, surface: 'desktop' })
   const opened = () => state.runs.filter(r => r.startsWith('open '))
   // a folder: status.md inside it
   await main.press({ key: 'panel' })
@@ -2120,14 +2122,26 @@ test('the panel button: news_out as a folder or a file; when $.fs.stat refuses, 
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await main.press({ key: 'panel' })
   expect(opened().at(-1)).toBe('open -t /home/apps/zeta-corpus/out/news.md')
-  // a file that is not .md is refused
-  state.jobShow = { 'news.out': 'out/news.txt' }
+  // a file that is not .md/.html, an absolute or ../ news.out: the button is hidden and nothing opens
+  await main.unmount()
+  for (const out of ['out/news.txt', '/etc/passwd.md', '../x/news.md', '~/n.md']) {
+    state.jobShow = { 'news.out': out }
+    lastJobShowReset()
+    await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+    const m2 = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await m2.find({ key: 'panel' }), out).toBeUndefined()
+    await m2.unmount()
+  }
+  // mw's own news.path wins; an .html file is allowed; a ../ news.path is refused
+  expect(newsStatusPath({ 'news.path': '/b/docs/news/status.html' }, '/b', '/h')).toBe('/b/docs/news/status.html')
+  expect(newsStatusPath({ 'news.path': '/b/../x/s.md' }, '/b', '/h')).toBeUndefined()
+  expect(newsStatusPath({ 'news.path': '/b/run.command' }, '/b', '/h')).toBeUndefined()
+  expect(newsStatusPath({ 'news.path': '/b/Some.app' }, '/b', '/h')).toBeUndefined()
+  state.jobShow = { 'news.out': 'out/news.md' }
   lastJobShowReset()
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const n = opened().length
-  await main.press({ key: 'panel' })
-  expect(opened().length).toBe(n)
-  expect(state.toasts.at(-1)).toContain('not a .md file')
+  const main2 = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  main = main2
   // $.fs.stat refuses: the OS check opens a regular file, refuses a link, and a failing OS check says why
   state.jobShow = { 'news.out': 'out/news.md' }
   lastJobShowReset()
@@ -4436,4 +4450,10 @@ test('TSK-060: without a news model, an item entering review alerts once under t
   expect(legacyEvents(job, snap([it('review')]), snap([it('review')]))).toEqual([])
   // blocked awaiting review counts as review too
   expect(legacyEvents(job, snap([it('doing')]), snap([it('blocked', 'awaiting review')])).map(e => e.kind)).toEqual(['review'])
+})
+
+test('TSK-033: the opener is argv only: open -t on macOS, xdg-open on Linux, notepad.exe on Windows', () => {
+  expect(openerArgv('mac', '/b/s.md')).toEqual(['open', '-t', '/b/s.md'])
+  expect(openerArgv('linux', '/b/s.md')).toEqual(['xdg-open', '/b/s.md'])
+  expect(openerArgv('windows', 'C:\\b\\s.md')).toEqual(['notepad.exe', 'C:\\b\\s.md'])
 })

@@ -102,21 +102,21 @@ const expand = (path: string, home: string, base?: string) => {
   return base ? `${base}/${path}` : path
 }
 
-/** The user's home folder: HOME, else USERPROFILE (Windows). */
+let homeCache: string | undefined
+/** The home folder, from mw only (the parent of `mw dirs -j`'s docs folder); the plugin never reads HOME or USERPROFILE. '' when mw cannot say. */
 const homeOf = async ($: any): Promise<string> => {
-  let h: unknown
+  if (homeCache !== undefined) return homeCache
+  let home = ''
   try {
-    h = await $.env.get('HOME')
+    const r = await proc($, ['mw', 'dirs', '-j'], { cwd: '/', timeoutMs: 5000 })
+    const v = r.exitCode === 0 ? (parseJson(String(r.stdout)) as Record<string, unknown> | undefined) : undefined
+    const docs = typeof v?.docs === 'string' ? v.docs : ''
+    const cut = Math.max(docs.lastIndexOf('/'), docs.lastIndexOf('\\'))
+    if (isAbs(docs) && cut > 0) home = docs.slice(0, cut)
   } catch {
-    h = undefined
+    home = ''
   }
-  if (typeof h === 'string' && h !== '') return h
-  try {
-    h = await $.env.get('USERPROFILE')
-  } catch {
-    h = undefined
-  }
-  return typeof h === 'string' ? h : ''
+  return (homeCache = home)
 }
 
 let osCache: 'windows' | 'mac' | 'linux' | undefined
@@ -140,9 +140,9 @@ const osKind = async ($: any): Promise<'windows' | 'mac' | 'linux'> => {
   return (osCache = 'mac')
 }
 
-/** The command that opens a plain file in a text editor, per OS: `open -t`, `xdg-open`, `cmd /c start "" FILE` (argv only, no shell string). */
+/** The command that opens a plain file in a text editor, per OS: `open -t`, `xdg-open`, `notepad.exe` (argv only, no shell string). */
 export const openerArgv = (os: 'windows' | 'mac' | 'linux', path: string): string[] =>
-  os === 'windows' ? ['cmd', '/c', 'start', '', path] : os === 'linux' ? ['xdg-open', path] : ['open', '-t', path]
+  os === 'windows' ? ['notepad.exe', path] : os === 'linux' ? ['xdg-open', path] : ['open', '-t', path]
 
 let mwBin: string | undefined
 let mwProbed = false
@@ -3278,6 +3278,7 @@ type ControlsIn = {
   needs: number
   review: number
   hasPage: boolean
+  canOpen: boolean
   canSvg: boolean
   pane: 'jobs' | 'news'
   /** A phone has no hover: show the legend of the icons as text. */
@@ -3326,7 +3327,7 @@ const controlsRowInner = (ui: any, $: any, c: ControlsIn) => {
       {group(ui, 'grp-alerts', [tipped(ui, 'mute', <Button key="mute" plain label={c.muted ? '🔕' : '🔔'} dimColor onPress={() => void toggleMute($)} />, c.muted ? 'Unmute alerts' : 'Mute alerts', 'right')], true)}
       {c.fanfare !== undefined ? group(ui, 'grp-fanfare', [tipped(ui, 'fanfare', <Button key="fanfare" plain label={c.fanfare.label} dimColor={!c.fanfare.on} onPress={c.fanfare.onPress} />, c.fanfare.tip, 'right')], true) : null}
       {group(ui, 'grp-open', [
-        tipped(ui, 'panel', <Button key="panel" plain label="⧉" onPress={() => void openPanel($, c.job)} />, 'Open status.md in editor', 'right'),
+        c.canOpen ? tipped(ui, 'panel', <Button key="panel" plain label="⧉" onPress={() => void openPanel($, c.job)} />, 'Open the news file in the editor', 'right') : null,
         c.hasPage ? tipped(ui, 'page', <Link href={c.job.news}><Text>{'\u2197'}</Text></Link>, 'Open news page', 'right') : null,
       ])}
     </Box>
@@ -4063,14 +4064,23 @@ const openMain = async ($: any, focus = false, first?: string) => {
   if (first === 'news' && job) await $.ui.open({ id: NEWS_PANE, title: await newsTitleOf($, job.id), focus: true })
 }
 
-/** The news page a job's panel button opens: the job's `news_out` from `mw jobs show -j` (a folder holds status.md; a file is itself), else docs/news/status.md. */
-export const newsStatusPath = (js: Record<string, unknown> | undefined, board: string, home: string): string => {
-  const out = js && (js['news.out'] ?? js.news_out)
+/** The news file the panel button opens: `news.path` from `mw jobs show -j` (mw's own answer), else the job's `news_out` inside the board
+ * (a folder holds status.md; a file is itself), else docs/news/status.md. Undefined (button hidden) for an absolute or `..` news_out, or a file that is not .md/.html. */
+export const newsStatusPath = (js: Record<string, unknown> | undefined, board: string, home: string): string | undefined => {
   const base = expand(board, home)
+  const okExt = (p: string) => /\.(md|html)$/i.test(p)
+  const given = js && (js['news.path'] ?? js.news_path)
+  if (typeof given === 'string' && given !== '') {
+    const full = isAbs(given) ? given : `${base}/${given}`
+    return /(^|[\\/])\.\.([\\/]|$)/.test(full) || !okExt(full) ? undefined : full
+  }
+  const out = js && (js['news.out'] ?? js.news_out)
   if (typeof out !== 'string' || out === '') return `${base}/docs/news/status.md`
-  const full = expand(out, home, base)
+  if (isAbs(out) || out.startsWith('~') || out.split(/[\\/]/).includes('..')) return undefined
+  const full = `${base}/${out}`
   const last = full.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ''
-  return /[\\/]$/.test(out) || !/\.[A-Za-z0-9]+$/.test(last) ? `${full.replace(/[\\/]+$/, '')}/status.md` : full
+  const path = /[\\/]$/.test(out) || !/\.[A-Za-z0-9]+$/.test(last) ? `${full.replace(/[\\/]+$/, '')}/status.md` : full
+  return okExt(path) ? path : undefined
 }
 
 /** What a stat output (macOS `%HT`, Linux `%F`) says about a file: 'file', 'link' or 'other'. */
@@ -4113,7 +4123,7 @@ export const checkPlainFile = async ($: any, path: string, mdOnly: boolean): Pro
   if (kind === undefined) return `it cannot be checked (${err || 'no answer'})`
   if (kind === 'link') return 'it is a symbolic link'
   if (kind !== 'file') return 'it is not a file'
-  if (mdOnly && (!path.toLowerCase().endsWith('.md') || !real.toLowerCase().endsWith('.md'))) return 'it is not a .md file'
+  if (mdOnly && (!/\.(md|html)$/i.test(path) || !/\.(md|html)$/i.test(real))) return 'it is not a .md or .html file'
   return ''
 }
 
@@ -4131,6 +4141,11 @@ const openPanel = async ($: any, job: MwJobsJob) => {
     }
   }
   const path = newsStatusPath(js, job.board, home)
+  if (path === undefined) {
+    await logFail($, job.id, 'news file not opened', 'the news file is outside the board or not .md/.html')
+    $.ui.toast('Jobs: not opening the news file, it is not a .md or .html file inside the board.', { timeoutMs: 6000 })
+    return
+  }
   const name = path.split(/[\\/]/).pop() ?? 'status.md'
   // a repo could commit the page as a link to an .app or .command: only a plain .md file is ever opened, and only in the text editor
   const why = await checkPlainFile($, path, true)
@@ -5793,6 +5808,7 @@ export const register: Register = (on, options) => {
     sessionCwd = typeof e?.cwd === 'string' ? e.cwd : ''
     scanCache = undefined
     mwProbed = false
+    homeCache = undefined
     await replayTranscript($)
     await $.command.register({ name: 'mw-watch', description: 'Open the mw jobs pane; it finds your boards on its own. /mw-watch scan [DIR] looks for more.' })
     await $.command.register({ name: 'mw-jobs', description: 'mw jobs pane: /mw-jobs [id | release | ask | review | style | size | log | mute | every …]' })
@@ -6145,6 +6161,7 @@ export const register: Register = (on, options) => {
             needs: totals.needs,
             review: totals.review,
             hasPage: /^https:\/\//.test(job.news),
+            canOpen: newsStatusPath(lastJobShow[job.id], job.board, homeCache ?? '') !== undefined,
             canSvg,
             legend: e.surface === 'mobile',
             unavailable: mm ? undefined : { gopher: noModelTip, agile: noModelTip, kanban: noModelTip },
@@ -6274,6 +6291,7 @@ export const register: Register = (on, options) => {
           needs: totals.needs,
           review: totals.review,
           hasPage: /^https:\/\//.test(job.news),
+          canOpen: newsStatusPath(lastJobShow[job.id], job.board, homeCache ?? '') !== undefined,
           canSvg,
           legend: e.surface === 'mobile',
           fill: fillJobs,
