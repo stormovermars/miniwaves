@@ -7,12 +7,13 @@ import { REAL_BOARDS, REAL_BOARD_JOBS } from '../tests/fixtures/boards'
 import { SHOW_TSK001, SHOW_STR002, WAVE_002, WAVE_004 } from '../tests/fixtures/detail'
 import { parseItemDetail, parseWaveDetail } from './detail'
 import { REAL_DRAFT, SMALL_DRAFT, SMALL_RELEASE, STRESS_DRAFT, releases30, tenantsDraft, tenantSlug, manyJobs, jobDraft } from '../tests/fixtures/model'
-import { isImagePath, looksLikePath, imagesFromLs, evidenceRoots, textEvidence, toggleOpen, imgDecision, imageSvg, thumbArgv, IMG_SVG_CAP, THUMB_MAX } from './evidence'
+import { isImagePath, looksLikePath, imagesFromLs, evidenceRoots, textEvidence, imgDecision, imageSvg, thumbArgv, IMG_SVG_CAP, THUMB_MAX } from './evidence'
 import { buildIdIndex, splitIds } from './ids'
-import { linkedText, mileMonoRows, unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, metricChanges, metricAlerts, legacyEvents, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, attentionLabels, capAlerted, toastBubbles, stopVisible, parseFanfare, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, toastsOn, popupButton, popupOf, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
+import { linkedText, mileMonoRows, unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, metricChanges, metricAlerts, legacyEvents, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, attentionLabels, capAlerted, toastBubbles, stopVisible, parseFanfare, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, IMAGE_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, toastsOn, popupButton, popupOf, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
 import { REAL_USER_KEYS } from '../tests/fixtures/userkeys'
 
 declare const console: { log: (...a: unknown[]) => void }
+declare const setTimeout: (f: (...a: any[]) => void, ms: number) => unknown
 
 const PANE = {
   plugin: 'mw-jobs',
@@ -4620,16 +4621,13 @@ test('evidence helpers: image paths, folder expansion cap, size decision, one-op
   expect(imgDecision('x'.repeat(IMG_SVG_CAP + 1))).toBe('link')
   expect(imgDecision('')).toBe('link')
   expect(imgDecision(undefined)).toBe('link')
-  expect(toggleOpen('', 'a')).toBe('a')
-  expect(toggleOpen('a', 'a')).toBe('')
-  expect(toggleOpen('a', 'b')).toBe('b')
   expect(imageSvg('QQ==', 10, 5).source).toContain('href="data:image/jpeg;base64,QQ=="')
   // the path is an argument of the script, never part of it
   expect(thumbArgv('/e/a b;rm.png', 200).join(' ')).not.toContain('rm -rf')
   expect(thumbArgv('/e/a b;rm.png', 200)[3]).toBe('sh')
 })
 
-test('evidence: the detail panel shows thumbnails for image evidence, expands one at a time, and keeps non-image entries as text', async ($, on) => {
+test('evidence: the detail panel shows thumbnails for image evidence, opens one in the image pane, and keeps non-image entries as text', async ($, on) => {
   const state = await detailSetup($, on)
   ;(state as any).evLs = { '/home/evidence/zeta-corpus/TSK-001': 'a.png\nb.png\nnotes.txt\n', '/home/docs/x.txt': '/home/docs/x.txt\n' }
   ;(state as any).evPic = { small: 'U01BTEw=', big: 'QklHUElD' }
@@ -4646,24 +4644,28 @@ test('evidence: the detail panel shows thumbnails for image evidence, expands on
   expect(t).toContain('/home/docs/x.txt')
   expect(await srcs()).toHaveLength(2)
   expect((await srcs()).every(x => x.includes('U01BTEw=') && x.includes('width="120"'))).toBe(true)
-  const a = await btn(dp, 'Expand a.png')
-  expect(a).toBeTruthy()
-  await dp.press({ key: a.props.key })
-  let s = await srcs()
-  expect(s[0]).toContain('QklHUElD')
-  expect(s[0]).toContain('width="480"')
-  expect(s[1]).toContain('width="120"')
-  // another opens: the first closes
-  await dp.press({ key: (await btn(dp, 'Expand b.png')).props.key })
-  s = await srcs()
-  expect(s[0]).toContain('width="120"')
-  expect(s[1]).toContain('width="480"')
-  // click again collapses
-  await dp.press({ key: (await btn(dp, 'Collapse b.png')).props.key })
-  s = await srcs()
-  expect(s.every(x => x.includes('width="120"'))).toBe(true)
-  // read only: nothing but ls, stat and sips ran for it
-  expect((state as any).sips).toEqual(['/home/evidence/zeta-corpus/TSK-001/a.png@200', '/home/evidence/zeta-corpus/TSK-001/b.png@200', '/home/evidence/zeta-corpus/TSK-001/a.png@720', '/home/evidence/zeta-corpus/TSK-001/b.png@720'])
+  // a click on a caption opens the picture large in the image pane; no inline expansion
+  expect(await btn(dp, 'Expand a.png')).toBeFalsy()
+  const until = async (f: () => boolean) => { for (let i = 0; i < 100 && !f(); i++) await new Promise(r => setTimeout(r, 20)) }
+  await dp.press({ key: (await btn(dp, 'a.png')).props.key })
+  await until(() => state.opens.some((o: any) => o.id === IMAGE_PANE))
+  expect(state.opens.map((o: any) => o.id)).toContain(IMAGE_PANE)
+  const ip = await $.ui.mount({ ...PANE, requestId: IMAGE_PANE, surface: 'desktop' } as never)
+  const isrc = async () => (await ip.findAll({ type: 'Svg' })).map((x: any) => String(x.props.source))
+  expect(await isrc()).toHaveLength(1)
+  expect((await isrc())[0]).toContain('QklHUElD')
+  expect(await jt(ip)).toContain('a.png')
+  expect((await srcs()).every(x => x.includes('width="120"'))).toBe(true)
+  // another thumbnail replaces it
+  const n = state.opens.length
+  await dp.press({ key: (await btn(dp, 'b.png')).props.key })
+  await until(() => state.opens.length > n)
+  expect(await jt(ip)).toContain('b.png')
+  // Close shuts the pane
+  await ip.press({ key: (await btn(ip, 'Close')).props.key })
+  expect(state.closes).toContain(IMAGE_PANE)
+  await ip.unmount()
+  expect((state as any).sips).toEqual(['/home/evidence/zeta-corpus/TSK-001/a.png@200', '/home/evidence/zeta-corpus/TSK-001/b.png@200', '/home/evidence/zeta-corpus/TSK-001/a.png@1200', '/home/evidence/zeta-corpus/TSK-001/b.png@1200'])
   await dp.unmount()
 })
 
@@ -4678,7 +4680,8 @@ test('evidence: a picture too big for an Svg, and a surface without Svg, fall ba
   await ui.press({ key: (await btn(ui, 'zeta/TSK-203')).props.key })
   await ui.unmount()
   const dp = await $.ui.mount({ ...PANE, requestId: DETAIL_PANE, surface: 'desktop' } as never)
-  await dp.press({ key: (await btn(dp, 'Expand a.png')).props.key })
+  await dp.press({ key: (await btn(dp, 'a.png')).props.key })
+  for (let i = 0; i < 100 && !state.runs.includes('open /home/evidence/zeta-corpus/TSK-001/a.png'); i++) await new Promise(r => setTimeout(r, 20))
   // too big: it opens in the OS viewer, the thumbnail stays
   expect(state.runs).toContain('open /home/evidence/zeta-corpus/TSK-001/a.png')
   expect((await dp.findAll({ type: 'Svg' })).every((x: any) => String(x.props.source).includes('width="120"'))).toBe(true)

@@ -1,10 +1,10 @@
-// TSK-071: evidence as expandable thumbnails in the detail panel. Pure helpers; the reads (ls, sips) run in register.tsx.
+// TSK-071/072: evidence as thumbnails in the detail panel; a click shows the picture large in its own pane. Pure helpers; the reads (ls, sips) run in register.tsx.
 
 export const IMG_EXT = /\.(png|jpe?g|webp|gif)$/i
 export const THUMB_MAX = 8
-/** Pixels on the long edge of a thumbnail and of the expanded picture. */
+/** Pixels on the long edge of a thumbnail and of the picture in the image pane. */
 export const THUMB_PX = 200
-export const BIG_PX = 720
+export const VIEW_PX = 1200
 /** An Svg above 131072 characters is refused by the host; the picture must leave room for the markup around it. */
 export const IMG_SVG_CAP = 120_000
 
@@ -40,9 +40,6 @@ export type ImgDecision = 'svg' | 'link'
 /** Whether a base64 picture goes into an Svg or falls back to a link: it must fit under the Svg cap with its markup. */
 export const imgDecision = (b64: string | undefined): ImgDecision => (b64 !== undefined && b64.length > 0 && b64.length <= IMG_SVG_CAP ? 'svg' : 'link')
 
-/** One click: the clicked picture opens, the open one closes; one is open at a time. */
-export const toggleOpen = (open: string, path: string): string => (open === path ? '' : path)
-
 /** The Svg of one picture inside a w x h box (meet: the picture keeps its shape). */
 export const imageSvg = (b64: string, w: number, h: number): { source: string; width: number; height: number } => ({
   source: `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><image href="data:image/jpeg;base64,${b64}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/></svg>`,
@@ -60,6 +57,6 @@ export const thumbArgv = (path: string, px: number): string[] => [
   String(px),
 ]
 
-/** The viewer for an expanded picture that is too big for an Svg: the OS default app (plain `open`, not the text editor). */
+/** The viewer for an picture that is too big for an Svg: the OS default app (plain `open`, not the text editor). */
 export const imageOpenerArgv = (os: 'windows' | 'mac' | 'linux', path: string): string[] =>
   os === 'windows' ? ['cmd', '/c', 'start', '', path] : os === 'linux' ? ['xdg-open', path] : ['open', path]

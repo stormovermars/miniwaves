@@ -7,7 +7,7 @@ import type { ItemRow, MileRow } from './rows'
 import { buildIdIndex, splitIds, type IdIndex, type IdRef } from './ids'
 import { capN, cellWidth, cutCells, safeSlice, INVISIBLE, memberParts, tenantLabels, waveName, mileOf, waveToMile, mileName, mileCount, textBar, itemRow, itemName } from './rows'
 export { tenantLabels, waveName }
-import { THUMB_MAX, THUMB_PX, BIG_PX, imagesFromLs, evidenceRoots, textEvidence, thumbKey, imgDecision, toggleOpen, imageSvg, thumbArgv, imageOpenerArgv } from './evidence'
+import { THUMB_MAX, THUMB_PX, VIEW_PX, imagesFromLs, evidenceRoots, textEvidence, thumbKey, imgDecision, imageSvg, thumbArgv, imageOpenerArgv } from './evidence'
 import { parseItemDetail, parseWaveDetail } from './detail'
 import { abbr, topOf, filterModel, tenantHidden, withTenantHidden, refOf, bulletin, bulletinMd, changeCount, flowLines, metricLines, newsMd, newsSegments, nowSheet, parseModel, relHeadline, releaseDate, shortLines, snapshotFromModel, total, BULLETIN_MAX, GOPHER_MIN } from './bulletin'
 import { agileJobs, agileNews, kanbanJobs, kanbanNews, flowText } from './flow'
@@ -36,6 +36,8 @@ const PANES_OPEN_WAIT_MS = 5000
 const NEWS_PANE = 'mw-news'
 /** The one detail pane both panes open (an item or a milestone), read only. */
 export const DETAIL_PANE = 'mw-detail'
+/** TSK-072: the one pane that shows an evidence picture large (a click on a thumbnail opens or replaces it). */
+export const IMAGE_PANE = 'mw-image'
 export const BACK_LABEL = '< Back'
 // the Markdown element refuses a text over 10,000 characters, so the file is cut well inside that
 const NEWS_MAX = 9500
@@ -84,10 +86,10 @@ const fanfare = atom({ plugin: 'mw-jobs', key: 'fanfare' } as const, {})
 const usedBoards = atom({ plugin: 'mw-jobs', key: 'usedBoards' } as const, [])
 const detail = atom({ plugin: 'mw-jobs', key: 'detail' } as const, { cur: null, trail: [], from: 'jobs' })
 const detailData = atom({ plugin: 'mw-jobs', key: 'detailData' } as const, {})
-/** TSK-071: the image files found under each item's evidence (per detail key), the thumbnails and expanded pictures read so far (base64 JPEG per path|mtime|px; '' = could not be made), the one picture open. */
+/** TSK-071: the image files found under each item's evidence (per detail key), the thumbnails and large pictures read so far (base64 JPEG per path|mtime|px; '' = could not be made), the one picture in the image pane. */
 const evImages = atom({ plugin: 'mw-jobs', key: 'evImages' } as const, {})
 const evPics = atom({ plugin: 'mw-jobs', key: 'evPics' } as const, {})
-const evOpen = atom({ plugin: 'mw-jobs', key: 'evOpen' } as const, '')
+const evView = atom({ plugin: 'mw-jobs', key: 'evView' } as const, { path: '', mtime: '' })
 const alertRows = atom({ plugin: 'mw-jobs', key: 'alertRows' } as const, [])
 const settings = atom({ plugin: 'mw-jobs', key: 'settings' } as const, { ok: null, keys: [], hint: '', err: {} })
 
@@ -2718,7 +2720,7 @@ const alertBox = ($: any, e: any, rows: MwJobsAlertRow[], pane: 'jobs' | 'news',
  * (its title, the way to the other pane, Loading… and the reason), and the reason is logged once per pane and message. */
 /** The fill state guardDraw read just before the pane draws (drawing reads it here, with no extra await). */
 const drawFill = { jobs: false, news: false }
-const guardDraw = async (pane: 'jobs' | 'news' | 'detail' | 'settings', $: any, e: any, draw: () => Promise<any>) => {
+const guardDraw = async (pane: 'jobs' | 'news' | 'detail' | 'image' | 'settings', $: any, e: any, draw: () => Promise<any>) => {
   // the jobs and news panes carry the alert rows on top, whatever they draw below (a fallback included)
   const rows: MwJobsAlertRow[] = pane === 'jobs' || pane === 'news' ? await read($, alertRows) : []
   const fillOn: boolean = pane === 'jobs' || pane === 'news' ? ((await read($, blocksFill)) as { jobs: boolean; news: boolean })[pane] : false
@@ -2750,7 +2752,7 @@ const guardDraw = async (pane: 'jobs' | 'news' | 'detail' | 'settings', $: any, 
   }
 }
 
-const fallbackTree = ($: any, e: any, pane: 'jobs' | 'news' | 'detail' | 'settings', why: string) => {
+const fallbackTree = ($: any, e: any, pane: 'jobs' | 'news' | 'detail' | 'image' | 'settings', why: string) => {
   const { Box, Text, Button } = $.ui.resolve(e) as any
   return (
     <Box flexDirection="column">
@@ -4286,18 +4288,13 @@ const ensurePic = async ($: any, path: string, mtime: string, px: number) => {
   await update($, evPics, (m: Record<string, string>) => ({ ...m, [key]: b64 }))
 }
 
-/** A click on a picture: it opens big (made now when it is not cached; one open at a time) or, open, closes. A picture too big for an Svg opens in the OS viewer instead. */
-const toggleEvidence = async ($: any, path: string, mtime: string) => {
-  const cur = (await read($, evOpen)) as string
-  const next = toggleOpen(cur, path)
-  if (next === '') {
-    await update($, evOpen, () => '')
-    return
-  }
-  await ensurePic($, path, mtime, BIG_PX)
-  const big = ((await read($, evPics)) as Record<string, string>)[thumbKey(path, mtime, BIG_PX)] ?? ''
+/** A click on a thumbnail: the picture opens large in the image pane (made now when it is not cached; the pane is replaced when one is open). A picture too big for an Svg opens in the OS viewer instead. */
+const showEvidence = async ($: any, path: string, mtime: string) => {
+  await ensurePic($, path, mtime, VIEW_PX)
+  const big = ((await read($, evPics)) as Record<string, string>)[thumbKey(path, mtime, VIEW_PX)] ?? ''
   if (imgDecision(big) === 'svg') {
-    await update($, evOpen, () => next)
+    await update($, evView, () => ({ path, mtime }))
+    await openChecked($, { id: IMAGE_PANE, title: path.split(/[\\/]/).pop() ?? path, focus: true }, 'image', 'the file button')
     return
   }
   const why = await checkPlainFile($, path, false)
@@ -4435,10 +4432,10 @@ const detailBack = async ($: any) => {
 const STATE_TONE: Record<string, string | undefined> = { blocked: 'error', needs: 'error', review: 'warning', doing: 'warning', done: 'success', closed: 'success' }
 
 /** The detail pane's tree: title row ending in ¦ < Back, then the item's or the milestone's fields as selectable Text. */
-type EvState = { images: Record<string, Record<string, Array<{ path: string; mtime: string }>>>; pics: Record<string, string>; open: string; canSvg: boolean }
-const NO_EV: EvState = { images: {}, pics: {}, open: '', canSvg: false }
+type EvState = { images: Record<string, Record<string, Array<{ path: string; mtime: string }>>>; pics: Record<string, string>; canSvg: boolean }
+const NO_EV: EvState = { images: {}, pics: {}, canSvg: false }
 
-/** TSK-071: the evidence field: image files as thumbnails (click: expand in place, click again: collapse; the caption under the picture is the control, as an Svg takes no press), every other entry as text; no picture made (no Svg here, no sips, too big) is a button that opens the file. */
+/** TSK-071/072: the evidence field: image files as thumbnails (click the caption under a picture, as an Svg takes no press: the picture opens large in the image pane), every other entry as text; no picture made (no Svg here, no sips, too big) is a button that opens the file. */
 const evidenceNodes = (ui: any, $: any, evidence: string[], images: Record<string, Array<{ path: string; mtime: string }>>, ev: EvState) => {
   const { Box, Text, Button, Svg } = ui
   const names = Object.fromEntries(Object.entries(images).map(([k, v]) => [k, v.map(x => x.path)]))
@@ -4451,17 +4448,14 @@ const evidenceNodes = (ui: any, $: any, evidence: string[], images: Record<strin
         <Box key="ev-thumbs" flexWrap="wrap" gap={1}>
           {pics.map((f, i) => {
             const name = f.path.split(/[\\/]/).pop() ?? f.path
-            const isOpen = ev.open === f.path
             const small = ev.pics[thumbKey(f.path, f.mtime, THUMB_PX)]
-            const big = ev.pics[thumbKey(f.path, f.mtime, BIG_PX)]
-            const b64 = isOpen && imgDecision(big) === 'svg' ? big : small
-            if (!ev.canSvg || imgDecision(b64) !== 'svg') return <Button key={`ev-img-${i}`} plain label={name} onPress={() => void toggleEvidence($, f.path, f.mtime)} />
-            const box = isOpen ? imageSvg(b64!, 480, 360) : imageSvg(b64!, 120, 90)
+            if (!ev.canSvg || imgDecision(small) !== 'svg') return <Button key={`ev-img-${i}`} plain label={name} onPress={() => void showEvidence($, f.path, f.mtime)} />
+            const box = imageSvg(small!, 120, 90)
             // an Svg is not pressable and a Button holds only text: the picture sits over its caption, and the caption is the control
             return (
               <Box key={`ev-img-${i}`} flexDirection="column" alignItems="flex-start">
                 <Svg source={box.source} alt={name} width={box.width} height={box.height} />
-                <Button plain label={`${isOpen ? 'Collapse' : 'Expand'} ${name}`} onPress={() => void toggleEvidence($, f.path, f.mtime)} />
+                <Button plain label={name} onPress={() => void showEvidence($, f.path, f.mtime)} />
               </Box>
             )
           })}
@@ -4469,6 +4463,38 @@ const evidenceNodes = (ui: any, $: any, evidence: string[], images: Record<strin
       )}
     </Box>
   )
+}
+
+/** TSK-072: the image pane's tree: the file name and a Close button, then the picture fit to the pane. */
+const imageTree = (ui: any, $: any, view: { path: string; mtime: string }, pics: Record<string, string>) => {
+  const { Box, Text, Button, Svg } = ui
+  const name = view.path.split(/[\\/]/).pop() ?? view.path
+  const close = <Button key="image-close" plain label="Close" onPress={() => void closeImage($)} />
+  const title = (
+    <Box key="image-title" gap={1}>
+      <Text bold wrap="truncate-end">{name}</Text>
+      <Text key="sep-nav" dimColor>{'\u00a6'}</Text>
+      {close}
+    </Box>
+  )
+  const big = pics[thumbKey(view.path, view.mtime, VIEW_PX)]
+  if (view.path === '' || imgDecision(big) !== 'svg') return <Box flexDirection="column">{title}<Text dimColor>No picture to show.</Text></Box>
+  const box = imageSvg(big!, 960, 720)
+  return (
+    <Box flexDirection="column">
+      {title}
+      <Svg source={box.source} alt={name} width={box.width} height={box.height} />
+    </Box>
+  )
+}
+
+const closeImage = async ($: any) => {
+  await update($, evView, () => ({ path: '', mtime: '' }))
+  try {
+    await $.ui.close({ id: IMAGE_PANE })
+  } catch {
+    // already closed
+  }
 }
 
 const detailTree = (ui: any, $: any, d: MwJobsDetail, data: Record<string, { text?: string; why?: string }>, index: IdIndex = new Map(), ev: EvState = NO_EV) => {
@@ -6188,7 +6214,7 @@ export const register: Register = (on, options) => {
     const dd = (await read($, detail)) as MwJobsDetail
     const snap = dd.cur === null ? undefined : (((await read($, snapshots)) as Record<string, MwJobsSnapshot>)[dd.cur.jobId])
     const dm = dd.cur === null ? undefined : (((await read($, newsModel)) as Record<string, NewsEntry>)[dd.cur.jobId])?.draft
-    const ev: EvState = { images: (await read($, evImages)) as EvState['images'], pics: (await read($, evPics)) as EvState['pics'], open: (await read($, evOpen)) as string, canSvg: e.surface !== 'terminal' }
+    const ev: EvState = { images: (await read($, evImages)) as EvState['images'], pics: (await read($, evPics)) as EvState['pics'], canSvg: e.surface !== 'terminal' }
     return detailTree(ui, $, dd, (await read($, detailData)) as Record<string, { text?: string; why?: string }>, snap === undefined ? new Map() : idIndexOf(snap, dm), ev)
   }))
   on('ui.render', { component: 'Pane', requestId: SETTINGS_PANE }, async ($, e) => guardDraw('settings', $, e, async () => {
@@ -6996,5 +7022,9 @@ export const register: Register = (on, options) => {
     let drawn = draw(0)
     for (let t = 1; !fullJobs && t <= TRIM_ORDER.length && drawn.size > limitFor; t++) drawn = draw(t)
     return drawn.node
+  }))
+  on('ui.render', { component: 'Pane', requestId: IMAGE_PANE }, async ($, e) => guardDraw('image', $, e, async () => {
+    const ui = $.ui.resolve(e) as any
+    return imageTree(ui, $, (await read($, evView)) as { path: string; mtime: string }, (await read($, evPics)) as Record<string, string>)
   }))
 }
