@@ -343,6 +343,7 @@ mw-jobs alerts appear as pane rows plus sound only, never as OS notification ban
 | `alerts.enabled` | `true`, `false` | `true` | raise alerts for board events |
 | `alerts.kinds` | comma list of `new`, `blocked`, `ask`, `review`, `done`, `release`, `metrics`; or `all`; or `none` | all seven | which events alert |
 | `alerts.message` | `true`, `false` | `true` | show a message with an alert |
+| `alerts.popup` | `true`, `false` | `true` | show a popup (toast) with an alert |
 | `alerts.sound` | `true`, `false` | `true` | play a sound with an alert |
 | `fanfare.enabled` | `true`, `false` | `false` (`mw user fanfare-defaults` sets `true` at install) | play fanfares; a board that runs `mw fanfare set enabled=false` still wins (see Fanfare) |
 | `fanfare.use` | a set name or `all` | `all` | the fanfare set to play |

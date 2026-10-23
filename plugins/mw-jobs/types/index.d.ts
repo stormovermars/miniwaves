@@ -162,6 +162,7 @@ declare module 'claude-code' {
       selected: string
       /** Sound and OS notifications off (toasts stay). */
       muted: boolean
+      popup: boolean
       /** Auto-refresh period: off, 30s, 1m or 5m (also kept in $.store). */
       refreshEvery: string
       /** The seen cursor per job id (also kept in $.store): rows changed after it are marked new. */
