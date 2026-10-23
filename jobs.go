@@ -179,7 +179,7 @@ var ceremonyNames = []string{"review", "planning", "triage", "spike"}
 
 const defaultReadyMin = 3
 
-// ceremonyList splits a stored canonical list; never nil, so JSON shows [].
+// ceremonyList splits a stored canonical list; it returns an empty, non-nil slice for "" (JobView.Ceremonies is omitempty, so a job without ceremonies shows no key).
 func ceremonyList(s string) []string {
 	out := []string{}
 	for _, n := range strings.Split(s, ",") {

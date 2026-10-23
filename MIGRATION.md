@@ -58,3 +58,9 @@ New optional job keys, all in schema 9 (an older mw drops unknown index keys whe
 - Install and update run `mw user fanfare-defaults`: `fanfare.enabled=true` and `fanfare.use=all` are set only where unset (`MW_NO_FANFARE=1` or `MW_NO_PLUGINS=1` skips). A board that explicitly runs `mw fanfare set enabled=false` still wins over the user layer.
 - New read-only `mw boards [DIR] [--depth N] [--up] [-j]` replaces any hand-rolled board search; mw-jobs uses it.
 - `mw news --full` is new and changes no existing output; in the pane a news release is called an issue (the CLI keeps `--release`).
+
+## Upgrading to 0.3.5 (no schema change, no migration step)
+
+- New optional job keys `ceremonies` and `ready_min`; a job that sets neither prints as before.
+- `mw jobs show -j` has a new `news_path` field.
+- `mw log --follow` is new (an alerts runner for `alerts.exec`); nothing runs unless you pass `--exec`.

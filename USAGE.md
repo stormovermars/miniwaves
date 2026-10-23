@@ -518,9 +518,16 @@ mw runs natively on Windows 10/11 (amd64, arm64); the same board works from Powe
 
 ## Changelog
 
-### Unreleased
+### 0.3.5
 
-- Ceremonies: job keys `ceremonies` (`review`, `planning`, `triage`, `spike`) and `ready_min` (1..20, default 3); a Ceremonies section in the dispatcher prompt for the listed names only; `review`, `planner` and `spike` role blocks in the session prompt. No new commands. See "Ceremonies".
+No schema change. Details: `releases/0.3.5.md`.
+
+- Ceremonies: job keys `ceremonies` (`review`, `planning`, `triage`, `spike`) and `ready_min` (1..20, default 3); a Ceremonies section in the dispatcher prompt for the listed names only; `review`, `planner` and `spike` role blocks in the session prompt, each rendered only when the session's job lists that ceremony. No new commands. See "Ceremonies".
+- `mw log --follow [--exec]`: `alerts.exec` runs per `alerts.on` event; 5 s to release pipes after the 30 s limit; the first read of a from-now feed is retried; one cursor per tenant, so an archived and restored tenant does not replay; with `-A` the tenant list is fixed at start. On Windows a `.bat` or `.cmd` `alerts.exec` runs through `cmd.exe` (cmd argument parsing).
+- `mw jobs show -j` has `news_path`.
+- Build lock (kit): atomic PowerShell lock, pid-less lock folders older than a minute are taken over, tested under pwsh in CI.
+- Fanfare: a hint when a pre-0.3.4 board's implicit `enabled=false` silences your setting; the default fanfare WAV is byte-identical on all OSes.
+- mw-jobs: safe news-file open (no `HOME`, argv only), `review` and `metrics` alerts, `mw_panes_open` answers during a cold board scan, no OS notification banners.
 
 ### 0.3.4
 
