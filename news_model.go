@@ -54,6 +54,9 @@ type newsItem struct {
 	Milestone      string `json:"milestone,omitempty"`
 	MilestoneTitle string `json:"milestone_title,omitempty"`
 	State          string `json:"state,omitempty"`
+	// member progress of a closed milestone (happened.closed_milestones only)
+	Done  int `json:"done,omitempty"`
+	Total int `json:"total,omitempty"`
 }
 
 // newsSprintItem is a member of the sprint with its state (todo, doing, review, blocked, done); needs marks an
@@ -671,6 +674,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 	}
 	waves := map[string]openWave{}
 	waveTitle := map[string]string{}
+	waveProgress := map[string][2]int{}
 	events := 0
 	c := &m.Now.Counts
 	var trows []newsTenant
@@ -697,6 +701,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 					}
 				}
 				waveTitle[t.Slug+"/"+it.ID] = newsCap(it.Title)
+				waveProgress[t.Slug+"/"+it.ID] = [2]int{dn, len(mem)}
 				if it.Status == "done" {
 					m.Now.Milestones.ClosedCount++
 				} else {
@@ -804,6 +809,8 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 				}
 				switch {
 				case e.Action == "done" && it.Kind == "wave":
+					p := waveProgress[t.Slug+"/"+it.ID]
+					x.Done, x.Total = p[0], p[1]
 					closedMs = append(closedMs, x)
 				case e.Action == "done":
 					if i, ok := lastDone[it.ID]; ok { // done again after a send-back: the later stamp

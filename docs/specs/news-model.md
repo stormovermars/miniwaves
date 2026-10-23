@@ -46,6 +46,7 @@ mw builds **one model** per job: `mw news --job ID --format json`. Everything el
   },
   happened: {                                          // events in (since, at]
     closed_milestones[], done[], accepted[], sent_back[], answers[], decisions[], new_items[], moved_to_review[], moved_to_doing[],
+    (closed_milestones[] items also carry done/total: the wave's member progress at generation time)
     counts: {...per list}
   },
   next: {ready[] (queue order), next_milestones[] (open, nearest first)},

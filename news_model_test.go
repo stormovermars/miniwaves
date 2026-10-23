@@ -756,3 +756,21 @@ func TestNewsDefaultPathAndUnchanged(t *testing.T) {
 		t.Fatalf("after delete: %q", out)
 	}
 }
+
+// BUG-017: a closed milestone carries its member progress, so the news pane shows done n/n, not "not started 0/0".
+func TestNewsClosedMilestoneProgress(t *testing.T) {
+	newsBoard(t)
+	runAll(t,
+		[]string{"done", "TSK-002", "ok", "--no-evidence", "none", "-t", "news-app"},
+		[]string{"wave", "step", "WAV-001", "--na-rest", "test", "-t", "news-app"},
+		[]string{"wave", "close", "WAV-001", "--no-evidence", "none", "-t", "news-app"},
+	)
+	m := decodeModel(t, newsOut(t, "--job", "tiny", "--format", "json"))
+	if len(m.Happened.ClosedMilestones) != 1 {
+		t.Fatalf("closed milestones: %+v", m.Happened.ClosedMilestones)
+	}
+	c := m.Happened.ClosedMilestones[0]
+	if c.ID != "WAV-001" || c.Done != 2 || c.Total != 2 {
+		t.Fatalf("closed milestone progress: %+v", c)
+	}
+}
