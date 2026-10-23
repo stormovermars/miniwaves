@@ -74,7 +74,7 @@ export type MwJobsJob = {
   thisSession?: boolean
 }
 /** Fanfare state for one board: on or off, the set in use ('all' or a set name), the set names in `mw fanfare -j` order. */
-export type MwJobsFanfare = { enabled: boolean; use: string; sets: string[] }
+export type MwJobsFanfare = { enabled: boolean; use: string; sets: string[]; playingFinale?: boolean }
 /** One detail panel: an item or a milestone (wave) of a job's tenant. */
 export type MwJobsDetailRef = { kind: 'item' | 'wave'; jobId: string; tenant: string; id: string }
 export type MwJobsDetail = { cur: MwJobsDetailRef | null; trail: MwJobsDetailRef[]; from: 'jobs' | 'news' }

@@ -2603,7 +2603,7 @@ const refreshJobRun = async ($: any, job: MwJobsJob): Promise<void> => {
       const sw0 = await alertSwitches($)
       const kept = fresh.filter(x => alertAllowed(sw0, x.kind))
       const plan = planAlerts(kept, { enabled: !isMuted, message: sw0.message, sound: sw0.sound }, job.alerts)
-      // every raised alert is a row at the top of both panes (and one grouped toast), until dismissed; the sound is the one asset; no system notification
+      // every raised alert is a row at the top of both panes (and one toast bubble per event), until dismissed; the sound is the one asset; no system notification
       if (plan.lines.length > 0) await addAlertRows($, job, kept)
       if (plan.sound) {
         try {
@@ -2616,7 +2616,7 @@ const refreshJobRun = async ($: any, job: MwJobsJob): Promise<void> => {
       const nowIso = new Date(await $.clock.now()).toISOString()
       const delivered = isMuted ? 'muted' : sw0.message ? (plan.sound ? 'row+toast+sound' : 'row+toast') : plan.sound ? 'sound' : 'none'
       await appendLog($, job.id, 'alerts.log', kept.map(x => alertLine(nowIso, x.type, x.who ?? '-', x.text, delivered)))
-      if (plan.lines.length > 0) $.ui.toast(groupToast(plan.lines).join('\n'), { timeoutMs: 8000 })
+      for (const b of toastBubbles(plan.lines)) $.ui.toast(b, { timeoutMs: 8000 })
     }
   } catch {
     // never throw out of a timer
@@ -2858,7 +2858,7 @@ const styleGroup = (ui: any, $: any, pane: 'jobs' | 'news', wanted: string, canS
 
 // ---- fanfare: reads `mw fanfare -j` and `mw user show -j` (the per-user value wins); writes only `mw user set`, never the board ----
 
-type FanfareButton = { label: string; tip: string; on: boolean; onPress: () => void }
+type FanfareButton = { label: string; tip: string; on: boolean; onPress: () => void; onStop?: () => void }
 
 /** The fanfare state from mw's two json answers, or null when either lacks the fanfare keys (an older mw). */
 export const parseFanfare = (fanText: string | undefined, userText: string | undefined): MwJobsFanfare | null => {
@@ -2880,8 +2880,12 @@ export const parseFanfare = (fanText: string | undefined, userText: string | und
     enabled: typeof ue === 'boolean' ? ue : boardEnabled,
     use: typeof uu === 'string' && uu !== '' ? uu : str(f.use) || 'all',
     sets: Object.keys(sets as object),
+    ...(f.playing_finale === true ? { playingFinale: true } : {}),
   }
 }
+
+/** The Stop button shows only while mw says a finale plays (mw 0.3.6+); a missing key (older mw) hides it. */
+export const stopVisible = (f: MwJobsFanfare | null | undefined): boolean => f?.playingFinale === true
 
 /** The 1-based place of the set in use in [all, ...sets]; a stale name counts as all (1); 0 when off. */
 export const fanfarePos = (f: MwJobsFanfare): number => {
@@ -2950,12 +2954,32 @@ const fanfareCycle = async ($: any, job: MwJobsJob) => {
   }
 }
 
+/** The Stop button: `mw fanfare stop` in the job's board dir, then the fanfare state is read again so the button goes away. */
+const fanfareStop = async ($: any, job: MwJobsJob) => {
+  if (fanfareBusy.has(job.id)) return
+  fanfareBusy.add(job.id)
+  try {
+    const home: string = (await homeOf($))
+    let ok = false
+    try {
+      const r = await proc($, ['mw', 'fanfare', 'stop'], { cwd: expand(job.board, home), timeoutMs: 20_000 })
+      ok = r.exitCode === 0
+    } catch {
+      ok = false
+    }
+    await loadFanfare($, job)
+    $.ui.toast(ok ? 'Jobs: fanfare stopped.' : 'Jobs: could not stop the fanfare.', { timeoutMs: ok ? 4000 : 6000 })
+  } finally {
+    fanfareBusy.delete(job.id)
+  }
+}
+
 /** The pane's fanfare button for this job, or undefined (hidden) while unknown or when this mw has no fanfare keys. */
 const fanfareButton = async ($: any, job: MwJobsJob): Promise<FanfareButton | undefined> => {
   const all = (await read($, fanfare)) as Record<string, MwJobsFanfare | null>
   const f = all[job.id]
   if (!f) return undefined
-  return { label: fanfareLabel(f), tip: fanfareTip(f), on: f.enabled, onPress: () => void fanfareCycle($, job) }
+  return { label: fanfareLabel(f), tip: fanfareTip(f), on: f.enabled, onPress: () => void fanfareCycle($, job), ...(stopVisible(f) ? { onStop: () => void fanfareStop($, job) } : {}) }
 }
 
 // =====================================================================================
@@ -3327,7 +3351,7 @@ const controlsRowInner = (ui: any, $: any, c: ControlsIn) => {
       {styleGroup(ui, $, c.pane, c.wanted, c.canSvg, c.unavailable)}
       {sizeGroup(ui, $, c.sizeOff, { pane: c.pane, on: c.fill, blocks: true, gopher: c.wanted === 'gopher' })}
       {group(ui, 'grp-alerts', [tipped(ui, 'mute', <Button key="mute" plain label={c.muted ? '🔕' : '🔔'} dimColor onPress={() => void toggleMute($)} />, c.muted ? 'Unmute alerts' : 'Mute alerts', 'right')], true)}
-      {c.fanfare !== undefined ? group(ui, 'grp-fanfare', [tipped(ui, 'fanfare', <Button key="fanfare" plain label={c.fanfare.label} dimColor={!c.fanfare.on} onPress={c.fanfare.onPress} />, c.fanfare.tip, 'right')], true) : null}
+      {c.fanfare !== undefined ? group(ui, 'grp-fanfare', [tipped(ui, 'fanfare', <Button key="fanfare" plain label={c.fanfare.label} dimColor={!c.fanfare.on} onPress={c.fanfare.onPress} />, c.fanfare.tip, 'right'), ...(c.fanfare.onStop !== undefined ? [tipped(ui, 'fanfare-stop', <Button key="fanfare-stop" plain label="Stop" onPress={c.fanfare.onStop} />, 'Stop the finale that is playing', 'right')] : [])], true) : null}
       {group(ui, 'grp-open', [
         c.canOpen ? tipped(ui, 'panel', <Button key="panel" plain label="⧉" onPress={() => void openPanel($, c.job)} />, 'Open the news file in the editor', 'right') : null,
         c.hasPage ? tipped(ui, 'page', <Link href={c.job.news}><Text>{'\u2197'}</Text></Link>, 'Open news page', 'right') : null,
@@ -5410,10 +5434,11 @@ export const ALERT_KEEP = 200
 /** Appends new alert lines to the per-job list and keeps only the last ALERT_KEEP, so the store cannot grow without bound. */
 export const capAlerted = (keys: string[], fresh: string[]): string[] => [...keys, ...fresh.filter(f => !keys.includes(f))].slice(-ALERT_KEEP)
 
-/** The grouped toast: the first 4 lines, then "+N more". */
-export const groupToast = (lines: string[]): string[] => {
-  const out = lines.slice(0, 4)
-  if (lines.length > 4) out.push(`+${lines.length - 4} more`)
+/** One toast bubble per event: the first 4, then one "+N more" bubble for the rest. */
+export const TOAST_MAX = 4
+export const toastBubbles = (lines: string[]): string[] => {
+  const out = lines.slice(0, TOAST_MAX)
+  if (lines.length > TOAST_MAX) out.push(`Jobs: +${lines.length - TOAST_MAX} more \u2014 see the news pane`)
   return out
 }
 
