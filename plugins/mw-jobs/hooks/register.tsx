@@ -6185,7 +6185,6 @@ export const register: Register = (on, options) => {
     const totals = jobView !== undefined ? totalsOf(jobEntries) : tenantView !== undefined ? totalsOf(tenantRowsAll) : countsOf(nsnap)
     const nAn = nsnap ? analyse(nsnap, nowMs, nowMs, (await read($, stalledMin)) * 60_000) : undefined
     const newsAsk: MwJobsItem[] = nAn ? [...nAn.needs, ...nAn.review] : []
-    const unseen = await newsUnseen($, job.id)
     const mnodes = mm ? await modelNewsNodes($, { Box, Text, Button, Link, Svg, Markdown, Code }, job, { entry: mentryV!, view: nview, canSvg, paneW, given: Number.isFinite(given) && given > 0 ? given : undefined, step, style: wantedStyle }) : undefined
     // title and description come from the job (the same header as the jobs pane); the body drops mw's own copies
     const newsDesc = (((await read($, jobDesc)) as Record<string, string>)[job.id] || job.description || '').replace(/\s+/g, ' ')
@@ -6218,7 +6217,6 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column">
           <Box alignItems="center" gap={2} flexWrap="wrap">
             <Text bold wrap="truncate-end">{job.title}</Text>
-            {unseen && <Text color="error">●</Text>}
             <Text key="sep-nav" dimColor>{'\u00a6'}</Text>
             <Button key="back-jobs" plain label={JOBS_LABEL} onPress={() => void backToJobs($, job.id)} />
           </Box>

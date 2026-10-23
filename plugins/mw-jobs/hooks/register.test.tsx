@@ -4555,3 +4555,28 @@ test('attention labels: 0/0, 1/0, 0/2, 3/2', () => {
   expect(attentionLabels(0, 2)).toEqual({ needs: { label: '!0', live: false }, review: { label: '◐2', live: true } })
   expect(attentionLabels(3, 2)).toEqual({ needs: { label: '!3', live: true }, review: { label: '◐2', live: true } })
 })
+
+test('BUG-014: the page toggle is uniform: same slot (last, after ¦) on both title rows, no unseen dot before the news toggle', async ($, on) => {
+  const { state } = rig($, on, true)
+  state.newsFiles.zeta = '# S\n\nx'
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  // fresh start: the news is unseen (the tab title carries the mark)
+  expect(state.opens.filter(o => o.id === 'mw-news').at(-1)?.title).toBe('● mw news · zeta')
+  const kids = (row: any): any[] => (row?.children ?? []).filter((c: any) => c !== null && c !== undefined && c !== false)
+  const nu = await $.ui.mount({ ...NEWS_PANE, surface: 'desktop' } as never)
+  const ju = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
+  const nk = kids(rowOf(await nu.drawn(), 'back-jobs'))
+  const jk = kids(rowOf(await ju.drawn(), 'news'))
+  // slot: last child is the toggle button, directly after the ¦ separator
+  expect(nk.at(-1)?.props.key).toBe('back-jobs')
+  expect(jk.at(-1)?.props.key).toBe('news')
+  expect(nk.at(-2)?.children?.[0]).toBe('¦')
+  expect(jk.at(-2)?.children?.[0]).toBe('¦')
+  expect(nk.at(-1)?.props.plain).toBe(jk.at(-1)?.props.plain)
+  // no dot (nor a ◂) anywhere in the news title row
+  expect(JSON.stringify(nk)).not.toMatch(/●|◂/)
+  await nu.press({ key: 'back-jobs' })
+  expect(state.opens.at(-1)?.id).toBe('mw-jobs')
+  await nu.unmount()
+  await ju.unmount()
+})
