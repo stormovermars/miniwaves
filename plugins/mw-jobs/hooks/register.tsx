@@ -4383,17 +4383,27 @@ const idIndexOf = (snap: MwJobsSnapshot, model?: Model): IdIndex => {
 }
 
 /** Text whose ids that exist on the board are link-style Buttons: an item id opens its detail panel, a milestone id its milestone panel. Unknown ids stay text. */
-const linkedText = (ui: any, $: any, jobId: string, text: string, index: IdIndex, key: string, from: 'jobs' | 'news' | 'detail', o: { dimColor?: boolean; color?: string; wrap?: 'wrap' | 'truncate-end' } = {}) => {
+export const linkedText = (ui: any, $: any, jobId: string, text: string, index: IdIndex, key: string, from: 'jobs' | 'news' | 'detail', o: { dimColor?: boolean; color?: string; wrap?: 'wrap' | 'truncate-end' } = {}) => {
   const { Box, Text, Button } = ui
   const parts = splitIds(text, index)
+  // one line: the runs keep their width (the Box clips the end), so a title never squashes into stacked words
+  const one = o.wrap !== 'wrap'
   if (!parts.some(p => p.ref !== undefined)) return <Text key={key} dimColor={o.dimColor} color={o.color} wrap={o.wrap ?? 'truncate-end'}>{text}</Text>
   return (
     <Box key={key} flexShrink={1} overflow={o.wrap === 'wrap' ? undefined : 'hidden'} flexWrap={o.wrap === 'wrap' ? 'wrap' : undefined}>
       {parts.map((p, i) =>
         p.ref !== undefined ? (
-          <Button key={`${key}-id${i}`} plain dimColor={o.dimColor} label={p.text} onPress={() => void openDetail($, { kind: p.ref!.kind, jobId, tenant: p.ref!.tenant, id: p.ref!.id }, from)} />
+          <Box key={`${key}-id${i}`} flexShrink={one ? 0 : undefined}>
+            <Button plain dimColor={o.dimColor} label={p.text} onPress={() => void openDetail($, { kind: p.ref!.kind, jobId, tenant: p.ref!.tenant, id: p.ref!.id }, from)} />
+          </Box>
         ) : (
-          <Text key={`${key}-t${i}`} dimColor={o.dimColor} color={o.color}>{p.text}</Text>
+          one ? (
+            <Box key={`${key}-t${i}`} flexShrink={0}>
+              <Text dimColor={o.dimColor} color={o.color}>{p.text}</Text>
+            </Box>
+          ) : (
+            <Text key={`${key}-t${i}`} dimColor={o.dimColor} color={o.color}>{p.text}</Text>
+          )
         ),
       )}
     </Box>
@@ -4502,7 +4512,7 @@ const detailTree = (ui: any, $: any, d: MwJobsDetail, data: Record<string, { tex
         {it.acceptance !== '' && field('acc', 'acceptance', lk(it.acceptance, 'df-acc', { wrap: 'wrap' }))}
         {it.children.length > 0 && field('children', 'children', <Box flexDirection="column">{it.children.map(c => <Box key={`ch-${c.id}`} gap={1}>{itemBtn(`ch-open-${c.id}`, it.tenant, c.id, c.id)}<Text color={STATE_TONE[c.state]}>{c.state}</Text>{lk(c.title, `ch-title-${c.id}`)}</Box>)}</Box>)}
         <Text key="log-head" bold dimColor>RECENT LOG</Text>
-        {it.log.length === 0 ? <Text dimColor>{'\u2014'}</Text> : it.log.map((l, i) => <Box key={`log-${i}`} overflow="hidden"><Text dimColor>{`${l.at.slice(0, 16).replace('T', ' ')} `}</Text><Text>{l.action}</Text><Text dimColor>{l.by ? ` ${l.by}` : ''}</Text>{l.note ? <Text dimColor>{' \u2014 '}</Text> : null}{l.note ? lk(l.note, `log-note-${i}`, { dimColor: true }) : null}</Box>)}
+        {it.log.length === 0 ? <Text dimColor>{'\u2014'}</Text> : it.log.map((l, i) => <Box key={`log-${i}`} overflow="hidden"><Box flexShrink={0}><Text dimColor>{`${l.at.slice(0, 16).replace('T', ' ')} `}</Text><Text>{l.action}</Text><Text dimColor>{l.by ? ` ${l.by}` : ''}</Text>{l.note ? <Text dimColor>{' \u2014 '}</Text> : null}</Box>{l.note ? lk(l.note, `log-note-${i}`, { dimColor: true }) : null}</Box>)}
       </Box>
     )
   }
@@ -6705,7 +6715,7 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
-    const noteLine = (text: string, key = text) => (density === 'compact' || text === '' ? null : <Box key={`note-${key}`}><Text dimColor>{'  '}</Text>{lt(text, `nl-${key}`, true)}</Box>)
+    const noteLine = (text: string, key = text) => (density === 'compact' || text === '' ? null : <Box key={`note-${key}`}><Box flexShrink={0}><Text dimColor>{'  '}</Text></Box>{lt(text, `nl-${key}`, true)}</Box>)
     const barCell = (w: MwJobsWave, isNew: boolean): Cell => {
       if (isMono) {
         const filled = Math.round((Math.max(0, Math.min(100, w.percent)) / 100) * barLen)
@@ -6824,7 +6834,7 @@ export const register: Register = (on, options) => {
               const k = `${i.tenant}:${i.id}`
               return (
                 <Box flexDirection="column">
-                  {gridRow(`need-${k}`, `! ${i.title}`, undefined, { text: 'needs you', color: 'error' }, <Text dimColor>{itemAge(i)}</Text>, dot(k), undefined, undefined, <Box key={`iname-need-${k}`} gap={1} overflow="hidden"><Text color="error">!</Text>{lt(i.title, `ititle-need-${k}`)}</Box>)}
+                  {gridRow(`need-${k}`, `! ${i.title}`, undefined, { text: 'needs you', color: 'error' }, <Text dimColor>{itemAge(i)}</Text>, dot(k), undefined, undefined, <Box key={`iname-need-${k}`} gap={1} overflow="hidden"><Box flexShrink={0}><Text color="error">!</Text></Box>{lt(i.title, `ititle-need-${k}`)}</Box>)}
                   {noteLine([i.tenant, i.id, i.note].filter(Boolean).join(' · '), `need-${k}`)}
                 </Box>
               )

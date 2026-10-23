@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { parseModel, bulletin } from './bulletin'
 import { agileJobs, kanbanJobs, agileNews, kanbanNews, flowText } from './flow'
+import { mileOf } from './rows'
 
 import { REAL_BOARDS, REAL_BOARD_JOBS } from '../tests/fixtures/boards'
 import { SHOW_TSK001, SHOW_STR002, WAVE_002, WAVE_004 } from '../tests/fixtures/detail'
@@ -8,7 +9,7 @@ import { parseItemDetail, parseWaveDetail } from './detail'
 import { REAL_DRAFT, SMALL_DRAFT, SMALL_RELEASE, STRESS_DRAFT, releases30, tenantsDraft, tenantSlug, manyJobs, jobDraft } from '../tests/fixtures/model'
 import { isImagePath, looksLikePath, imagesFromLs, evidenceRoots, textEvidence, toggleOpen, imgDecision, imageSvg, thumbArgv, IMG_SVG_CAP, THUMB_MAX } from './evidence'
 import { buildIdIndex, splitIds } from './ids'
-import { unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, metricChanges, metricAlerts, legacyEvents, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, attentionLabels, capAlerted, toastBubbles, stopVisible, parseFanfare, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, toastsOn, popupButton, popupOf, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
+import { linkedText, mileMonoRows, unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, metricChanges, metricAlerts, legacyEvents, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, attentionLabels, capAlerted, toastBubbles, stopVisible, parseFanfare, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, toastsOn, popupButton, popupOf, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
 import { REAL_USER_KEYS } from '../tests/fixtures/userkeys'
 
 declare const console: { log: (...a: unknown[]) => void }
@@ -4686,4 +4687,37 @@ test('evidence: a picture too big for an Svg, and a surface without Svg, fall ba
   expect(await tp.findAll({ type: 'Svg' })).toHaveLength(0)
   expect(await btn(tp, 'a.png')).toBeTruthy()
   await tp.unmount()
+})
+
+// BUG-016: a title with item refs is split into text + id-link runs; the runs must stay one unshrunk line, clipped by the row, never squashed or stacked.
+test('linkedText: a title with refs is one non-wrapping row of runs that never shrink', () => {
+  const title = "Release 0.3.8 (TSK-071, BUG-015; Sir's go-ahead for the public tag after the long soak)"
+  const index = buildIdIndex([{ tenant: 't', id: 'TSK-071' }, { tenant: 't', id: 'BUG-015' }], [])
+  const ui = { Box: 'Box', Text: 'Text', Button: 'Button' }
+  const el: any = linkedText(ui, {}, 'job', title, index, 'k', 'jobs', {})
+  expect(el.type).toBe('Box')
+  expect(el.props.flexWrap).toBeUndefined()
+  expect(el.props.overflow).toBe('hidden')
+  const kids: any[] = el.children
+  expect(kids.length).toBeGreaterThanOrEqual(5)
+  const inner = (k: any): any => k.children[0]
+  for (const k of kids) {
+    expect(k.type).toBe('Box')
+    expect(k.props.flexShrink).toBe(0)
+  }
+  expect(kids.some(k => inner(k).props?.label === 'TSK-071')).toBe(true)
+  expect(kids.some(k => inner(k).props?.label === 'BUG-015')).toBe(true)
+  // the runs rebuild the title exactly: nothing dropped or reordered
+  expect(kids.map(k => inner(k).props?.label ?? inner(k).children.join('')).join('')).toBe(title)
+  // wrap mode (detail fields) flows and wraps instead
+  const w: any = linkedText(ui, {}, 'job', title, index, 'k', 'detail', { wrap: 'wrap' })
+  expect(w.props.flexWrap).toBe('wrap')
+})
+
+// BUG-017 (plugin side): a closed milestone from the news model shows its done n/n, not "not started 0/0".
+test('closed milestones keep their counts: done n/n, state closed', () => {
+  const r = mileOf({ tenant: 't', id: 'WAV-008', title: 'Jobs M6 Release', done: 1, total: 1 }, {}, true)
+  expect(r.state).toBe('closed')
+  expect(r.total).toBe(1)
+  expect(mileMonoRows([r])[0]!.slot).toEqual({ kind: 'text', text: '✓ closed', tone: 'green' })
 })
