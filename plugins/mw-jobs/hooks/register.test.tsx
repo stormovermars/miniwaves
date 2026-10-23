@@ -4331,3 +4331,19 @@ test('ids in text: existing item and wave ids are linked, wave labels map to a u
   expect(parts.map(p => p.text).join('')).toBe('See TSK-057 and S·STR-6, then WAV-002 (M4) or M5; TSK-999 is unknown')
   expect(splitIds('nothing here', idx)).toEqual([{ text: 'nothing here' }])
 })
+
+// TSK-064: alerts are pane rows plus sound; the plugin never posts OS notification banners.
+// The harness offers no file access (node:fs and $.fs are absent) and `ui.notify` is not an event of this runtime,
+// so a source scan lives in scripts/check-mw-jobs-no-notify.sh; this test watches the alert paths themselves.
+test('TSK-064: alerts raise a toast and a sound and start no OS banner process (job notify flag on)', async ($, on) => {
+  const { state, clock } = rig($, on, true)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'mw-jobs', args: 'style blocks', origin: { kind: 'user' }, presentation: {} } as never)
+  state.round = 1
+  await clock.advance(60_000)
+  expect(state.toasts.join('\n')).toContain('Milestone done')
+  expect(state.sounds.length).toBe(1)
+  const banner = /osascript|notify-send|terminal-notifier|toast|BurntToast|display notification/i
+  expect(state.runs.filter(r => banner.test(r))).toEqual([])
+  expect(state.osa.length).toBe(0)
+})

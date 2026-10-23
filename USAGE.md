@@ -331,6 +331,8 @@ mw configure KEY=VALUE...    # validate and save without prompting
 
 `mw configure` without a terminal on stdin prints the settings plus a hint and exits 0; it never reads stdin then. It uses plain stdin and stdout, so it works on Windows too. `user get -j` prints `{"keys":[{"key","value","default","source","group","choices"}]}`: `value` is the effective value, `source` is `default`, `user` or `board` (only `fanfare.enabled`, when the board runs `mw fanfare set enabled=false`), `group` is one of pane, alerts, fanfare, status (the chat bar), discover, and `choices` lists the allowed values (empty for free text). These keys are per user and never stored on a board; an invalid value is refused with a non-zero exit.
 
+mw-jobs alerts appear as pane rows plus sound only, never as OS notification banners. The fanfare Stop dialog and your own `alerts.exec` are unaffected.
+
 | Key | Allowed | Default | Meaning |
 |---|---|---|---|
 | `pane.refresh` | `15s`, `30s`, `1m`, `5m`, `off` | `30s` | how often the live pane refreshes |
