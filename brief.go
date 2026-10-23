@@ -261,7 +261,10 @@ func briefOf(w *Workspace, t *Tenant, it Item, verbose bool) briefDoc {
 }
 
 // printBrief is the one-call human/assistant view of an item.
-func printBrief(d briefDoc, verbose bool) {
+func printBrief(d briefDoc, verbose bool) { printBriefFull(d, verbose, false) }
+
+// printBriefFull is printBrief; full prints event notes uncut.
+func printBriefFull(d briefDoc, verbose, full bool) {
 	stamp := shortTS
 	if verbose {
 		stamp = func(s string) string { return s }
@@ -324,7 +327,11 @@ func printBrief(d briefDoc, verbose bool) {
 		for _, e := range d.Events {
 			line := fmt.Sprintf("  %s  %-9s %s", stamp(e.At), e.Action, orDash(e.By))
 			if e.Note != "" {
-				line += "  " + compactText(e.Note, 90)
+				if full {
+					line += "  " + e.Note
+				} else {
+					line += "  " + compactText(e.Note, 90)
+				}
 			}
 			fmt.Println(line)
 		}

@@ -140,9 +140,12 @@ func TestSessionRoleCeremonyGoldens(t *testing.T) {
 	cap := func(args ...string) string { return norm(captureOutput(t, func() { runAll(t, args) })) }
 	runAll(t, []string{"jobs", "set", "tiny", "ceremonies=review,planning,triage,spike"})
 	wantIn := map[string][]string{
-		"review":  {"`Review WAV-NNN`", "WAV-NNN/", "lessons.md", "Screenshots only", "at most one `mw ask`", "never accept or reject"},
-		"planner": {"`Planning YYYY-MM-DD`", "never `doing` ones", "`mw edit -c` is for humans", "one `mw ask` digest", "screenshots only"},
-		"spike":   {"SPK-NNN/", "throwaway branch", "never merged", "STALE", "Screenshots only", "At most one `mw ask`"},
+		"review": {"`Review WAV-NNN`", "WAV-NNN/", "lessons.md", "at most one `mw ask`", "never accept or reject",
+			"logs, harness output", "only for UI items", "no evidence", "outside the wave", "What wave close needs", "on your own `Review WAV-NNN` chore", "keep the chore blocked", "never mark it done with an open ask"},
+		"planner": {"`Planning YYYY-MM-DD`", "never `doing` ones", "`mw edit -c` is for humans", "one `mw ask` digest", "screenshots only",
+			"on your own `Planning YYYY-MM-DD` chore", "keep the chore blocked", "never mark it done with an open ask", "stale `doing` stories", "children are all done",
+			"stop early", "one-line digest", "propose the cut in the digest; a human cuts"},
+		"spike": {"SPK-NNN/", "throwaway branch", "never merged", "STALE", "Screenshots only", "At most one `mw ask`"},
 	}
 	for _, role := range []string{"review", "planner", "spike"} {
 		got := cap("get-prompt", "session", "s-"+role, "-a", role, "-t", "sheet")
@@ -232,5 +235,17 @@ func TestCeremonyDocs(t *testing.T) {
 	}
 	if len(defaultProtocol) != 11 {
 		t.Errorf("default protocol has %d steps, want 11", len(defaultProtocol))
+	}
+}
+
+// TSK-065: the dispatcher fires the review ceremony for a wave with all members done, before its steps are ticked.
+func TestDispatcherReviewTriggerText(t *testing.T) {
+	rolesBoard(t)
+	runAll(t, []string{"jobs", "set", "tiny", "ceremonies=review"})
+	got := captureOutput(t, func() { runAll(t, []string{"get-prompt", "dispatcher", "--job", "tiny"}) })
+	for _, want := range []string{"all its members are done", "`closeable`", "follow the review"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("dispatcher review text missing %q", want)
+		}
 	}
 }

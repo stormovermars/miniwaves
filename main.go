@@ -22,7 +22,7 @@ var flagAliases = map[string]string{
 	"t": "tenant", "s": "session", "a": "agent", "p": "parent",
 	"d": "path", "b": "body", "c": "acceptance", "k": "kind",
 	"S": "status", "n": "limit", "j": "json", "A": "all", "v": "verbose",
-	"w": "wave", "o": "out",
+	"w": "wave", "o": "out", "m": "message",
 }
 
 var validOptions = map[string]bool{
@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "ticket": true, "format": true, "width": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "ticket": true, "format": true, "width": true, "message": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -468,7 +468,7 @@ Humans only (refused under MW_SESSION or -s); --by NAME is required when stdin i
 		"review": `mw review [-t SLUG] [-j]
 What needs a human: judge (judgeable items awaiting judgement, ×N = rejections; [] while the
 judge gate is off), blocked, acceptance (needs acceptance; only with that gate on) and waves
-ready to close. "needs you" lists open asks (mw ask, closed by mw answer). -j prints {judge, review, blocked, acceptance, waves, stale, needs}. review (new in 0.3.0, always present, [] when empty) lists the blocked items whose block reason starts "awaiting review", the same rule mw news uses; they also stay in blocked, so scripts that count blocked keep working. Text output adds a review section when there are any.`,
+whose members are all done (review-ready, even with delivery steps unticked; each carries closeable: true when mw wave close would pass now). "needs you" lists open asks (mw ask, closed by mw answer). -j prints {judge, review, blocked, acceptance, waves, stale, needs}. review (new in 0.3.0, always present, [] when empty) lists the blocked items whose block reason starts "awaiting review", the same rule mw news uses; they also stay in blocked, so scripts that count blocked keep working. Text output adds a review section when there are any.`,
 		"judge": `mw judge ID [-t SLUG]
 Three lines to decide on: Outcome (title, status, verification), Evidence (the item's folder; a story
 adds each child's), Decision (the effective acceptance as a checklist). Judgeable = a story or a
@@ -497,9 +497,10 @@ List items as compact TOON. Use -j for JSON or -v for full fields; -n N keeps th
 Waves are listed apart: text gains a waves section when any match; -j always prints {items, waves}.
 -A lists every tenant (rows gain a tenant column, waves are left out); with -s SESSION only the
 items that session owns.`,
-		"show": `mw show ID [-t SLUG] [-j] [-v]
+		"show": `mw show ID [-t SLUG] [-j] [-v] [--full]
 One call, everything: title, parent/wave/session, body, effective acceptance and where it comes
-from, evidence folder (path + file count), children with status, notes, the last 5 events.
+from, evidence folder (path + file count), children with status, notes (always in full), the last 5 events
+(each event note cut to 90 characters). --full shows every event with its note in full (also with -j).
 -v adds raw timestamps (ignored with -j). Falls back to the archive (mw archive) for archived items.
 Example: mw show TSK-001`,
 		"ready": `mw ready ID [-t SLUG] [-s NAME]
@@ -516,8 +517,9 @@ Complete work with evidence. --evidence copies the files (or a folder's files) i
 <evidence>/<tenant>/<ID>/ before the gate check, so done is one command. One path per --evidence (also --evidence=PATH), repeat the flag for more; a word after the path is a note. Parents cannot close while children remain open.
 With the evidence gate on, <evidence>/<tenant>/<ID>/ must hold a non-empty file
 (not a dotfile, Thumbs.db or desktop.ini); --no-evidence REASON records a note instead.`,
-		"reopen": `mw reopen ID [-t SLUG] [-s NAME]
-Return an item to inbox and release its session owner.`,
+		"reopen": `mw reopen ID [-t SLUG] [-s NAME] [-m REASON]
+Return an item to inbox and release its session owner. -m REASON (optional) is stored on the reopen
+event: mw show lists it in events and -j carries it as the event note, so a reviewer can tell rework from a review loop.`,
 		"log": `mw log [-t SLUG | -A] [-n N] [-j]
 mw log [-t SLUG | -A] --since CURSOR|start | --since-file PATH [-n N] [-j]
 Activity feed, newest first (default 20): time, tenant, item, action, session, note. Actions: created,
@@ -610,8 +612,9 @@ Usage:
   mw judge ID [-t SLUG]
   mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]
   mw list [-t SLUG | -A [-s SESSION]] [-k KIND] [-S STATUS] [-n N] [-j] [-v]
-  mw show ID [-t SLUG] [-j] [-v]
-  mw ready|reopen ID [-t SLUG] [-s NAME]
+  mw show ID [-t SLUG] [-j] [-v] [--full]
+  mw ready ID [-t SLUG] [-s NAME]
+  mw reopen ID [-t SLUG] [-s NAME] [-m REASON]
   mw start ID [-t SLUG] [-s NAME] [-a ROLE]
   mw block ID REASON... [-t SLUG] [-s NAME]
   mw done ID VERIFICATION... [--evidence PATH]... [--no-evidence REASON] [-t SLUG] [-s NAME]

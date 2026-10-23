@@ -127,7 +127,8 @@ mw judge ID [-t SLUG]
 mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]
 mw list [-t SLUG] [-k KIND] [-S STATUS] [-n N] [-j] [-v]
 mw list -A [-s SESSION] [-k KIND] [-S STATUS] [-n N] [-j] [-v]   # every tenant; -s = items that session owns (no waves)
-mw show ID [-t SLUG] [-j] [-v]   # full brief: body, acceptance + source, evidence dir, children, notes, last 5 events; falls back to the archive; -j ignores -v
+mw show ID [-t SLUG] [-j] [-v] [--full]   # full brief: body, acceptance + source, evidence dir, children, notes (always whole), last 5 events (notes cut at 90 chars); --full = every event, notes whole (also with -j); falls back to the archive; -j ignores -v
+mw reopen ID [-t SLUG] [-m REASON]   # back to inbox; optional -m REASON is kept on the reopen event (mw show events, -j, mw log)
 mw ready|reopen ID [-t SLUG] [-s NAME]
 mw start ID [-t SLUG] [-s NAME] [-a ROLE]   # inbox/ready only (or your own item); -a ROLE registers a missing session with that role
 mw block ID REASON... [-t SLUG] [-s NAME]
@@ -229,7 +230,7 @@ Rigour is set as a cumulative **level** per tenant (or `--workspace` for the def
 ## Review and judgement
 
 The loop with the judge gate on (set by a human; `auto` is off): a session claims, works, writes proof into the evidence folder, runs `mw done` and idles; the human runs `mw review`, then `mw judge ID` and `mw accept ID` or `mw reject ID REASON`.
-- `mw review [-t SLUG] [-j]`: `judge` (items awaiting judgement, `×N` = rejections; `[]` while the gate is off), `blocked`, `acceptance` (only with that gate on) and `waves` ready to close. `-j` = `{judge, blocked, acceptance, waves}`.
+- `mw review [-t SLUG] [-j]`: `judge` (items awaiting judgement, `×N` = rejections; `[]` while the gate is off), `blocked`, `acceptance` (only with that gate on) and `waves` whose members are all done (review-ready; each row carries `closeable`, true only when `mw wave close` would pass: steps ticked, members judged, evidence present). The delivery steps follow the review, so a wave is listed before they are ticked. `-j` = `{judge, blocked, acceptance, waves}`.
 - Judgeable = a story or a work item with no story ancestor. A story appears once all its children are done, whatever its own status.
 - `mw judge ID` prints Outcome, then Evidence (one folder per line; a story adds each child's) and Decision (one `[ ]` line per acceptance line).
 - `mw accept ID` records `judged` and `judged_by`; a story with done children becomes done and judged together.
@@ -450,12 +451,12 @@ mw get-prompt session NAME -t SLUG -a review|planner|spike
 
 | Ceremony | Trigger (found by the dispatcher) | Session role | Output |
 |---|---|---|---|
-| `review` | `mw review -j` lists a wave as ready to close | `review` | demo script, screenshots per done item and lessons in `<evidence>/<tenant>/WAV-NNN/`; at most one `mw ask` listing proposed `mw decide`, gate or protocol commands; a release wave reaching `merge` gets one `ask` before merge, push or tag |
-| `planning` | fewer than `ready_min` ready items | `planner` | splits, order and duplicates as notes; acceptance proposals through one `mw ask` (sessions cannot `edit -c`); a bug titled `URGENT...` is dispatched first |
+| `review` | `mw review -j` lists a wave (all members done; steps may still be open) | `review` | demo script, the evidence that exists per done member (screenshots only for UI items; members without evidence are listed, not blocked on), done items outside the wave, and lessons in `<evidence>/<tenant>/WAV-NNN/`; the ask goes on the review chore, which stays blocked until answered; at most one `mw ask` listing proposed `mw decide`, gate or protocol commands; a release wave reaching `merge` gets one `ask` before merge, push or tag |
+| `planning` | fewer than `ready_min` ready items | `planner` | splits, order and duplicates as notes (a duplicate: the cut is proposed in the digest, a human cuts); may note stale `doing` stories (all children done); acceptance proposals through one `mw ask` on the planning chore, which stays blocked until answered (sessions cannot `edit -c`); empty board: exits early with a one-line digest. An open ask does not stop `mw done` in code, so the prompt, not mw, keeps the chore blocked; a bug titled `URGENT...` is dispatched first |
 | `triage` | a block older than 2h | the dispatcher | classify: needs a human (one digest ask), dependency (note, reorder), technical (a `Fix:` task), stale (`mw ready`) |
 | `spike` | planning or triage finds something uncertain | `spike` | question, attempts, evidence and recommendation in `<evidence>/<tenant>/SPK-NNN/` and the `done` text; throwaway branch, never merged; STALE is the time box; the dispatcher records the recommendation with `mw decide` |
 
-Rules, all in the dispatcher prompt: the dispatcher checks `mw list -k chore` for the trigger title before adding a chore; at most one ceremony session per job at a time and at most 4 per day; at most one `mw ask` per ceremony run; ceremonies touch only inbox and ready items, never `doing` ones; evidence is screenshots only. It is best-effort: with no dispatcher running nothing fires, and any ceremony can be started by hand (add the chore, start a session with the role). A job without `ceremonies` gets today's dispatcher prompt unchanged.
+Rules, all in the dispatcher prompt: the dispatcher checks `mw list -k chore` for the trigger title before adding a chore; at most one ceremony session per job at a time and at most 4 per day; at most one `mw ask` per ceremony run; ceremonies touch only inbox and ready items, never `doing` ones; evidence is what exists (logs, harness output), screenshots only for UI items. It is best-effort: with no dispatcher running nothing fires, and any ceremony can be started by hand (add the chore, start a session with the role). A job without `ceremonies` gets today's dispatcher prompt unchanged.
 
 **Prompts are never read from repo files.** The dispatcher and session prompts are embedded in the mw binary, and ceremony output (notes, evidence, asks) is data: it is never fed back into a prompt as instructions.
 

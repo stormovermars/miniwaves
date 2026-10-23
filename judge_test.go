@@ -233,16 +233,17 @@ func TestWaveCloseJudgeAndEvidenceGates(t *testing.T) {
 	}
 	wantErr(t, "unjudged members (mw accept ID): BUG-001", "wave", "close", "WAV-001")
 	runAll(t, []string{"accept", "BUG-001", "--by", "me"})
-	if d := review(t); len(d.Waves) != 1 || d.Waves[0].ID != "WAV-001" {
+	if d := review(t); len(d.Waves) != 1 || d.Waves[0].ID != "WAV-001" || !d.Waves[0].Closeable {
 		t.Fatalf("%+v", d)
 	}
 	gateSet(t, "evidence", "on")
 	wantErr(t, "evidence required", "wave", "close", "WAV-001")
-	if d := review(t); len(d.Waves) != 0 {
-		t.Fatalf("review offers a wave whose evidence folder is missing: %+v", d)
+	// the review ceremony writes the wave evidence, so the wave stays listed, but not closeable (TSK-065)
+	if d := review(t); len(d.Waves) != 1 || d.Waves[0].Closeable {
+		t.Fatalf("review must list the wave as reviewable, not closeable, while its evidence folder is missing: %+v", d)
 	}
 	putEvidence(t, home, "WAV-001", map[string]string{"proof.txt": "ok"})
-	if d := review(t); len(d.Waves) != 1 {
+	if d := review(t); len(d.Waves) != 1 || !d.Waves[0].Closeable {
 		t.Fatalf("review omits a wave with evidence: %+v", d)
 	}
 	runAll(t, []string{"wave", "close", "WAV-001"})
@@ -341,4 +342,28 @@ func TestRejectAcceptStoryUndoneChildrenWording(t *testing.T) {
 	doneAll(t, "TSK-001")
 	wantErr(t, "cannot reject STR-001: 1 of 2 children not done (TSK-002 ready)", "reject", "STR-001", "x", "--by", "me")
 	wantErr(t, "cannot accept STR-001: 1 of 2 children not done (TSK-002 ready)", "accept", "STR-001", "--by", "me")
+}
+
+// TSK-065: a wave whose members are all done is offered for review even with 0 delivery
+// steps ticked (they come after the review) and no evidence folder yet; it is not closeable.
+func TestReviewListsWaveWithAllMembersDoneBeforeStepsTicked(t *testing.T) {
+	judgeBoard(t)
+	gateSet(t, "judge", "off")
+	runAll(t, []string{"wave", "create", "W"}, []string{"wave", "add", "WAV-001", "TSK-001", "TSK-002"})
+	if d := review(t); len(d.Waves) != 0 {
+		t.Fatalf("wave with open members offered: %+v", d)
+	}
+	doneAll(t, "TSK-001")
+	if d := review(t); len(d.Waves) != 0 {
+		t.Fatalf("wave with one open member offered: %+v", d)
+	}
+	doneAll(t, "TSK-002")
+	d := review(t)
+	if len(d.Waves) != 1 || d.Waves[0].ID != "WAV-001" || d.Waves[0].Steps != "0/11" || d.Waves[0].Closeable {
+		t.Fatalf("want WAV-001 reviewable and not closeable: %+v", d)
+	}
+	out := captureOutput(t, func() { runAll(t, []string{"review"}) })
+	if !strings.Contains(out, "WAV-001") || !strings.Contains(out, "not closeable yet") {
+		t.Fatal(out)
+	}
 }

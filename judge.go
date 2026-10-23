@@ -152,7 +152,7 @@ type reviewDoc struct {
 	Review     []reviewItem `json:"review"` // blocked items that wait for a reviewer (same rule as mw news); they stay in blocked too
 	Blocked    []reviewItem `json:"blocked"`
 	Acceptance []reviewItem `json:"acceptance"`
-	Waves      []waveRow    `json:"waves"`
+	Waves      []reviewWave `json:"waves"`
 	Stale      []reviewItem `json:"stale"`
 	Needs      []needRow    `json:"needs"`
 }
@@ -161,7 +161,7 @@ func reviewOf(w *Workspace, t *Tenant) (reviewDoc, bool) {
 	gs := gateStates(w, t)
 	judgeOn, accOn := byName(gs, "judge").Effective, byName(gs, "acceptance").Effective
 	evOn := byName(gs, "evidence").Effective
-	d := reviewDoc{Judge: []reviewItem{}, Review: []reviewItem{}, Blocked: []reviewItem{}, Acceptance: []reviewItem{}, Waves: []waveRow{}, Stale: []reviewItem{}, Needs: needsOf(t)}
+	d := reviewDoc{Judge: []reviewItem{}, Review: []reviewItem{}, Blocked: []reviewItem{}, Acceptance: []reviewItem{}, Waves: []reviewWave{}, Stale: []reviewItem{}, Needs: needsOf(t)}
 	mk := func(it Item) reviewItem {
 		return reviewItem{ID: it.ID, Type: it.Kind, State: it.Status, Title: compactText(it.Title, 72), Attempts: it.Attempts}
 	}
@@ -195,11 +195,40 @@ func reviewOf(w *Workspace, t *Tenant) (reviewDoc, bool) {
 		}
 	}
 	for _, wv := range t.Items {
-		if wv.Kind == "wave" && wv.Status != "done" && waveCloseable(w, t, wv, judgeOn, evOn) {
-			d.Waves = append(d.Waves, waveRowOf(t, wv))
+		if wv.Kind == "wave" && wv.Status != "done" && waveReviewable(t, wv, judgeOn) {
+			d.Waves = append(d.Waves, reviewWave{waveRow: waveRowOf(t, wv), Closeable: waveCloseable(w, t, wv, judgeOn, evOn)})
 		}
 	}
 	return d, accOn
+}
+
+// reviewWave is a wave in the review feed: its members are all done, so the review ceremony can run.
+// Closeable says whether `mw wave close` would pass right now (steps ticked, judged, evidence present).
+// The delivery steps (wrapup, merge, test, bump, ...) come after the review, so a wave is
+// reviewable long before it is closeable (TSK-065: tinydoc WAV-004, 29/29 done, steps 0/11).
+type reviewWave struct {
+	waveRow
+	Closeable bool `json:"closeable" toon:"closeable"`
+}
+
+// waveReviewable: the wave has members, every member is done (and judged when the judge gate is on: the judge flow runs first) and no sub-wave is open.
+// Steps, judging and evidence are not asked: they are what the review prepares.
+func waveReviewable(t *Tenant, wv Item, judgeOn bool) bool {
+	ms := waveMembers(t, wv.ID)
+	if len(ms) == 0 {
+		return false
+	}
+	for _, m := range ms {
+		if m.Status != "done" || (judgeOn && !isJudged(t, m)) {
+			return false
+		}
+	}
+	for _, c := range t.Items {
+		if c.Kind == "wave" && c.Parent == wv.ID && c.Status != "done" {
+			return false
+		}
+	}
+	return true
 }
 
 // waveCloseable: steps ticked, members done (and judged when the judge gate is on),
@@ -287,7 +316,11 @@ func reviewCommand(w *Workspace, args []string) error {
 	}
 	section("waves", len(d.Waves), func() {
 		for _, r := range d.Waves {
-			fmt.Printf("  %-8s %s  members %s, steps %s\n", r.ID, r.Title, r.Members, r.Steps)
+			ready := "review, not closeable yet"
+			if r.Closeable {
+				ready = "closeable"
+			}
+			fmt.Printf("  %-8s %s  members %s, steps %s (%s)\n", r.ID, r.Title, r.Members, r.Steps, ready)
 		}
 	})
 	return nil

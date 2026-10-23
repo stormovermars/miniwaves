@@ -499,7 +499,7 @@ func showItem(path string, w *Workspace, args []string) error {
 	if len(pos) != 1 {
 		return errors.New("usage: mw show ID")
 	}
-	if err := allowOptions(o, "tenant", "session", "json", "verbose"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "json", "verbose", "full"); err != nil {
 		return err
 	}
 	t, err := selectTenant(w, o)
@@ -516,10 +516,14 @@ func showItem(path string, w *Workspace, args []string) error {
 		it = &ai
 	}
 	d := briefOf(w, t, *it, verbose)
+	full := o["full"] == "true"
+	if full && len(it.Events) > 0 {
+		d.Events = it.Events // --full: every event, notes uncut
+	}
 	if o["json"] == "true" {
 		return printJSON(d)
 	}
-	printBrief(d, verbose)
+	printBriefFull(d, verbose, full)
 	return nil
 }
 
@@ -557,6 +561,9 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 	allowed := []string{"tenant", "session"}
 	if command == "done" {
 		allowed = append(allowed, "no-evidence")
+	}
+	if command == "reopen" {
+		allowed = append(allowed, "message")
 	}
 	if command == "start" {
 		allowed = append(allowed, "agent")
@@ -723,6 +730,8 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 	enote := ""
 	if command == "block" || command == "done" {
 		enote = it.Note
+	} else if command == "reopen" {
+		enote = o["message"]
 	}
 	emit(it, it.Updated, command, actor, enote)
 	if to == "done" {
