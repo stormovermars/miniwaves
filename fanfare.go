@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
@@ -39,7 +38,7 @@ type FanfareConfig struct {
 	MilestoneSeconds int                 `json:"milestone_seconds"`
 	FinaleSeconds    int                 `json:"finale_seconds"`
 	Volume           float64             `json:"volume"`
-	StopDialog       *bool               `json:"stop_dialog,omitempty"` // finale Stop dialog; nil = true
+	StopDialog       *bool               `json:"stop_dialog,omitempty"` // deprecated since 0.3.6: read and kept, ignored
 	Sets             map[string][]string `json:"sets,omitempty"`        // named sets of pair folders (fanfare_sets.go)
 	Use              string              `json:"use,omitempty"`         // active set; "" or "all" = every playable pair
 }
@@ -79,10 +78,6 @@ func fanfareCfg(w *Workspace) FanfareConfig {
 		c.Volume = 1
 	}
 	c.Volume = math.Min(c.Volume, 4)
-	if c.StopDialog == nil {
-		t := true
-		c.StopDialog = &t
-	}
 	return c
 }
 
@@ -346,29 +341,17 @@ func playerCommand(goos, file string, secs int, vol float64, look func(string) (
 	return "", nil, fmt.Errorf("fanfare playback is not supported on %s", goos)
 }
 
-// playFile starts the player detached, records its pid for `mw fanfare stop` and returns at once.
+// playFile starts a milestone player detached, records its pid for `mw fanfare stop` and returns at once.
 func playFile(dir, file string, secs int, vol float64) error {
-	_, err := startPlayer(dir, file, secs, vol)
+	_, err := startPlayer(dir, file, secs, vol, "milestone")
 	return err
 }
 
-// playFinale plays the finale and, when stopDialog is set, opens the Stop control beside it,
-// telling why (reason), which song and for how long.
-func playFinale(dir, file string, secs int, vol float64, stopDialog bool, reason string) error {
-	pid, err := startPlayer(dir, file, secs, vol)
-	if err != nil {
-		return err
-	}
-	if stopDialog {
-		startStopControl(dir, pid, secs, finaleMessage(reason, finaleSong(dir, file), secs), finaleIcon(dir, file))
-	}
-	return nil
-}
-
-// finaleMessage is the text of the Stop dialog: reason, song, duration. The track length is not
-// read (no audio parsing), so there is no "(of M:SS)" part.
-func finaleMessage(reason, song string, secs int) string {
-	return reason + "\nSong: " + song + "\nPlaying " + strconv.Itoa(secs) + " s"
+// playFinale starts the finale player detached and records it as kind "finale" (mw-jobs shows a Stop button
+// while it plays). There is no dialog of mw's own: stop it with `mw fanfare stop`.
+func playFinale(dir, file string, secs int, vol float64) error {
+	_, err := startPlayer(dir, file, secs, vol, "finale")
+	return err
 }
 
 // finaleReason: why the finale plays for a finished tenant: slug (and name when different) and the done count.
@@ -390,145 +373,7 @@ func finaleReason(t *Tenant) string {
 	return fmt.Sprintf("Tenant %s finished \u2014 %d %s done", who, done, noun)
 }
 
-const finaleTestReason = "Test (mw fanfare test)"
-
-// finaleSong names the finale track: the manifest title (plus a short attribution) when known,
-// else the file name without extension and the pair folder.
-func finaleSong(dir, file string) string {
-	pair := filepath.Base(filepath.Dir(file))
-	title, attr, label := "", "", ""
-	if mp := readManifest(dir).pair(pair); mp != nil {
-		label = mp.Label
-		for _, tr := range mp.Tracks {
-			if tr.Kind != "finale" {
-				continue
-			}
-			title, attr = tr.Title, tr.Attribution
-			if title == "" { // collections fetched before manifests carried titles
-				for _, bp := range builtinPairs {
-					for _, bt := range bp.Tracks {
-						if bp.Name == pair && bt.Kind == "finale" {
-							title = bt.Title
-						}
-					}
-				}
-			}
-		}
-	}
-	if title == "" && label != "" { // BYO and older collections: the pair label names the film/piece
-		title = label
-		if attr != "" {
-			if r := []rune(attr); len(r) > 80 {
-				attr = string(r[:79]) + "\u2026"
-			}
-			return title + " \u2014 " + attr
-		}
-	}
-	if title == "" {
-		return strings.TrimSuffix(filepath.Base(file), filepath.Ext(file)) + " (" + pair + ")"
-	}
-	if attr != "" && len([]rune(attr)) <= 50 && !strings.Contains(title, attr) {
-		title += " \u2014 " + attr
-	}
-	return title
-}
-
-// stopControlCommand builds the command of the finale's Stop dialog: a dialog showing msg with a
-// Stop button that times out after secs+2 seconds and kills the player (pid) itself. ok is false
-// when this platform has no dialog. icon (a file path, may be "") is data too. msg is data: it travels only as an argument (or, on Windows,
-// the MW_FANFARE_MSG variable in env) and never inside the script text. MW_FANFARE_PLAYER (test
-// stub) disables it unless MW_FANFARE_STOP_CONTROL names a stub, called as: STUB PLAYERPID SECONDS MSG.
-func stopControlCommand(goos string, playerPID, secs int, msg, icon string, look func(string) (string, error)) (name string, args, env []string, ok bool) {
-	if stub := os.Getenv("MW_FANFARE_STOP_CONTROL"); stub != "" {
-		return stub, []string{strconv.Itoa(playerPID), strconv.Itoa(secs), msg}, nil, true
-	}
-	if os.Getenv("MW_FANFARE_PLAYER") != "" {
-		return "", nil, nil, false
-	}
-	n := strconv.Itoa(secs + 2)
-	p := strconv.Itoa(playerPID)
-	switch goos {
-	case "darwin": // sh -c SCRIPT sh MSG PID SECONDS [ICON]
-		ic, extra := ` with icon note`, []string(nil)
-		if icon != "" {
-			ic, extra = ` with icon (POSIX file (item 3 of argv))`, []string{icon}
-		}
-		script := `r=$(osascript -e 'on run argv' -e 'display dialog (item 1 of argv) with title "miniwaves"` + ic + ` buttons {"Stop"} default button 1 giving up after (item 2 of argv as integer)' -e 'end run' "$1" "$3" "$4")` +
-			`; case "$r" in *"gave up:true"*) ;; *"button returned:Stop"*) kill -TERM -"$2" 2>/dev/null || kill -TERM "$2";; esac`
-		return "sh", append([]string{"-c", script, "sh", msg, p, n}, extra...), nil, true
-	case "windows": // the Popup cannot show a picture: flag 64 is the information icon
-		script := `$r=(New-Object -ComObject WScript.Shell).Popup($env:MW_FANFARE_MSG + "` + "`n`n" + `Click OK to stop.",` + n + `,'miniwaves',64); if($r -eq 1){taskkill /PID ` + p + ` /T /F}`
-		return "powershell", []string{"-NoProfile", "-c", script}, []string{"MW_FANFARE_MSG=" + msg}, true
-	}
-	if _, err := look("zenity"); err == nil {
-		argv := []string{"-c", "", "sh", msg, p, n}
-		flags := ""
-		if icon != "" && zenityBodyIcon() { // older zenity has no body icon: nothing is added
-			flags = ` --icon="$4"`
-			argv = append(argv, icon)
-		}
-		argv[1] = `zenity --question --no-markup --title=miniwaves` + flags + ` --text="$1" --ok-label=Stop --cancel-label=Close --timeout="$3" && kill -TERM -"$2" 2>/dev/null || true`
-		return "sh", argv, nil, true
-	}
-	if _, err := look("kdialog"); err == nil { // kdialog's --icon is only the title-bar icon: none is passed
-		// kdialog has no timeout: a timer closes it, and the player is killed only on a click (exit 0), not by the timer (143).
-		script := `kdialog --title miniwaves --msgbox "$1" --ok-label Stop & k=$!; (sleep "$3"; kill $k 2>/dev/null) & t=$!; wait $k; r=$?; kill $t 2>/dev/null; [ $r -eq 0 ] && kill -TERM -"$2" 2>/dev/null; true`
-		return "sh", []string{"-c", script, "sh", msg, p, n}, nil, true
-	}
-	return "", nil, nil, false
-}
-
-// zenityBodyIcon reports whether zenity is 3.90 or newer (GTK4), the first with --icon=PATH, the
-// picture beside the text; older zenity rejects the flag. A variable so tests need no zenity.
-var zenityBodyIcon = func() bool {
-	out, err := exec.Command("zenity", "--version").Output()
-	if err != nil {
-		return false
-	}
-	parts := strings.SplitN(strings.TrimSpace(string(out)), ".", 3)
-	if len(parts) < 2 {
-		return false
-	}
-	maj, e1 := strconv.Atoi(parts[0])
-	min, e2 := strconv.Atoi(parts[1])
-	return e1 == nil && e2 == nil && (maj > 3 || (maj == 3 && min >= 90))
-}
-
-//go:embed assets/fanfare-icon.png
-var fanfareIconPNG []byte
-
-// finaleIcon picks the picture of the Stop dialog: cover.png, cover.jpg or cover.icns in the
-// played pair's folder, else mw's built-in icon written once to <dir>/.mw-fanfare-icon.png.
-// "" (no picture) when the built-in cannot be written.
-func finaleIcon(dir, file string) string {
-	for _, n := range []string{"cover.png", "cover.jpg", "cover.icns"} {
-		p := filepath.Join(filepath.Dir(file), n)
-		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
-			return p
-		}
-	}
-	p := filepath.Join(dir, ".mw-fanfare-icon.png")
-	if cur, err := os.ReadFile(p); err == nil && bytes.Equal(cur, fanfareIconPNG) {
-		return p
-	}
-	if os.MkdirAll(dir, 0o755) != nil || os.WriteFile(p, fanfareIconPNG, 0o644) != nil {
-		return ""
-	}
-	return p
-}
-
-// startStopControl launches the Stop dialog detached and records it (best effort, never fails).
-func startStopControl(dir string, playerPID, secs int, msg, icon string) {
-	name, args, env, ok := stopControlCommand(runtime.GOOS, playerPID, secs, msg, icon, lookPath)
-	if !ok {
-		return
-	}
-	if pid, err := startDetached(name, args, env); err == nil {
-		recordPlayer(dir, pid)
-	}
-}
-
-func startPlayer(dir, file string, secs int, vol float64) (int, error) {
+func startPlayer(dir, file string, secs int, vol float64, kind string) (int, error) {
 	name, args, err := playerCommand(runtime.GOOS, file, secs, vol, lookPath)
 	if err != nil {
 		return 0, err
@@ -537,7 +382,7 @@ func startPlayer(dir, file string, secs int, vol float64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	recordPlayer(dir, pid)
+	recordPlayer(dir, pid, kind)
 	return pid, nil
 }
 
@@ -569,7 +414,8 @@ func startDetached(name string, args, env []string) (int, error) {
 
 type playerRec struct {
 	PID   int    `json:"pid"`
-	Stamp string `json:"stamp"` // identifies the process so a reused pid is never killed
+	Stamp string `json:"stamp"`          // identifies the process so a reused pid is never killed
+	Kind  string `json:"kind,omitempty"` // "milestone" or "finale"
 }
 
 func playersPath(dir string) string { return filepath.Join(dir, ".players.json") }
@@ -592,7 +438,7 @@ func writePlayers(dir string, rs []playerRec) {
 }
 
 // recordPlayer remembers pid (best effort) and drops entries that are no longer running.
-func recordPlayer(dir string, pid int) {
+func recordPlayer(dir string, pid int, kind string) {
 	stamp := procStamp(pid)
 	if stamp == "" {
 		return // already finished
@@ -603,7 +449,19 @@ func recordPlayer(dir string, pid int) {
 			keep = append(keep, r)
 		}
 	}
-	writePlayers(dir, append(keep, playerRec{pid, stamp}))
+	writePlayers(dir, append(keep, playerRec{pid, stamp, kind}))
+}
+
+// playingState counts the recorded players still running (verified by procStamp, the file is not rewritten)
+// and says whether one of them is a finale.
+func playingState(dir string) (n int, finale bool) {
+	for _, r := range readPlayers(dir) {
+		if st := procStamp(r.PID); st != "" && st == r.Stamp {
+			n++
+			finale = finale || r.Kind == "finale"
+		}
+	}
+	return n, finale
 }
 
 // stopPlayers kills the players mw started that are still running and returns how many.
@@ -732,7 +590,7 @@ func playClip(w *Workspace, kind, reason string) error {
 	file, secs := p.Fanfare, c.MilestoneSeconds
 	if kind == "finale" {
 		file, secs = p.Finale, c.FinaleSeconds
-		return playFinale(expandHome(c.Dir), file, secs, c.Volume, *c.StopDialog, reason)
+		return playFinale(expandHome(c.Dir), file, secs, c.Volume)
 	}
 	return playFile(expandHome(c.Dir), file, secs, c.Volume)
 }
@@ -962,7 +820,13 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		_, merr := os.Stat(filepath.Join(dir, manifestName))
 		eff, src := fanfareEffectiveSrc(w) // config stays the board's; enabled/use are what a play would do
 		if o["json"] == "true" {
-			base := map[string]any{"config": c, "dir": dir, "ready": ready, "unplayable": unplayable, "incomplete": incomplete, "empty": empty, "manifest": merr == nil, "source": src}
+			playing, playingFinale := playingState(dir)
+			cj := c
+			cj.StopDialog = nil // deprecated: reported only as stop_dialog_deprecated
+			base := map[string]any{"playing": playing, "playing_finale": playingFinale, "config": cj, "dir": dir, "ready": ready, "unplayable": unplayable, "incomplete": incomplete, "empty": empty, "manifest": merr == nil, "source": src}
+			if c.StopDialog != nil {
+				base["stop_dialog_deprecated"] = true
+			}
 			if fanfareBoardSilencesUser(w) {
 				base["hint"] = fanfareBoardOffHint
 			}
@@ -977,7 +841,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		if src["enabled"] == "user" {
 			state += " (user; board: " + boardState + ")"
 		}
-		fmt.Printf("fanfare: %s\ndir: %s\nmilestone_seconds: %d\nfinale_seconds: %d\nvolume: %g\nstop_dialog: %v\n", state, c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume, *c.StopDialog)
+		fmt.Printf("fanfare: %s\ndir: %s\nmilestone_seconds: %d\nfinale_seconds: %d\nvolume: %g\n", state, c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume)
 		if src["use"] == "user" {
 			fmt.Printf("use: %s (user; board: %s)\n", activeSet(eff), activeSet(c))
 		} else {
@@ -1000,7 +864,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		return printData(append([]pairInfo{}, scanPairs(dir)...), o)
 	case "set":
 		if len(pos) == 0 {
-			return errors.New("usage: mw fanfare set enabled=true milestone_seconds=N finale_seconds=N volume=V stop_dialog=true dir=PATH")
+			return errors.New("usage: mw fanfare set enabled=true milestone_seconds=N finale_seconds=N volume=V dir=PATH")
 		}
 		for _, kv := range pos {
 			k, v, ok := strings.Cut(kv, "=")
@@ -1042,6 +906,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 					return fmt.Errorf("stop_dialog: want true or false, got %q", v)
 				}
 				c.StopDialog = &b
+				fmt.Fprintln(os.Stderr, "mw: stop_dialog is deprecated and ignored since 0.3.6; stop a playing fanfare with `mw fanfare stop` or the mw-jobs Stop button")
 			case "volume":
 				f, e := strconv.ParseFloat(v, 64)
 				if e != nil || f <= 0 || f > 4 {
@@ -1049,14 +914,14 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 				}
 				c.Volume = f
 			default:
-				return fmt.Errorf("unknown setting %q (enabled, dir, milestone_seconds, finale_seconds, volume, stop_dialog)", k)
+				return fmt.Errorf("unknown setting %q (enabled, dir, milestone_seconds, finale_seconds, volume; stop_dialog is deprecated)", k)
 			}
 		}
 		w.Fanfare = &c
 		if err := save(path, w); err != nil {
 			return err
 		}
-		fmt.Printf("fanfare saved: enabled=%v dir=%s milestone_seconds=%d finale_seconds=%d volume=%g stop_dialog=%v\n", fanfareOn(c), c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume, *c.StopDialog)
+		fmt.Printf("fanfare saved: enabled=%v dir=%s milestone_seconds=%d finale_seconds=%d volume=%g\n", fanfareOn(c), c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume)
 		return nil
 	case "test":
 		kind := "milestone"
@@ -1074,7 +939,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		var perr error
 		if kind == "finale" {
 			file, secs = p.Finale, c.FinaleSeconds
-			perr = playFinale(dir, file, secs, c.Volume, *c.StopDialog, finaleTestReason)
+			perr = playFinale(dir, file, secs, c.Volume)
 		} else {
 			perr = playFile(dir, file, secs, c.Volume)
 		}
