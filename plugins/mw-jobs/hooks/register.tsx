@@ -53,6 +53,8 @@ const previous = atom({ plugin: 'mw-jobs', key: 'previous' } as const, {})
 const staleSince = atom({ plugin: 'mw-jobs', key: 'staleSince' } as const, {})
 const selected = atom({ plugin: 'mw-jobs', key: 'selected' } as const, '')
 const muted = atom({ plugin: 'mw-jobs', key: 'muted' } as const, false)
+/** alerts.popup as last read from mw (on until a read says off); the panes draw from this atom. */
+const popupAtom = atom({ plugin: 'mw-jobs', key: 'popup' } as const, true)
 const refreshEvery = atom({ plugin: 'mw-jobs', key: 'refreshEvery' } as const, '30s')
 const newsSeen = atom({ plugin: 'mw-jobs', key: 'newsSeen' } as const, {})
 const jobDesc = atom({ plugin: 'mw-jobs', key: 'jobDesc' } as const, {})
@@ -2614,9 +2616,10 @@ const refreshJobRun = async ($: any, job: MwJobsJob): Promise<void> => {
       }
       // alerts.log: one line per raised alert, how it was delivered
       const nowIso = new Date(await $.clock.now()).toISOString()
-      const delivered = isMuted ? 'muted' : sw0.message ? (plan.sound ? 'row+toast+sound' : 'row+toast') : plan.sound ? 'sound' : 'none'
+      const toasts = toastsOn({ enabled: !isMuted, message: sw0.message, popup: sw0.popup })
+      const delivered = isMuted ? 'muted' : sw0.message ? (toasts ? (plan.sound ? 'row+toast+sound' : 'row+toast') : plan.sound ? 'row+sound' : 'row') : plan.sound ? 'sound' : 'none'
       await appendLog($, job.id, 'alerts.log', kept.map(x => alertLine(nowIso, x.type, x.who ?? '-', x.text, delivered)))
-      for (const b of toastBubbles(plan.lines)) $.ui.toast(b, { timeoutMs: 8000 })
+      if (toasts) for (const b of toastBubbles(plan.lines)) $.ui.toast(b, { timeoutMs: 8000 })
     }
   } catch {
     // never throw out of a timer
@@ -3046,6 +3049,9 @@ const loadSettings = async ($: any, apply = true): Promise<CfgKey[] | undefined>
   const keys = r.exitCode === 0 ? parseUserKeys(String(r.stdout)) : undefined
   cfgOk = keys !== undefined
   await update($, settings, (s: CfgState) => (keys === undefined ? { ...s, ok: false, keys: [], hint: CFG_OLD_HINT } : { ...s, ok: true, keys, hint: '' }))
+  // only on a change: an update made while a pane draws is denied
+  const popNow = popupOf({ ok: keys !== undefined, keys: keys ?? [] })
+  if ((await read($, popupAtom)) !== popNow) await update($, popupAtom, () => popNow)
   if (keys !== undefined && apply) await applySettings($, keys)
   return keys
 }
@@ -3177,14 +3183,15 @@ const initSettings = async ($: any) => {
 }
 
 /** The alert switches: kinds (null: all), message rows/toasts/notifications, sound. */
-const alertSwitches = async ($: any): Promise<{ kinds: Set<string> | null; choices: string[]; message: boolean; sound: boolean }> => {
+const alertSwitches = async ($: any): Promise<{ kinds: Set<string> | null; choices: string[]; message: boolean; popup: boolean; sound: boolean }> => {
   const s: CfgState = await read($, settings)
-  if (s.ok !== true) return { kinds: null, choices: [], message: true, sound: true }
+  if (s.ok !== true) return { kinds: null, choices: [], message: true, popup: true, sound: true }
   const k = s.keys.find(x => x.key === 'alerts.kinds')
   return {
     kinds: k === undefined ? null : new Set(kindsOf(k.value, k.choices)),
     choices: k?.choices ?? [],
     message: s.keys.find(x => x.key === 'alerts.message')?.value !== 'false',
+    popup: s.keys.find(x => x.key === 'alerts.popup')?.value !== 'false',
     sound: s.keys.find(x => x.key === 'alerts.sound')?.value !== 'false',
   }
 }
@@ -3208,6 +3215,7 @@ const KEY_LABEL: Record<string, string> = {
   'alerts.enabled': 'Alerts',
   'alerts.kinds': 'Kinds',
   'alerts.message': 'Message row',
+  'alerts.popup': 'Popup',
   'alerts.sound': 'Sound',
   'fanfare.enabled': 'Fanfare',
   'fanfare.use': 'Set',
@@ -3301,6 +3309,8 @@ type ControlsIn = {
   every: string
   wanted: string
   muted: boolean
+  /** alerts.popup: toast popups on. */
+  popup: boolean
   needs: number
   review: number
   hasPage: boolean
@@ -3350,7 +3360,7 @@ const controlsRowInner = (ui: any, $: any, c: ControlsIn) => {
       ])}
       {styleGroup(ui, $, c.pane, c.wanted, c.canSvg, c.unavailable)}
       {sizeGroup(ui, $, c.sizeOff, { pane: c.pane, on: c.fill, blocks: true, gopher: c.wanted === 'gopher' })}
-      {group(ui, 'grp-alerts', [tipped(ui, 'mute', <Button key="mute" plain label={c.muted ? '🔕' : '🔔'} dimColor onPress={() => void toggleMute($)} />, c.muted ? 'Unmute alerts' : 'Mute alerts', 'right')], true)}
+      {group(ui, 'grp-alerts', [tipped(ui, 'mute', <Button key="mute" plain label={c.muted ? '🔕' : '🔔'} dimColor onPress={() => void toggleMute($)} />, c.muted ? 'Unmute alerts' : 'Mute alerts', 'right'), tipped(ui, 'popup', <Button key="popup" plain label={popupButton(c.popup, c.muted).label} dimColor={popupButton(c.popup, c.muted).dim} onPress={() => void togglePopup($)} />, popupButton(c.popup, c.muted).tip, 'right')], true)}
       {c.fanfare !== undefined ? group(ui, 'grp-fanfare', [tipped(ui, 'fanfare', <Button key="fanfare" plain label={c.fanfare.label} dimColor={!c.fanfare.on} onPress={c.fanfare.onPress} />, c.fanfare.tip, 'right'), ...(c.fanfare.onStop !== undefined ? [tipped(ui, 'fanfare-stop', <Button key="fanfare-stop" plain label="Stop" onPress={c.fanfare.onStop} />, 'Stop the finale that is playing', 'right')] : [])], true) : null}
       {group(ui, 'grp-open', [
         c.canOpen ? tipped(ui, 'panel', <Button key="panel" plain label="⧉" onPress={() => void openPanel($, c.job)} />, 'Open the news file in the editor', 'right') : null,
@@ -4687,12 +4697,23 @@ const askGroup = async ($: any, job: MwJobsJob, kind: 'needs' | 'review') => {
   await fillComposer($, askGroupText(kind, items, snap, countsOf(snap)[kind]))
 }
 
+/** The top row's two attention indicators: always shown, `!N` and `\u25d0N` (N may be 0, then dimmed and inert). */
+export const attentionLabels = (needs: number, review: number) => ({
+  needs: { label: `!${needs}`, live: needs > 0 },
+  review: { label: `\u25d0${review}`, live: review > 0 },
+})
+
 const askIcons = (ui: any, $: any, job: MwJobsJob, needs: number, review: number) => {
   const { Button } = ui
-  const out: any[] = []
-  if (needs > 0) out.push(tipped(ui, 'ask-needs', <Button key="ask-needs" plain label={`!${needs}`} variant="primary" onPress={() => void askGroup($, job, 'needs')} />, 'Ask in chat about what needs you'))
-  if (review > 0) out.push(tipped(ui, 'ask-review', <Button key="ask-review" plain label={`\u25d0${review}`} dimColor onPress={() => void askGroup($, job, 'review')} />, 'Ask in chat about items to review'))
-  return out
+  const l = attentionLabels(needs, review)
+  return [
+    l.needs.live
+      ? tipped(ui, 'ask-needs', <Button key="ask-needs" plain label={l.needs.label} variant="primary" onPress={() => void askGroup($, job, 'needs')} />, 'Ask in chat about what needs you')
+      : tipped(ui, 'ask-needs', <Button key="ask-needs" plain label={l.needs.label} dimColor onPress={() => $.ui.toast('Jobs: nothing needs you.', { timeoutMs: 3000 })} />, 'Nothing needs you'),
+    l.review.live
+      ? tipped(ui, 'ask-review', <Button key="ask-review" plain label={l.review.label} dimColor onPress={() => void askGroup($, job, 'review')} />, 'Ask in chat about items to review')
+      : tipped(ui, 'ask-review', <Button key="ask-review" plain label={l.review.label} dimColor onPress={() => $.ui.toast('Jobs: nothing to review.', { timeoutMs: 3000 })} />, 'Nothing to review'),
+  ]
 }
 
 /** One compact row of "? ID" buttons under the Svg: needs, review and blocked items, at most 6. */
@@ -5159,6 +5180,25 @@ const toggleMute = async ($: any) => {
   return { text: now ? 'Jobs: sound and notifications muted.' : 'Jobs: sound and notifications on.' }
 }
 
+/** alerts.popup from the loaded keys; a missing key (older mw) or no keys yet counts as on. */
+export const popupOf = (s: { ok: boolean | null; keys: Array<{ key: string; value: string }> }): boolean => s.ok !== true || s.keys.find(x => x.key === 'alerts.popup')?.value !== 'false'
+
+/** The bell and popup states in one read (one await: the pane draws in the same ticks as before). */
+const readMutedPopup = async ($: any): Promise<{ muted: boolean; popup: boolean }> => {
+  const [m, p] = await Promise.all([read($, muted), read($, popupAtom)])
+  return { muted: m as boolean, popup: p as boolean }
+}
+
+const togglePopup = async ($: any) => {
+  const now = !popupOf(await read($, settings))
+  const ok = await cfgWrite($, { 'alerts.popup': String(now) })
+  if (!ok) {
+    $.ui.toast('Jobs: this mw has no popup setting; update mw.', { timeoutMs: 8000 })
+    return
+  }
+  if (now) $.ui.toast('Jobs: popups on.', { timeoutMs: 4000 })
+}
+
 /** A snapshot whose "in chat" marks older than 30 minutes are dropped at once, between refreshes too (T4). */
 export const expireChat = (s: MwJobsSnapshot | undefined, now: number): MwJobsSnapshot | undefined => {
   if (s?.inChat === undefined) return s
@@ -5443,6 +5483,16 @@ export const toastBubbles = (lines: string[]): string[] => {
 }
 
 /** What one refresh does with its alerts: the grouped toast lines (and rows), and whether the sound plays. */
+/** Whether this refresh shows toast popups: alerts on (not muted), message on, and alerts.popup not off (a missing key counts as on). */
+export const toastsOn = (sw: { enabled: boolean; message: boolean; popup?: boolean }): boolean => sw.enabled && sw.message && sw.popup !== false
+
+/** The popup button next to the bell: the same width on or off; dim when off or while muted. */
+export const popupButton = (popup: boolean, muted: boolean): { label: string; tip: string; dim: boolean } => ({
+  label: popup ? '💬' : '💭',
+  tip: popup ? 'Popups on \u2014 click to turn off' : 'Popups off \u2014 click to turn on',
+  dim: muted || !popup,
+})
+
 export const planAlerts = (
   events: AlertEvent[],
   sw: { enabled: boolean; message: boolean; sound: boolean },
@@ -6135,7 +6185,6 @@ export const register: Register = (on, options) => {
     const totals = jobView !== undefined ? totalsOf(jobEntries) : tenantView !== undefined ? totalsOf(tenantRowsAll) : countsOf(nsnap)
     const nAn = nsnap ? analyse(nsnap, nowMs, nowMs, (await read($, stalledMin)) * 60_000) : undefined
     const newsAsk: MwJobsItem[] = nAn ? [...nAn.needs, ...nAn.review] : []
-    const unseen = await newsUnseen($, job.id)
     const mnodes = mm ? await modelNewsNodes($, { Box, Text, Button, Link, Svg, Markdown, Code }, job, { entry: mentryV!, view: nview, canSvg, paneW, given: Number.isFinite(given) && given > 0 ? given : undefined, step, style: wantedStyle }) : undefined
     // title and description come from the job (the same header as the jobs pane); the body drops mw's own copies
     const newsDesc = (((await read($, jobDesc)) as Record<string, string>)[job.id] || job.description || '').replace(/\s+/g, ' ')
@@ -6168,7 +6217,6 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column">
           <Box alignItems="center" gap={2} flexWrap="wrap">
             <Text bold wrap="truncate-end">{job.title}</Text>
-            {unseen && <Text color="error">●</Text>}
             <Text key="sep-nav" dimColor>{'\u00a6'}</Text>
             <Button key="back-jobs" plain label={JOBS_LABEL} onPress={() => void backToJobs($, job.id)} />
           </Box>
@@ -6186,7 +6234,7 @@ export const register: Register = (on, options) => {
             every,
             wanted: wantedStyle,
             pane: 'news' as const,
-            muted: await read($, muted),
+            ...(await readMutedPopup($)),
             needs: totals.needs,
             review: totals.review,
             hasPage: /^https:\/\//.test(job.news),
@@ -6316,7 +6364,7 @@ export const register: Register = (on, options) => {
           every,
           wanted,
           pane: 'jobs' as const,
-          muted: await read($, muted),
+          ...(await readMutedPopup($)),
           needs: totals.needs,
           review: totals.review,
           hasPage: /^https:\/\//.test(job.news),

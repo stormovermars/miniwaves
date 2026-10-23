@@ -444,7 +444,7 @@ mw user fanfare-defaults
 Per-user choices, kept out of the committed board, in os.UserConfigDir()/miniwaves/mw-user.json (MW_USER_CONFIG overrides the path).
 Works without a board. get lists every settings key (or one) with its effective value and source (default|user); -j:
 {"keys":[{"key","value","default","source","group","choices"}]}. Keys: pane.refresh, pane.style, pane.zoom, pane.fit, pane.open,
-alerts.enabled, alerts.kinds, alerts.message, alerts.sound, fanfare.enabled, fanfare.use, status.show, status.detail,
+alerts.enabled, alerts.kinds, alerts.message, alerts.popup, alerts.sound, fanfare.enabled, fanfare.use, status.show, status.detail,
 discover.home, discover.depth (see mw configure). Also alerts.on (comma list of event names) and alerts.exec (a JSON argv
 array, never run through a shell). fanfare.enabled overrides the board's fanfare enabled. An empty VALUE unsets a key.
 On Unix a file that is group- or world-writable is refused (chmod 600); on Windows there is no mode check.

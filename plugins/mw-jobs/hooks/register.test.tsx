@@ -7,7 +7,7 @@ import { SHOW_TSK001, SHOW_STR002, WAVE_002, WAVE_004 } from '../tests/fixtures/
 import { parseItemDetail, parseWaveDetail } from './detail'
 import { REAL_DRAFT, SMALL_DRAFT, SMALL_RELEASE, STRESS_DRAFT, releases30, tenantsDraft, tenantSlug, manyJobs, jobDraft } from '../tests/fixtures/model'
 import { buildIdIndex, splitIds } from './ids'
-import { unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, metricChanges, metricAlerts, legacyEvents, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, toastBubbles, stopVisible, parseFanfare, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
+import { unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, metricChanges, metricAlerts, legacyEvents, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, attentionLabels, capAlerted, toastBubbles, stopVisible, parseFanfare, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, toastsOn, popupButton, popupOf, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
 import { REAL_USER_KEYS } from '../tests/fixtures/userkeys'
 
 declare const console: { log: (...a: unknown[]) => void }
@@ -1071,8 +1071,8 @@ test('every icon button has a hover tooltip card, hidden until hover', async ($,
   state.newsFiles.zeta = '# S\n\nx'
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const cases: Array<[any, Array<[string, string]>]> = [
-    [PANE, [['refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Fill: every list in full'], ['mute', 'Mute alerts'], ['panel', 'Open the news file in the editor'], ['page', 'Open news page']]],
-    [NEWS_PANE, [['news-refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Fill: every list in full'], ['mute', 'Mute alerts'], ['panel', 'Open the news file in the editor'], ['page', 'Open news page']]],
+    [PANE, [['refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Fill: every list in full'], ['mute', 'Mute alerts'], ['popup', 'Popups on'], ['panel', 'Open the news file in the editor'], ['page', 'Open news page']]],
+    [NEWS_PANE, [['news-refresh', 'Refresh now'], ['every', 'Auto refresh: 1m'], ['style-normal', 'Normal'], ['style-blocks', 'Blocks'], ['style-gopher', 'Gopher'], ['style-agile', 'Agile'], ['style-kanban', 'Kanban'], ['smaller', 'Smaller text'], ['reset', 'Reset size'], ['bigger', 'Larger text'], ['fill', 'Fill: every list in full'], ['mute', 'Mute alerts'], ['popup', 'Popups on'], ['panel', 'Open the news file in the editor'], ['page', 'Open news page']]],
   ]
   for (const [pane, items] of cases) {
     const ui = await $.ui.mount({ ...pane, surface: 'desktop' } as never)
@@ -1161,7 +1161,7 @@ test('related controls are grouped: attention, refresh, view, alerts, open elsew
       expect(shape(by('grp-refresh'))).toEqual([pane === PANE ? 'refresh' : 'news-refresh', '|', 'every'])
       expect(shape(by('size-group'))).toEqual(['smaller', '|', 'reset', '|', 'bigger', '|', 'fill'])
       expect(shape(await ui.find({ key: 'style-group' }))).toEqual(['style-normal', '|', 'style-blocks', '|', 'style-gopher', '|', 'style-agile', '|', 'style-kanban'])
-      expect(shape(by('grp-alerts'))).toEqual(['mute'])
+      expect(shape(by('grp-alerts'))).toEqual(['mute', '|', 'popup'])
       expect(shape(by('grp-open'))).toEqual(['panel', '|', 'page'])
       for (const g of row.children ?? []) expect(g.props.gap).toBe(0)
       await ui.unmount()
@@ -1394,6 +1394,35 @@ test('planAlerts: a row and toast per alert, one sound; mute, alerts.message, al
   expect(planAlerts([], on, {})).toEqual({ lines: [], sound: false })
 })
 
+test('toastsOn and popupButton: on, off, muted, missing key', () => {
+  const on = { enabled: true, message: true, popup: true }
+  expect(toastsOn(on)).toBe(true)
+  expect(toastsOn({ ...on, popup: false })).toBe(false)
+  expect(toastsOn({ ...on, enabled: false })).toBe(false)
+  expect(toastsOn({ ...on, message: false })).toBe(false)
+  expect(toastsOn({ enabled: true, message: true })).toBe(true)
+  expect(popupButton(true, false)).toEqual({ label: '💬', tip: 'Popups on \u2014 click to turn off', dim: false })
+  expect(popupButton(false, false)).toEqual({ label: '💭', tip: 'Popups off \u2014 click to turn on', dim: true })
+  expect(popupButton(true, true).dim).toBe(true)
+  expect(popupOf({ ok: true, keys: [{ key: 'alerts.popup', value: 'false' }] })).toBe(false)
+  expect(popupOf({ ok: true, keys: [] })).toBe(true)
+  expect(popupOf({ ok: null, keys: [] })).toBe(true)
+})
+
+test('settings: alerts.popup=false keeps the row and the sound but shows no toast', async ($, on) => {
+  const { state, clock } = rig($, on, true)
+  state.cfg = userKeys()
+  setKey(state.cfg, 'alerts.popup', 'false')
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ju = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
+  state.round = 1
+  await clock.advance(60_000)
+  expect(state.sounds.length).toBe(1)
+  expect(state.toasts).toEqual([])
+  expect(JSON.stringify(await ju.find({ key: 'alerts' }))).toContain('Milestone done: C2')
+  await ju.unmount()
+})
+
 test('alertText: `<job> ▸ <What>: <ref> <title>`, no repeated ref, title cut to 60', () => {
   expect(alertText('demo', 'New', 'S·A-9', 'Import types')).toBe('demo ▸ New: S·A-9 Import types')
   expect(alertText('demo', 'Done', 'D·STR-002', 'Parse the header')).toBe('demo ▸ Done: D·STR-002 Parse the header')
@@ -1595,12 +1624,17 @@ test('top-bar !N and ◐N icons fill one combined question in both panes; news h
     await clock.advance(2500)
     await ui.unmount()
   }
-  // hidden at zero
+  // shown dimmed at zero
   state.hide = ['A-2', 'A-3', 'TSK-9']
   await clock.advance(60_000)
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
-  expect(await ui.find({ key: 'ask-needs' })).toBeUndefined()
-  expect(await ui.find({ key: 'ask-review' })).toBeUndefined()
+  expect((await ui.find({ key: 'ask-needs' }))?.props.label).toBe('!0')
+  expect((await ui.find({ key: 'ask-review' }))?.props.label).toBe('◐0')
+  expect((await ui.find({ key: 'ask-needs' }))?.props.dimColor).toBe(true)
+  const fills = state.fills.length
+  await ui.press({ key: 'ask-needs' })
+  await ui.press({ key: 'ask-review' })
+  expect(state.fills.length).toBe(fills)
   await ui.unmount()
 })
 
@@ -4333,7 +4367,7 @@ test('settings: an mw without `user get -j` keeps the saved settings and says so
 })
 
 test('settings: pure helpers', async () => {
-  expect(parseUserKeys(JSON.stringify(REAL_USER_KEYS))!.length).toBe(15)
+  expect(parseUserKeys(JSON.stringify(REAL_USER_KEYS))!.length).toBe(16)
   expect(parseUserKeys('[]')).toBeUndefined()
   expect(cycleNext(['15s', '30s', '1m'], '1m')).toBe('15s')
   expect(cycleNext(['a', 'b'], 'zz')).toBe('a')
@@ -4513,4 +4547,36 @@ test('legacy alerts: an item that is new and already in review alerts once, as R
   expect(legacyEvents(job, snap([]), snap([it('review')])).map(e => e.kind)).toEqual(['review'])
   expect(legacyEvents(job, snap([]), snap([it('doing')])).map(e => e.kind)).toEqual(['new'])
   expect(legacyEvents(job, snap([]), snap([it('review')], { 't:T-9': {} })).map(e => e.kind)).toEqual(['new'])
+})
+
+test('attention labels: 0/0, 1/0, 0/2, 3/2', () => {
+  expect(attentionLabels(0, 0)).toEqual({ needs: { label: '!0', live: false }, review: { label: '◐0', live: false } })
+  expect(attentionLabels(1, 0)).toEqual({ needs: { label: '!1', live: true }, review: { label: '◐0', live: false } })
+  expect(attentionLabels(0, 2)).toEqual({ needs: { label: '!0', live: false }, review: { label: '◐2', live: true } })
+  expect(attentionLabels(3, 2)).toEqual({ needs: { label: '!3', live: true }, review: { label: '◐2', live: true } })
+})
+
+test('BUG-014: the page toggle is uniform: same slot (last, after ¦) on both title rows, no unseen dot before the news toggle', async ($, on) => {
+  const { state } = rig($, on, true)
+  state.newsFiles.zeta = '# S\n\nx'
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  // fresh start: the news is unseen (the tab title carries the mark)
+  expect(state.opens.filter(o => o.id === 'mw-news').at(-1)?.title).toBe('● mw news · zeta')
+  const kids = (row: any): any[] => (row?.children ?? []).filter((c: any) => c !== null && c !== undefined && c !== false)
+  const nu = await $.ui.mount({ ...NEWS_PANE, surface: 'desktop' } as never)
+  const ju = await $.ui.mount({ ...PANE, surface: 'desktop' } as never)
+  const nk = kids(rowOf(await nu.drawn(), 'back-jobs'))
+  const jk = kids(rowOf(await ju.drawn(), 'news'))
+  // slot: last child is the toggle button, directly after the ¦ separator
+  expect(nk.at(-1)?.props.key).toBe('back-jobs')
+  expect(jk.at(-1)?.props.key).toBe('news')
+  expect(nk.at(-2)?.children?.[0]).toBe('¦')
+  expect(jk.at(-2)?.children?.[0]).toBe('¦')
+  expect(nk.at(-1)?.props.plain).toBe(jk.at(-1)?.props.plain)
+  // no dot (nor a ◂) anywhere in the news title row
+  expect(JSON.stringify(nk)).not.toMatch(/●|◂/)
+  await nu.press({ key: 'back-jobs' })
+  expect(state.opens.at(-1)?.id).toBe('mw-jobs')
+  await nu.unmount()
+  await ju.unmount()
 })

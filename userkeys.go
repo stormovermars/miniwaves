@@ -36,6 +36,7 @@ var userKeys = []userKey{
 	{Name: "alerts.enabled", Group: "alerts", Kind: "bool", Default: "true", Help: "Raise alerts for board events."},
 	{Name: "alerts.kinds", Group: "alerts", Kind: "list", Choices: alertKinds, Default: strings.Join(alertKinds, ","), Help: "Which events alert: a comma list, all, or none."},
 	{Name: "alerts.message", Group: "alerts", Kind: "bool", Default: "true", Help: "Show a message with an alert."},
+	{Name: "alerts.popup", Group: "alerts", Kind: "bool", Default: "true", Help: "Show a popup (toast) with an alert."},
 	{Name: "alerts.sound", Group: "alerts", Kind: "bool", Default: "true", Help: "Play a sound with an alert."},
 	{Name: "fanfare.enabled", Group: "fanfare", Kind: "bool", Default: "false", Help: "Play fanfares on wave close; overrides the board's fanfare.enabled when set."},
 	{Name: "fanfare.use", Group: "fanfare", Kind: "text", Default: "all", Help: "The fanfare set to play: a set name or all."},

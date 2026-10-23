@@ -245,9 +245,9 @@ func configureScript(t *testing.T, script string, fn func()) string {
 
 func TestConfigureInteractiveSaves(t *testing.T) {
 	p := userCfgPath(t)
-	// 17 prompts: pane(5) alerts(4) fanfare(2) status(2) discover(2); pane.style -> 5) kanban, zoom 2, fanfare.enabled 1) true, depth 6
+	// 18 prompts: pane(5) alerts(5) fanfare(2) status(2) discover(2); pane.style -> 5) kanban, zoom 2, fanfare.enabled 1) true, depth 6
 	script := "\n5\n2\n\n\n" + // pane
-		"\n\n\n\n" + // alerts
+		"\n\n\n\n\n" + // alerts
 		"1\n\n" + // fanfare
 		"\n\n" + // status
 		"\n6\n" + // discover
