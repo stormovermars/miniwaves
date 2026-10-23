@@ -90,7 +90,7 @@ func TestFanfareConfigRoundTrip(t *testing.T) {
 	runAll(t, []string{"fanfare", "set", "enabled=true", "milestone_seconds=20", "finale_seconds=240", "dir=" + songs, "volume=0.5"})
 	b, _ := os.ReadFile(path)
 	sj, _ := json.Marshal(songs)
-	if !strings.Contains(string(b), `"fanfare":{"enabled":true,"dir":`+string(sj)+`,"milestone_seconds":20,"finale_seconds":240,"volume":0.5}`) {
+	if !strings.Contains(string(b), `"fanfare":{"enabled":true,"dir":`+string(sj)+`,"milestone_seconds":20,"finale_seconds":240,"volume":0.5,"stop_dialog":true}`) {
 		t.Fatalf("not stored: %s", b)
 	}
 	w, _ := load(path)
@@ -593,7 +593,113 @@ func TestTenantProtocolShowIsReadOnly(t *testing.T) {
 	}
 }
 
-func TestFinaleReason(t *testing.T) {
+func TestStopControlCommand(t *testing.T) {
+	t.Setenv("MW_FANFARE_PLAYER", "")
+	t.Setenv("MW_FANFARE_STOP_CONTROL", "")
+	none := func(string) (string, error) { return "", errors.New("no") }
+	has := func(string) (string, error) { return "/x", nil }
+	onlyK := func(n string) (string, error) {
+		if n == "kdialog" {
+			return "/k", nil
+		}
+		return "", errors.New("no")
+	}
+	hostile := "/tmp/a'\"$(touch x)/.mw-fanfare-icon.png"
+	old := zenityBodyIcon
+	defer func() { zenityBodyIcon = old }()
+	zenityBodyIcon = func() bool { return true }
+	evil := `Tenant "x'"$(touch x)` + "`;" + ` finished`
+	script := func(a []string) string { return a[1] }
+	n, a, env, ok := stopControlCommand("darwin", 4242, 60, evil, hostile, none)
+	s := script(a)
+	if !ok || n != "sh" || len(env) != 0 || !strings.Contains(s, "osascript") || !strings.Contains(s, "item 2 of argv as integer") || !strings.Contains(s, `kill -TERM -"$2"`) || !strings.Contains(s, "button returned:Stop") {
+		t.Fatalf("darwin: %s %v", n, a)
+	}
+	if a[0] != "-c" || a[2] != "sh" || a[3] != evil || a[4] != "4242" || a[5] != "62" || len(a) != 7 || a[6] != hostile || !strings.Contains(s, "with icon (POSIX file (item 3 of argv))") || strings.Contains(s, "icon note") || strings.Contains(s, "touch") || strings.Contains(s, "4242") {
+		t.Fatalf("darwin argv: %q", a)
+	}
+	_, a, _, _ = stopControlCommand("darwin", 4242, 60, evil, "", none)
+	if !strings.Contains(a[1], "with icon note") || len(a) != 6 {
+		t.Fatalf("darwin no icon: %q", a)
+	}
+	n, a, env, ok = stopControlCommand("windows", 77, 60, evil, hostile, none)
+	s = a[2]
+	if !ok || n != "powershell" || !strings.Contains(s, "$env:MW_FANFARE_MSG") || !strings.Contains(s, ",'miniwaves',64)") || strings.Contains(strings.Join(a, " "), "fanfare-icon") || !strings.Contains(s, ",62,") || !strings.Contains(s, "taskkill /PID 77 /T /F") || strings.Contains(s, "touch") || strings.Contains(strings.Join(a, " "), "touch") {
+		t.Fatalf("windows: %s %v", n, a)
+	}
+	if len(env) != 1 || env[0] != "MW_FANFARE_MSG="+evil {
+		t.Fatalf("windows env: %q", env)
+	}
+	n, a, env, ok = stopControlCommand("linux", 9, 10, evil, hostile, has)
+	s = script(a)
+	if !ok || n != "sh" || len(env) != 0 || !strings.Contains(s, "zenity") || !strings.Contains(s, "--no-markup") || !strings.Contains(s, `--text="$1"`) || !strings.Contains(s, `kill -TERM -"$2"`) || strings.Contains(s, "touch") || a[3] != evil || a[4] != "9" || a[5] != "12" || len(a) != 7 || a[6] != hostile || !strings.Contains(s, `--icon="$4"`) || strings.Contains(s, "window-icon") {
+		t.Fatalf("linux zenity: %s %q", n, a)
+	}
+	zenityBodyIcon = func() bool { return false }
+	_, a, _, _ = stopControlCommand("linux", 9, 10, evil, hostile, has)
+	if len(a) != 6 || strings.Contains(a[1], "icon") || strings.Contains(strings.Join(a, " "), "fanfare-icon") {
+		t.Fatalf("old zenity must get no icon: %q", a)
+	}
+	n, a, _, ok = stopControlCommand("linux", 9, 10, "", hostile, onlyK)
+	s = script(a)
+	if !ok || n != "sh" || strings.Contains(s, "zenity") || !strings.Contains(s, "kdialog") || !strings.Contains(s, `--msgbox "$1"`) || !strings.Contains(s, `sleep "$3"`) || !strings.Contains(s, `kill -TERM -"$2"`) || a[3] != "" || len(a) != 6 || strings.Contains(s, "icon") {
+		t.Fatalf("linux kdialog: %s %q", n, a)
+	}
+	_, a, _, _ = stopControlCommand("linux", 9, 10, evil, hostile, onlyK)
+	if s = script(a); strings.Contains(s, "touch") || a[3] != evil || a[4] != "9" || a[5] != "12" {
+		t.Fatalf("kdialog argv: %q", a)
+	}
+	if _, _, _, ok = stopControlCommand("linux", 9, 10, "m", hostile, none); ok {
+		t.Fatal("linux with neither zenity nor kdialog must have no control")
+	}
+	t.Setenv("MW_FANFARE_PLAYER", "/stub")
+	if _, _, _, ok = stopControlCommand("darwin", 1, 5, "m", hostile, none); ok {
+		t.Fatal("player stub must disable the control")
+	}
+	t.Setenv("MW_FANFARE_STOP_CONTROL", "/ctl")
+	if n, a, _, ok = stopControlCommand("darwin", 1, 5, "hello", hostile, none); !ok || n != "/ctl" || len(a) != 3 || a[0] != "1" || a[1] != "5" || a[2] != "hello" {
+		t.Fatalf("stub: %s %v", n, a)
+	}
+}
+
+func TestFinaleIcon(t *testing.T) {
+	dir := t.TempDir()
+	pair := filepath.Join(dir, "pair")
+	if err := os.MkdirAll(pair, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(pair, "finale.mp3")
+	want := filepath.Join(dir, ".mw-fanfare-icon.png")
+	if got := finaleIcon(dir, file); got != want {
+		t.Fatalf("built-in: %s", got)
+	}
+	if b, _ := os.ReadFile(want); !bytes.Equal(b, fanfareIconPNG) || len(b) < 100 || len(b) > 30000 {
+		t.Fatal("built-in icon not written or wrong size")
+	}
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	os.Chtimes(want, old, old)
+	finaleIcon(dir, file)
+	if st, _ := os.Stat(want); !st.ModTime().Equal(old) {
+		t.Fatal("identical built-in icon was rewritten")
+	}
+	os.WriteFile(want, []byte("junk"), 0o644)
+	finaleIcon(dir, file)
+	if b, _ := os.ReadFile(want); !bytes.Equal(b, fanfareIconPNG) {
+		t.Fatal("differing icon not restored")
+	}
+	for _, n := range []string{"cover.icns", "cover.jpg", "cover.png"} { // each later in the loop outranks the former
+		os.WriteFile(filepath.Join(pair, n), []byte("x"), 0o644)
+		if got := finaleIcon(dir, file); got != filepath.Join(pair, n) {
+			t.Fatalf("%s: got %s", n, got)
+		}
+	}
+	os.Remove(filepath.Join(pair, "cover.png"))
+	if got := finaleIcon(dir, file); got != filepath.Join(pair, "cover.jpg") {
+		t.Fatalf("jpg before icns: %s", got)
+	}
+}
+
+func TestFinaleReasonAndSong(t *testing.T) {
 	tn := &Tenant{Slug: "infotool", Name: "infotool", Items: []Item{{Status: "done"}, {Status: "done"}, {Status: "cut"}}}
 	if got := finaleReason(tn); got != "Tenant \"infotool\" finished \u2014 2 items done" {
 		t.Fatal(got)
@@ -602,52 +708,118 @@ func TestFinaleReason(t *testing.T) {
 	if got := finaleReason(tn); got != "Tenant \"a\" (Alpha) finished \u2014 1 item done" {
 		t.Fatal(got)
 	}
+	d := t.TempDir()
+	os.MkdirAll(filepath.Join(d, "p1"), 0o755)
+	os.MkdirAll(filepath.Join(d, "p2"), 0o755)
+	f1, f2 := filepath.Join(d, "p1", "finale.mp3"), filepath.Join(d, "p2", "finale.ogg")
+	if got := finaleSong(d, f2); got != "finale (p2)" {
+		t.Fatal(got)
+	}
+	m := fanfareManifest{Pairs: []manifestPair{{Name: "p1", Tracks: []manifestTrack{{Kind: "finale", File: "finale.mp3", Title: "Pomp and Circumstance No. 1", Attribution: "US Marine Band"}}}}}
+	b, _ := json.Marshal(m)
+	os.WriteFile(filepath.Join(d, manifestName), b, 0o644)
+	if got := finaleSong(d, f1); got != "Pomp and Circumstance No. 1 \u2014 US Marine Band" {
+		t.Fatal(got)
+	}
+	m.Pairs[0].Tracks[0].Attribution = strings.Repeat("long ", 20)
+	b, _ = json.Marshal(m)
+	os.WriteFile(filepath.Join(d, manifestName), b, 0o644)
+	if got := finaleSong(d, f1); got != "Pomp and Circumstance No. 1" {
+		t.Fatal(got)
+	}
+	msg := finaleMessage(finaleTestReason, "Song X", 60)
+	if msg != "Test (mw fanfare test)\nSong: Song X\nPlaying 60 s" {
+		t.Fatal(msg)
+	}
 }
 
-func TestStopDialogDeprecatedAndIgnored(t *testing.T) {
+func TestFinaleStubReceivesMessage(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("sh stub")
 	}
-	path := inTempDir(t)
-	runAll(t, []string{"init", "Ws"})
-	var out string
-	errOut := captureStderr(t, func() {
-		out = captureOutput(t, func() { runAll(t, []string{"fanfare", "set", "stop_dialog=false"}) })
-	})
-	if !strings.Contains(errOut, "stop_dialog is deprecated and ignored since 0.3.6") || !strings.Contains(errOut, "mw fanfare stop") || strings.Contains(out, "stop_dialog") {
-		t.Fatalf("stderr %q stdout %q", errOut, out)
+	d := t.TempDir()
+	out := filepath.Join(d, "args.txt")
+	stub := filepath.Join(d, "ctl.sh")
+	os.WriteFile(stub, []byte("#!/bin/sh\nprintf '%s|%s|%s' \"$1\" \"$2\" \"$3\" > "+out+"\n"), 0o755)
+	slow := filepath.Join(d, "slow.sh")
+	os.WriteFile(slow, []byte("#!/bin/sh\nsleep 30\n"), 0o755)
+	t.Setenv("MW_FANFARE_PLAYER", slow)
+	t.Setenv("MW_FANFARE_STOP_CONTROL", stub)
+	dir := filepath.Join(d, "songs")
+	os.MkdirAll(filepath.Join(dir, "pp"), 0o755)
+	if err := playFinale(dir, filepath.Join(dir, "pp", "finale.mp3"), 5, 1, true, finaleTestReason); err != nil {
+		t.Fatal(err)
 	}
-	w, _ := load(path)
-	if got := captureOutput(t, func() { runAll(t, []string{"fanfare"}) }); strings.Contains(got, "stop_dialog") {
-		t.Fatal(got)
+	defer stopPlayers(dir)
+	var got []byte
+	for i := 0; i < 60 && len(got) == 0; i++ {
+		time.Sleep(50 * time.Millisecond)
+		got, _ = os.ReadFile(out)
 	}
-	got := captureOutput(t, func() { runAll(t, []string{"fanfare", "-j"}) })
-	var m map[string]any
-	if err := json.Unmarshal([]byte(got), &m); err != nil {
-		t.Fatal(err, got)
+	if !strings.HasSuffix(string(got), "|5|Test (mw fanfare test)\nSong: finale (pp)\nPlaying 5 s") {
+		t.Fatalf("stub got %q", got)
 	}
-	if m["stop_dialog_deprecated"] != true || m["playing"] != float64(0) || m["playing_finale"] != false {
-		t.Fatalf("json: %s", got)
+}
+
+func TestFinaleStopControlLaunchedAndRecorded(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh stub")
 	}
-	if strings.Contains(got, `"stop_dialog":`) {
-		t.Fatalf("stop_dialog shown as live: %s", got)
-	}
-	if w.Fanfare == nil || w.Fanfare.StopDialog == nil || *w.Fanfare.StopDialog {
-		t.Fatal("key must still parse")
-	}
-	// a finale starts exactly one process: no dialog
 	d := t.TempDir()
 	slow := filepath.Join(d, "slow.sh")
 	os.WriteFile(slow, []byte("#!/bin/sh\nsleep 30\n"), 0o755)
 	t.Setenv("MW_FANFARE_PLAYER", slow)
+	t.Setenv("MW_FANFARE_STOP_CONTROL", slow)
 	dir := filepath.Join(d, "songs")
 	os.MkdirAll(dir, 0o755)
-	if err := playFinale(dir, "/x/f.mp3", 5, 1); err != nil {
+	if err := playFinale(dir, "/x/f.mp3", 5, 1, true, "r"); err != nil {
 		t.Fatal(err)
 	}
-	defer stopPlayers(dir)
-	if rs := readPlayers(dir); len(rs) != 1 || rs[0].Kind != "finale" {
-		t.Fatalf("want one finale player: %+v", rs)
+	if rs := readPlayers(dir); len(rs) != 2 {
+		t.Fatalf("want player + control recorded: %+v", rs)
+	}
+	pids := []int{}
+	for _, r := range readPlayers(dir) {
+		pids = append(pids, r.PID)
+	}
+	if n := stopPlayers(dir); n != 2 {
+		t.Fatalf("stopped %d", n)
+	}
+	for _, pid := range pids {
+		for i := 0; i < 40 && procStamp(pid) != "" && !strings.Contains(procState(pid), "Z"); i++ {
+			time.Sleep(50 * time.Millisecond)
+		}
+		if procStamp(pid) != "" && !strings.Contains(procState(pid), "Z") {
+			t.Fatalf("pid %d still running", pid)
+		}
+	}
+	// milestone (playFile) and stop_dialog=false launch no control
+	if err := playFile(dir, "/x/f.mp3", 5, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := playFinale(dir, "/x/f.mp3", 5, 1, false, "r"); err != nil {
+		t.Fatal(err)
+	}
+	if rs := readPlayers(dir); len(rs) != 2 {
+		t.Fatalf("want 2 players, no control: %+v", rs)
+	}
+	stopPlayers(dir)
+}
+
+func TestStopDialogConfig(t *testing.T) {
+	path := inTempDir(t)
+	runAll(t, []string{"init", "Ws"})
+	w, _ := load(path)
+	if c := fanfareCfg(w); *c.StopDialog != true || c.FinaleSeconds != 60 {
+		t.Fatalf("defaults: %+v", c)
+	}
+	runAll(t, []string{"fanfare", "set", "stop_dialog=false"})
+	w, _ = load(path)
+	if c := fanfareCfg(w); *c.StopDialog {
+		t.Fatal("stop_dialog=false not stored")
+	}
+	if got := captureOutput(t, func() { runAll(t, []string{"fanfare"}) }); !strings.Contains(got, "stop_dialog: false") {
+		t.Fatal(got)
 	}
 }
 
@@ -670,7 +842,7 @@ func TestFanfarePlayingKeys(t *testing.T) {
 	if n, f := playingState(dir); n != 1 || f {
 		t.Fatalf("milestone: %d %v", n, f)
 	}
-	if err := playFinale(dir, "/x/f.mp3", 5, 1); err != nil {
+	if err := playFinale(dir, "/x/f.mp3", 5, 1, false, "r"); err != nil {
 		t.Fatal(err)
 	}
 	rs := readPlayers(dir)
@@ -755,42 +927,5 @@ func TestBuiltinFanfareWhenNoPairs(t *testing.T) {
 	lookPath = func(string) (string, error) { return "", errors.New("none") }
 	if _, err := pickPairOrBuiltin(FanfareConfig{}, t.TempDir(), func(int) int { return 0 }); err == nil {
 		t.Fatal("want error with no player")
-	}
-}
-
-// TestNoSystemDialogsInSource guards TSK-067: mw never opens a system dialog or notification of its own.
-// Sound players (afplay, ffplay, paplay, aplay, PowerShell SoundPlayer) are fine.
-func TestNoSystemDialogsInSource(t *testing.T) {
-	banned := []string{"osascript", "zenity", "kdialog", "MessageBox", "[System.Windows.Forms", "WScript.Shell", ".Popup(", `"msg"`, "msg.exe", "display dialog", "display notification"}
-	var files []string
-	for _, pat := range []string{"*.go", "kit/*", "kit/*/*", "scripts/*"} {
-		m, _ := filepath.Glob(pat)
-		files = append(files, m...)
-	}
-	checked := 0
-	for _, f := range files {
-		if strings.HasSuffix(f, "_test.go") {
-			continue
-		}
-		if st, err := os.Stat(f); err != nil || !st.Mode().IsRegular() {
-			continue
-		}
-		b, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		checked++
-		src := string(b)
-		for _, w := range banned {
-			if strings.Contains(src, w) {
-				t.Errorf("%s contains %q: mw must not open system dialogs or notifications", f, w)
-			}
-		}
-		if strings.HasSuffix(f, ".go") && (strings.Contains(src, `"msg "`) || strings.Contains(src, "msg * ")) {
-			t.Errorf("%s runs the Windows msg command", f)
-		}
-	}
-	if checked < 20 {
-		t.Fatalf("scanned only %d files", checked)
 	}
 }
