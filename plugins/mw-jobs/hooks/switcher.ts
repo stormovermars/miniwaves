@@ -114,15 +114,15 @@ export const fitCols = (bodyColumns: number | undefined, sizePx: number): number
 export const LABEL_MAX = 14
 export const cutLabel = (s: string, n = LABEL_MAX): string => (s.length <= n ? s : `${s.slice(0, Math.max(1, n - 1))}~`)
 export const badgeOf = (t: { needs: number; review: number }): string => `${t.needs > 0 ? `!${t.needs}` : ''}${t.review > 0 ? `◐${t.review}` : ''}`
-/** A tab's width: one space each side, an optional badge and its label, plus the `|` before it. */
-export const tabWidth = (t: Tab): number => 3 + cutLabel(t.label).length + (badgeOf(t) === '' ? 0 : badgeOf(t).length + 1)
+/** A tab's width: an optional badge + one space, its label, plus the `|` before it (no padding: icons sit one after another). */
+export const tabWidth = (t: Tab): number => 1 + cutLabel(t.label).length + (badgeOf(t) === '' ? 0 : badgeOf(t).length + 1)
 
 export type BarPlan =
   | { mode: 'all'; tabs: Tab[] }
   | { mode: 'compact'; tabs: Tab[]; plus: number; cur: Tab | undefined; count: number }
 
 /** How many columns the compact group (`◂ | cur | ▸ | ☰ N`) takes. */
-const compactWidth = (cur: Tab | undefined, n: number): number => 3 + (cur ? tabWidth(cur) : 3) + 3 + 3 + String(n).length + 2
+const compactWidth = (cur: Tab | undefined, n: number): number => 2 + (cur ? tabWidth(cur) : 2) + 3 + 2 + String(n).length + 1
 
 export const planBar = (o: { tabs: Tab[]; current: string; favs: string[]; cols: number; lead: number; reserve?: number; auto?: number }): BarPlan => {
   const room = o.cols - (o.reserve ?? 0) - o.lead
@@ -135,7 +135,7 @@ export const planBar = (o: { tabs: Tab[]; current: string; favs: string[]; cols:
   const useFavs = o.favs.length > 0
   const pool = useFavs ? favTabs : o.tabs.filter(t => t.id !== cur?.id).slice(0, o.auto ?? 3)
   // the +N tab takes room only when something is hidden
-  const PLUS = 5
+  const PLUS = 4
   const taken: Tab[] = []
   for (const t of pool) {
     const w = tabWidth(t)

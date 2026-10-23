@@ -2756,7 +2756,7 @@ const fallbackTree = ($: any, e: any, pane: 'jobs' | 'news' | 'detail' | 'image'
   const { Box, Text, Button } = $.ui.resolve(e) as any
   return (
     <Box flexDirection="column">
-      <Box alignItems="center" gap={2} flexWrap="wrap">
+      <Box alignItems="center" gap={1} flexWrap="wrap">
         <Text bold>{pane === 'jobs' ? 'mw jobs' : pane === 'news' ? 'mw news' : pane === 'settings' ? 'mw settings' : 'mw detail'}</Text>
         <Text key="sep-nav" dimColor>{'\u00a6'}</Text>
         {pane === 'detail'
@@ -3236,7 +3236,7 @@ const KEY_LABEL: Record<string, string> = {
 const settingsTree = (ui: any, $: any, s: CfgState, fan: MwJobsFanfare | null | undefined, job: MwJobsJob | undefined) => {
   const { Box, Text, Button } = ui
   const head = (
-    <Box key="settings-title" alignItems="center" gap={2} flexWrap="wrap">
+    <Box key="settings-title" alignItems="center" gap={1} flexWrap="wrap">
       <Text bold>mw settings</Text>
       <Text key="sep-nav" dimColor>{'¦'}</Text>
       <Button key="settings-back" plain label={JOBS_LABEL} onPress={() => void backToJobs($, '')} />
@@ -3358,7 +3358,7 @@ const controlsRow = (ui: any, $: any, c: ControlsIn) => {
 const controlsRowInner = (ui: any, $: any, c: ControlsIn) => {
   const { Box, Text, Button, Link } = ui
   return (
-    <Box key="controls" alignItems="center" gap={3} flexWrap="wrap">
+    <Box key="controls" alignItems="center" gap={1} flexWrap="wrap">
       {group(ui, 'grp-attention', askIcons(ui, $, c.job, c.needs, c.review), true)}
       {group(ui, 'grp-refresh', [
         tipped(ui, c.refresh.key, <Button key={c.refresh.key} plain label="↻" onPress={c.refresh.onPress} />, 'Refresh now'),
@@ -3771,7 +3771,7 @@ const releaseNav = (ui: any, $: any, job: MwJobsJob, entry: NewsEntry, view: New
           ? tipped(ui, 'release', <Button key="release" plain dimColor label="Publish" onPress={() => $.ui.toast(`Jobs: nothing new since issue ${entry.latest}`, { timeoutMs: 6000 })} />, `Nothing new since issue ${entry.latest}`)
           : tipped(ui, 'release', <Button key="release" plain variant="primary" label="Publish" onPress={() => void setNewsView($, job.id, { confirm: true })} />, `Publish issue ${entry.latest + 1} from the draft; asks first`)
   return (
-    <Box key="release-nav" alignItems="center" gap={2} flexWrap="wrap">
+    <Box key="release-nav" alignItems="center" gap={1} flexWrap="wrap">
       {nav}
       {release}
     </Box>
@@ -5842,7 +5842,7 @@ const tabNode = (ui: any, o: BarIn, t: Tab, active: boolean) => {
   const { Box, Text, Button } = ui
   return (
     <Box key={`tab-${o.prefix}-${t.id}`}>
-      {t.needs > 0 ? <Text color="error" bold>{`!${t.needs} `}</Text> : t.review > 0 ? <Text color="warning">{`◐${t.review} `}</Text> : <Text> </Text>}
+      {t.needs > 0 ? <Text color="error" bold>{`!${t.needs} `}</Text> : t.review > 0 ? <Text color="warning">{`◐${t.review} `}</Text> : null}
       <Button key={`${o.prefix}-${t.id}`} plain label={cutLabel(t.label)} variant={active ? 'primary' : 'secondary'} dimColor={!active} onPress={() => o.open(t.id)} />
     </Box>
   )
@@ -5870,9 +5870,9 @@ const tabsOf = (rows: Entry[]): Tab[] => rows.map(e => ({ id: e.id, label: e.id,
 const titleRow = (ui: any, $: any, o: { pane: 'jobs' | 'news'; job: MwJobsJob; jobCount: number; entries: Entry[]; favs: string[]; cols: number; swAll: Record<string, SwState>; busy?: boolean }) => {
   const { Box, Text, Button } = ui
   return (
-    <Box alignItems="center" gap={2} flexWrap="wrap">
+    <Box alignItems="center" gap={1} flexWrap="wrap">
       {o.jobCount < 2 && <Text bold wrap="truncate-end">{o.job.title}</Text>}
-      {jobBar(ui, $, { pane: o.pane, entries: o.entries, current: o.job.id, favs: o.favs, cols: o.cols, reserve: 14, swAll: o.swAll })}
+      {jobBar(ui, $, { pane: o.pane, entries: o.entries, current: o.job.id, favs: o.favs, cols: o.cols, reserve: 11, swAll: o.swAll })}
       {o.busy === true && <Text dimColor>refreshing…</Text>}
       <Text key="sep-nav" dimColor>{'\u00a6'}</Text>
       {o.pane === 'jobs'
@@ -5897,7 +5897,7 @@ const jobBar = (ui: any, $: any, o: { pane: 'jobs' | 'news'; entries: Entry[]; c
     key: 'tabs',
     pane: o.pane,
     lead: [tipped(ui, 'jobs-all', <Button key="jobs-all" plain label={'⌂'} variant={st.view === 'all' ? 'primary' : undefined} onPress={() => void setSw($, key, { view: st.view === 'all' ? undefined : 'all' })} />, 'All jobs, one line each')],
-    leadWidth: 4,
+    leadWidth: 2,
     tabs: tabsOf(ordered),
     current: o.current,
     favs: o.favs,
@@ -5937,7 +5937,7 @@ const tenantBar = (ui: any, $: any, o: { pane: 'jobs' | 'news'; job: MwJobsJob; 
       tipped(ui, 'tenants-all', <Button key="tenants-all" plain label={'⌂'} variant={st.view === 'all' ? 'primary' : undefined} onPress={() => void setSw($, key, { view: st.view === 'all' ? undefined : 'all' })} />, 'All tenants, one line each'),
       tipped(ui, 'tenant-all', <Button key="tenant-all" plain label="all" variant={o.current === '' ? 'primary' : 'secondary'} dimColor={o.current !== ''} onPress={() => to('')} />, 'All tenants'),
     ],
-    leadWidth: 10,
+    leadWidth: 6,
     tabs: tabsOf(o.entries),
     current: o.current,
     favs: o.favs,
@@ -6238,7 +6238,7 @@ export const register: Register = (on, options) => {
     if (job === undefined) {
       return (
         <Box flexDirection="column">
-          <Box alignItems="center" gap={2} flexWrap="wrap">
+          <Box alignItems="center" gap={1} flexWrap="wrap">
             <Text bold>mw news</Text>
             <Text key="sep-nav" dimColor>{'\u00a6'}</Text>
             <Button key="back-jobs" plain label={JOBS_LABEL} onPress={() => void backToJobs($, '')} />
@@ -6393,7 +6393,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column">
           {titleRow({ Box, Text, Button }, $, { pane: 'news', job, jobCount: reg.jobs.length, entries: jobEntries, favs: favAll.jobs, cols: barCols, swAll })}
           {(tenantRowsAll.length > 1 || tsel !== '') && (
-            <Box alignItems="center" gap={2} flexWrap="wrap">
+            <Box alignItems="center" gap={1} flexWrap="wrap">
               {tenantBar({ Box, Text, Button }, $, { pane: 'news', job, entries: tenantRowsAll, current: tsel, favs: favAll.tenants[job.id] ?? [], cols: barCols, swAll })}
               {tenantChip({ Box, Text, Button }, $, job.id, tsel)}
             </Box>
@@ -6512,7 +6512,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column">
         {titleRow({ Box, Text, Button }, $, { pane: 'jobs', job, jobCount: reg.jobs.length, entries, favs: favAll.jobs, cols: barCols, swAll, busy: isBusy })}
         {(tenantRowsAll.length > 1 || tsel !== '') && (
-          <Box alignItems="center" gap={2} flexWrap="wrap">
+          <Box alignItems="center" gap={1} flexWrap="wrap">
             {tenantBar({ Box, Text, Button }, $, { pane: 'jobs', job, entries: tenantRowsAll, current: tsel, favs: favAll.tenants[job.id] ?? [], cols: barCols, swAll })}
             {tenantChip({ Box, Text, Button }, $, job.id, tsel)}
           </Box>

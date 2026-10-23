@@ -1168,7 +1168,7 @@ test('related controls are grouped: attention, refresh, view, alerts, open elsew
       const ui = await $.ui.mount({ ...pane, surface: 'desktop' } as never)
       const row: any = await ui.find({ key: 'controls' })
       const groups = (row.children ?? []).map((g: any) => g.props.key)
-      expect(row.props.gap).toBe(3)
+      expect(row.props.gap).toBe(1)
       expect(row.props.flexWrap).toBe('wrap')
       const order = ['grp-attention', 'grp-refresh', 'style-group', 'size-group', 'grp-alerts', 'grp-open'].filter(k => groups.includes(k))
       expect(groups).toEqual(order)
@@ -2817,6 +2817,32 @@ test('3 jobs that fit show every job as a tab, with no picker; the ⌂ stays', a
   expect(s).toContain('jobs-all')
   for (const k of ['jobs-prev', 'jobs-next', 'jobs-pick']) expect(s).not.toContain(k)
   await ui.unmount()
+})
+
+test('TSK-073: toolbar rows are compact: groups gap 0, rows gap 1, the | and ¦ separators unchanged, tabs carry no padding', async ($, on) => {
+  await bigRig($, on, 3, [[1, 2, 0]])
+  for (const pane of [PANE, NEWS_PANE]) {
+    const ui = await $.ui.mount(paneProps(pane, 520))
+    const boxes: any[] = await ui.findAll({ type: 'Box' })
+    const bar = boxes.find(b => b.props.key === 'tabs')
+    expect(bar.props.gap).toBe(0)
+    // inside a group: buttons and dim | only, no blank Text padding between them
+    const texts = (bar.children ?? []).filter((c: any) => c?.type === 'Text').map((c: any) => c.children?.[0])
+    expect(texts.every((t: any) => t === '|')).toBe(true)
+    const tabBoxes = boxes.filter(b => String(b.props.key ?? '').startsWith('tab-job-'))
+    expect(tabBoxes.length).toBe(3)
+    for (const t of tabBoxes) for (const c of t.children ?? []) if (c?.type === 'Text') expect(String(c.children?.[0]).trim()).not.toBe('')
+    // the title row: gap 1 between the bar, the unchanged ¦ and the page toggle
+    const title = rowOf(await ui.drawn(), pane === PANE ? 'news' : 'back-jobs')
+    expect(title.props.gap).toBe(1)
+    const kids = (title.children ?? []).filter((c: any) => c !== null && c !== undefined && c !== false)
+    expect(kids.at(-2)?.children?.[0]).toBe('\u00a6')
+    // every control group stays gap 0
+    const controls = boxes.find(b => b.props.key === 'controls')
+    expect(controls.props.gap).toBe(1)
+    for (const g of controls.children ?? []) expect(g.props.gap).toBe(0)
+    await ui.unmount()
+  }
 })
 
 test('the ☰ picker pages 20 at a time, needs first, letter jumps, and a click opens the job and keeps the page', async ($, on) => {
