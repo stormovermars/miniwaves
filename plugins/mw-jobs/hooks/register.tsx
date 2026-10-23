@@ -4072,7 +4072,9 @@ export const newsStatusPath = (js: Record<string, unknown> | undefined, board: s
   const base = expand(board, home)
   const okExt = (p: string) => /\.(md|html)$/i.test(p)
   const given = js && js.news_path
-  if (typeof given === 'string' && given !== '') {
+  // news_path present but "": mw refused the path. Absent: an older mw, fall back to news_out.
+  if (typeof given === 'string' && given === '') return undefined
+  if (typeof given === 'string') {
     const full = isAbs(given) ? given : `${base}/${given}`
     return /(^|[\\/])\.\.([\\/]|$)/.test(full) || !okExt(full) ? undefined : full
   }

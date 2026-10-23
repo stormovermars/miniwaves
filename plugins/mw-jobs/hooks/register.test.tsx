@@ -4484,3 +4484,10 @@ for (const mode of ['timeout', 'empty']) {
     expect(state.runs.some(r => r.startsWith('/home/.local/bin/mw '))).toBe(true)
   })
 }
+
+test('news_path "" means mw refused the path: no button, even with a news_out; an absent key (older mw) falls back to news_out', () => {
+  expect(newsStatusPath({ news_path: '', news_out: 'docs/news/' }, '/b', '/h')).toBeUndefined()
+  expect(newsStatusPath({ news_path: '', 'news.out': 'x/' }, '/b', '/h')).toBeUndefined()
+  expect(newsStatusPath({ news_out: 'x/' }, '/b', '/h')).toBe('/b/x/status.md')
+  expect(newsStatusPath({}, '/b', '/h')).toBe('/b/docs/news/status.md')
+})
