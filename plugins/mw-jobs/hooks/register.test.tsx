@@ -7,7 +7,7 @@ import { SHOW_TSK001, SHOW_STR002, WAVE_002, WAVE_004 } from '../tests/fixtures/
 import { parseItemDetail, parseWaveDetail } from './detail'
 import { REAL_DRAFT, SMALL_DRAFT, SMALL_RELEASE, STRESS_DRAFT, releases30, tenantsDraft, tenantSlug, manyJobs, jobDraft } from '../tests/fixtures/model'
 import { buildIdIndex, splitIds } from './ids'
-import { unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, metricChanges, metricAlerts, legacyEvents, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, groupToast, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
+import { unknownOption, kindFromStat, newsStatusPath, lastJobShowReset, alertText, alertAllowed, openerArgv, isAbs, kindsOf, monoCols, termCols, setMonoMax, svgSizeFor, FILL_MAX, metricViews, metricDrops, metricChanges, metricAlerts, legacyEvents, parseMetrics, METRICS_MAX_BYTES, chatKeys, CHAT_MS, alertLine, decisionLine, LOG_MAX, ALERT_KEEP, askGroupText, capAlerted, toastBubbles, stopVisible, parseFanfare, askText, buildMdSvg, buildMonoSvg, cleanBoard, parseMd, ageText, capList, GROUP_BASE, expireChat, FULL_HINT, DETAIL_PANE, BACK_LABEL, boardHints, jobsFromBoards, parseBoards, SCAN_OLD_HINT, planAlerts, stripTextHead, wrapDesc, wrapRuns, boardSegment, statusUnits, parseAlertRows, ALERT_ROWS_MAX, SETTINGS_PANE, parseUserKeys, cycleNext, kindsToggle, alertKind } from './register'
 import { REAL_USER_KEYS } from '../tests/fixtures/userkeys'
 
 declare const console: { log: (...a: unknown[]) => void }
@@ -1405,13 +1405,13 @@ test('alertText: `<job> ▸ <What>: <ref> <title>`, no repeated ref, title cut t
   expect(alertText('demo', 'Needs you', 'A-1', '  two\n lines  ')).toBe('demo ▸ Needs you: A-1 two lines')
 })
 
-test('an alert is one grouped toast and a pane row; the sound plays; no OS notification or osascript', async ($, on) => {
+test('an alert is one toast per event and a pane row; the sound plays; no OS notification or osascript', async ($, on) => {
   const { state, clock } = rig($, on, true)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   state.round = 1
   await clock.advance(60_000)
   // nothing is lost: the milestone alert lands as a toast, once per job, and nothing is logged to the transcript
-  expect(state.toasts).toHaveLength(2)
+  expect(state.toasts).toHaveLength(4)
   expect(state.toasts.join('\n')).toContain('zeta ▸ Milestone done: C2 Harness')
   expect(state.toasts.join('\n')).toContain('demo ▸ Milestone done: D1 Only')
   expect(state.logs).toEqual([])
@@ -1688,9 +1688,23 @@ test('needs you is open asks plus blocked items only: a "Sir" in a title counts 
   state.extra = [...(state.extra as never[]), item('zetasheet', 'STR-007', 'doing', '', iso(BASE), 'story', 'Decided by Sir')]
 })
 
-test('groupToast keeps 4 lines and a +N more', () => {
-  expect(groupToast(['a', 'b'])).toEqual(['a', 'b'])
-  expect(groupToast(['1', '2', '3', '4', '5', '6'])).toEqual(['1', '2', '3', '4', '+2 more'])
+test('toastBubbles: one bubble per event, 4 at most, then +N more', () => {
+  expect(toastBubbles([])).toEqual([])
+  expect(toastBubbles(['a'])).toEqual(['a'])
+  expect(toastBubbles(['1', '2', '3', '4'])).toEqual(['1', '2', '3', '4'])
+  expect(toastBubbles(['1', '2', '3', '4', '5'])).toEqual(['1', '2', '3', '4', 'Jobs: +1 more \u2014 see the news pane'])
+  expect(toastBubbles(Array.from({ length: 9 }, (_, i) => String(i)))).toHaveLength(5)
+  expect(toastBubbles(Array.from({ length: 9 }, (_, i) => String(i)))[4]).toBe('Jobs: +5 more \u2014 see the news pane')
+})
+
+test('fanfare Stop button shows only while mw says a finale plays', () => {
+  const user = JSON.stringify({ fanfare_enabled: true, fanfare_use: 'all' })
+  const f = (j: object) => parseFanfare(JSON.stringify({ sets: {}, ...j }), user)
+  expect(stopVisible(f({ playing: 1, playing_finale: true }))).toBe(true)
+  expect(stopVisible(f({ playing: 0, playing_finale: false }))).toBe(false)
+  expect(stopVisible(f({}))).toBe(false)
+  expect(stopVisible(f({ playing_finale: 'yes' }))).toBe(false)
+  expect(stopVisible(null)).toBe(false)
 })
 
 test('review questions, single and grouped, end by asking to record the decision', () => {
