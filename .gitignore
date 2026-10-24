@@ -7,3 +7,4 @@ build/
 /.miniwaves/
 /.miniwaves.json.*
 plugins/*/.claude-plugin/types/
+docs/news/
