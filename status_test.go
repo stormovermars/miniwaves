@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -47,7 +48,7 @@ func TestStatusLineCommand(t *testing.T) {
 	if statusLine(mustGetwd(), false) != "" {
 		t.Fatal("no board must print nothing")
 	}
-	for _, js := range []string{`{"workspace":{"current_dir":"` + sub + `"},"cwd":"/nonexistent"}`, `{"cwd":"` + sub + `"}`} {
+	for _, js := range []string{`{"workspace":{"current_dir":` + strconv.Quote(sub) + `},"cwd":"/nonexistent"}`, `{"cwd":` + strconv.Quote(sub) + `}`} {
 		if got := statusLine(statusCwd(strings.NewReader(js)), false); got != line {
 			t.Errorf("stdin %s: %q want %q", js, got, line)
 		}

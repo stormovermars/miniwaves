@@ -163,7 +163,7 @@ func TestTabloidProofSelection(t *testing.T) {
 		t.Errorf("review proof should come first")
 	}
 	// no ctx: absolute path; html embeds <img>
-	if abs := renderTabloidMD(m, nil, tabloidCtx{}); !strings.Contains(abs, "(<"+dir) {
+	if abs := renderTabloidMD(m, nil, tabloidCtx{}); !strings.Contains(abs, "(<"+filepath.ToSlash(dir)) {
 		t.Errorf("absolute path expected:\n%s", abs)
 	}
 	h := bulletinHTMLBlock(m, nil, tabloidCtx{OutDir: dir})

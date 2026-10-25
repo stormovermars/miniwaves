@@ -480,7 +480,7 @@ func jobsMDCommand(path string, w *Workspace, o map[string]string) error {
 		var ins []jobsMDInput
 		for _, d := range ds {
 			if d.target != "" && d.newsAbs != "" { // the link is computed from this job's own news file
-				if rel, err := filepath.Rel(filepath.Dir(d.target), d.newsAbs); err == nil {
+				if rel, err := filepath.Rel(realDir(filepath.Dir(d.target)), realDir(d.newsAbs)); err == nil {
 					d.in.newsLink = filepath.ToSlash(rel)
 				}
 			}
@@ -536,4 +536,18 @@ func jobsMDPut(target, body string, now time.Time) error {
 		fmt.Println("unchanged", target)
 	}
 	return nil
+}
+
+// realDir resolves symlinks and Windows short names (RUNNER~1) so two spellings of one folder relate.
+func realDir(p string) string {
+	if a, err := filepath.Abs(p); err == nil {
+		p = a
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	if r, err := filepath.EvalSymlinks(filepath.Dir(p)); err == nil {
+		return filepath.Join(r, filepath.Base(p))
+	}
+	return p
 }
