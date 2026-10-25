@@ -32,7 +32,7 @@ func TestNewsHugeMetricsNeverBreakARelease(t *testing.T) {
 	if m.Metrics == nil || !strings.Contains(m.Metrics.Error, "1e12") {
 		t.Fatalf("1e300 accepted: %+v", m.Metrics)
 	}
-	dir := filepath.Join(root, "docs", "news", "releases")
+	dir := filepath.Join(root, "docs", "news", "tiny", "releases")
 	writeMetricsFile(t, root, doc("1e12"))
 	newsOut(t, "--job", "tiny", "--release")
 	writeMetricsFile(t, root, doc("-1e12"))
@@ -64,7 +64,7 @@ func TestNewsCorruptArchive(t *testing.T) {
 	newsOut(t, "--job", "tiny", "--release")
 	runAll(t, []string{"add", "task", "More", "-S", "ready", "-t", "news-app"})
 	newsOut(t, "--job", "tiny", "--release")
-	dir := filepath.Join(root, "docs", "news", "releases")
+	dir := filepath.Join(root, "docs", "news", "tiny", "releases")
 	if err := os.WriteFile(filepath.Join(dir, "2.json"), []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestNewsCorruptArchive(t *testing.T) {
 		t.Fatalf("draft did not fall back to release 1:\n%s", out)
 	}
 	newsOut(t) // every job: neither is blocked
-	for _, f := range []string{filepath.Join(root, "docs", "news", "status.md"), filepath.Join(root, "docs", "news", "second", "status.md")} {
+	for _, f := range []string{filepath.Join(root, "docs", "news", "tiny", "status.md"), filepath.Join(root, "docs", "news", "second", "status.md")} {
 		if _, err := os.Stat(f); err != nil {
 			t.Fatalf("job page not written: %v", err)
 		}
@@ -96,7 +96,7 @@ func TestNewsCorruptArchive(t *testing.T) {
 // M1: numbers never reuse a stale N.* file, and a failed run leaves nothing behind
 func TestNewsReleaseNumbersAndCleanup(t *testing.T) {
 	path := newsBoardAt(t, pastBase)
-	dir := filepath.Join(filepath.Dir(path), "docs", "news", "releases")
+	dir := filepath.Join(filepath.Dir(path), "docs", "news", "tiny", "releases")
 	newsOut(t, "--job", "tiny", "--release")
 	if err := os.Remove(filepath.Join(dir, "1.json")); err != nil {
 		t.Fatal(err)
@@ -276,7 +276,7 @@ func TestNewsDescriptionLine(t *testing.T) {
 		t.Fatalf("%d cells: %q", w, l)
 	}
 	out := captureOutput(t, func() { runAll(t, []string{"jobs", "show", "tiny", "-j"}) })
-	if !strings.Contains(out, `"news_releases": "docs/news/releases"`) {
+	if !strings.Contains(out, `"news_releases": "docs/news/tiny/releases"`) {
 		t.Fatalf("jobs show lacks the effective releases folder:\n%s", out)
 	}
 }

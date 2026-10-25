@@ -322,7 +322,6 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	}
 	// everything is validated and built before anything is written
 	var jobs []*job
-	seen := map[string]string{}
 	now := time.Now()
 	for _, id := range ids {
 		j := &job{p: newsPart{job: id, title: w.Name, tenants: newsJobTenants(w, id)}}
@@ -378,10 +377,6 @@ func newsCommand(path string, w *Workspace, args []string) error {
 				return err
 			}
 			j.target = filepath.Join(d, "status."+format)
-			if other, dup := seen[j.target]; dup {
-				return fmt.Errorf("jobs %q and %q share the news file %s: set news.out per job (mw jobs set ID news.out=docs/news/ID/)", other, id, j.target)
-			}
-			seen[j.target] = id
 		}
 		win := newsWindow{prev: j.prev, prevNum: j.prevNum, full: o["full"] == "true"}
 		if release {
@@ -439,35 +434,50 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		results = append(results, newsResult{job, target, wrote})
 		return err
 	}
-	if o["out"] != "" { // one file holding every section
-		var content string
+	// combine renders several jobs into one document for target
+	combine := func(target string, js []*job) string {
 		if format == "html" {
 			var blocks []string
+			for _, j := range js {
+				blocks = append(blocks, bulletinHTMLBlock(j.model, j.nums, tabloidContext(target, j.relDir, j.jobsAbs)))
+			}
 			title := w.Name
-			for _, j := range jobs {
-				blocks = append(blocks, bulletinHTMLBlock(j.model, j.nums, tabloidContext(jobs[0].target, j.relDir, j.jobsAbs)))
+			if len(js) == 1 {
+				title = bulletinTitle(js[0].model)
 			}
-			if len(jobs) == 1 {
-				title = bulletinTitle(jobs[0].model)
-			}
-			content = bulletinHTMLPage(title, blocks)
-		} else {
-			docs := make([]string, len(jobs))
-			for i, j := range jobs {
-				docs[i] = renderTabloidMD(j.model, j.nums, tabloidContext(jobs[0].target, j.relDir, j.jobsAbs))
-			}
-			content = strings.Join(docs, "\n")
+			return bulletinHTMLPage(title, blocks)
 		}
-		if err := put("", jobs[0].target, content); err != nil {
+		docs := make([]string, len(js))
+		for i, j := range js {
+			docs[i] = renderTabloidMD(j.model, j.nums, tabloidContext(target, j.relDir, j.jobsAbs))
+		}
+		return strings.Join(docs, "\n")
+	}
+	if o["out"] != "" { // one file holding every section
+		if err := put("", jobs[0].target, combine(jobs[0].target, jobs)); err != nil {
 			return err
 		}
-	} else {
+	} else { // one file per target; jobs that point at one file share one combined document
+		var order []string
+		group := map[string][]*job{}
 		for _, j := range jobs {
-			content, err := newsRender(format, j.model, j.nums, tabloidContext(j.target, j.relDir, j.jobsAbs))
-			if err != nil {
-				return err
+			if _, ok := group[j.target]; !ok {
+				order = append(order, j.target)
 			}
-			if err := put(j.p.job, j.target, content); err != nil {
+			group[j.target] = append(group[j.target], j)
+		}
+		for _, t := range order {
+			js := group[t]
+			var content string
+			if len(js) == 1 {
+				var err error
+				if content, err = newsRender(format, js[0].model, js[0].nums, tabloidContext(t, js[0].relDir, js[0].jobsAbs)); err != nil {
+					return err
+				}
+			} else {
+				content = combine(t, js)
+			}
+			if err := put(js[0].p.job, t, content); err != nil {
 				return err
 			}
 		}

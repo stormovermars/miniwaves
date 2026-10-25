@@ -46,7 +46,7 @@ func TestBoardMDRender(t *testing.T) {
 func TestBoardMDWriteOnlyWhenChanged(t *testing.T) {
 	path := newsBoard(t)
 	root := filepath.Dir(path)
-	target := filepath.Join(root, "docs", "news", "jobs.md")
+	target := filepath.Join(root, "docs", "news", "tiny", "jobs.md")
 	out1 := captureOutput(t, func() { runAll(t, []string{"board", "--md"}) })
 	if !strings.HasPrefix(out1, "wrote ") || !strings.Contains(out1, "jobs.md") {
 		t.Fatalf("first run: %q", out1)

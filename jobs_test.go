@@ -72,7 +72,7 @@ func TestJobsEnableSetShowDisable(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &all); err != nil || len(all) != 1 {
 		t.Fatalf("%v: %s", err, out)
 	}
-	if all[0].MaxWorkers != 4 || all[0].NewsOut != "docs/news/" || all[0].Pane != "on" || all[0].Title != "tiny" || all[0].Worktrees != "off" {
+	if all[0].MaxWorkers != 4 || all[0].NewsOut != "docs/news/tiny/" || all[0].Pane != "on" || all[0].Title != "tiny" || all[0].Worktrees != "off" {
 		t.Fatalf("defaults: %+v", all[0])
 	}
 
@@ -279,7 +279,7 @@ func TestJobsShowNewsPath(t *testing.T) {
 		}
 		return v.NewsPath
 	}
-	if want := filepath.Join(realRoot, "docs", "news", "status.md"); get() != want {
+	if want := filepath.Join(realRoot, "docs", "news", "tiny", "status.md"); get() != want {
 		t.Fatalf("default news_path = %q, want %q", get(), want)
 	}
 	runAll(t, []string{"jobs", "set", "tiny", "news.out=docs/n/tiny/"})

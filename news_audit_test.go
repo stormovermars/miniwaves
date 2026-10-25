@@ -63,7 +63,7 @@ func TestNewsOutRefusesBoardFiles(t *testing.T) {
 func TestNewsReleaseReadsAreBounded(t *testing.T) {
 	path := newsBoardAt(t, pastBase)
 	root := filepath.Dir(path)
-	dir := filepath.Join(root, "docs", "news", "releases")
+	dir := filepath.Join(root, "docs", "news", "tiny", "releases")
 	newsOut(t, "--job", "tiny", "--release")
 	// a FIFO named 2.json: drafts warn and fall back, --release refuses naming it, nothing hangs
 	mkfifo(t, filepath.Join(dir, "2.json"))
@@ -90,7 +90,7 @@ func TestNewsReleaseReadsAreBounded(t *testing.T) {
 			within(t, "draft with a /dev/zero release", func() { newsOut(t, "--job", "tiny", "--format", "json") })
 			_ = os.Remove(filepath.Join(dir, "9.json"))
 		}
-		page := filepath.Join(root, "docs", "news", "status.md")
+		page := filepath.Join(root, "docs", "news", "tiny", "status.md")
 		_ = os.Remove(page + ".hash")
 		if err := os.Symlink("/dev/zero", page+".hash"); err == nil {
 			within(t, "/dev/zero hash sidecar", func() { newsOut(t) })
@@ -128,7 +128,7 @@ func TestReviewJSONKeepsBlocked(t *testing.T) {
 // 4: only mw's own release files raise the number
 func TestReleaseNumberIgnoresStrayFiles(t *testing.T) {
 	path := newsBoardAt(t, pastBase)
-	dir := filepath.Join(filepath.Dir(path), "docs", "news", "releases")
+	dir := filepath.Join(filepath.Dir(path), "docs", "news", "tiny", "releases")
 	newsOut(t, "--job", "tiny", "--release")
 	for _, f := range []string{"2026.notes.txt", "2026.json.bak", "2026.md.old", "99.txt", "2027.html.orig"} {
 		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {

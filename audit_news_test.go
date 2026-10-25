@@ -25,17 +25,29 @@ func TestNewsJSONNeedsFile(t *testing.T) {
 }
 
 func TestNewsTwoJobsDefaults(t *testing.T) {
-	path := inTempDir(t)
+	inTempDir(t)
 	runAll(t, []string{"init", "Two"}, []string{"tenant", "add", "b", "B"},
 		[]string{"jobs", "enable", "j1", "-t", "two"}, []string{"jobs", "enable", "j2", "-t", "b"})
-	wantErr(t, "set news.out per job", "news")
-	_ = path
-	// text and stdout write no file, so they never hit the check
-	captureOutput(t, func() { runAll(t, []string{"news", "--format", "text"}, []string{"news", "-o", "-"}) })
-	runAll(t, []string{"jobs", "set", "j2", "news.out=docs/news/j2/"})
-	captureOutput(t, func() { runAll(t, []string{"news"}) })
-	if _, err := os.Stat(filepath.Join("docs", "news", "j2", "status.md")); err != nil {
-		t.Fatal(err)
+	// each job has its own default folder: nothing is shared, nothing fails
+	captureOutput(t, func() { runAll(t, []string{"news"}, []string{"board", "--md"}) })
+	for _, j := range []string{"j1", "j2"} {
+		for _, f := range []string{"status.md", "jobs.md"} {
+			if _, err := os.Stat(filepath.Join("docs", "news", j, f)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// two jobs pointed at one file give one combined document, not an error
+	runAll(t, []string{"jobs", "set", "j1", "news.out=docs/shared/"}, []string{"jobs", "set", "j2", "news.out=docs/shared/"})
+	captureOutput(t, func() { runAll(t, []string{"news"}, []string{"board", "--md"}) })
+	for _, f := range []string{"status.md", "jobs.md"} {
+		b, err := os.ReadFile(filepath.Join("docs", "shared", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f == "jobs.md" && (!strings.Contains(string(b), "## j1") && !strings.Contains(string(b), "## j2")) {
+			t.Fatalf("combined jobs.md lacks the jobs:\n%s", b)
+		}
 	}
 }
 

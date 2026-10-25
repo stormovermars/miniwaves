@@ -151,7 +151,7 @@ func jobView(w *Workspace, id string) JobView {
 		v.Worktrees = "on"
 	}
 	if v.NewsOut == "" {
-		v.NewsOut = "docs/news/"
+		v.NewsOut = "docs/news/" + id + "/" // each job its own folder, so two jobs never share a file
 	}
 	if v.NewsReleases == "" {
 		v.NewsReleases = strings.TrimSuffix(v.NewsOut, "/") + "/releases"

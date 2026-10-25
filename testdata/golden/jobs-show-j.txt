@@ -9,14 +9,14 @@
     "max_workers": 4,
     "worktrees": "on",
     "lock": "",
-    "news_out": "docs/news/",
+    "news_out": "docs/news/other/",
     "news_url": "",
-    "news_releases": "docs/news/releases",
+    "news_releases": "docs/news/other/releases",
     "metrics": "",
     "summary": "",
     "pane": "on",
     "pane_style": "",
-    "news_path": "<root>/docs/news/status.md"
+    "news_path": "<root>/docs/news/other/status.md"
   },
   {
     "id": "tiny",
@@ -29,13 +29,13 @@
     "max_workers": 2,
     "worktrees": "on",
     "lock": "",
-    "news_out": "docs/news/",
+    "news_out": "docs/news/tiny/",
     "news_url": "https://example.com/news",
-    "news_releases": "docs/news/releases",
+    "news_releases": "docs/news/tiny/releases",
     "metrics": "",
     "summary": "",
     "pane": "on",
     "pane_style": "",
-    "news_path": "<root>/docs/news/status.md"
+    "news_path": "<root>/docs/news/tiny/status.md"
   }
 ]

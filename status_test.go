@@ -75,7 +75,7 @@ func TestStatusLineLink(t *testing.T) {
 	root := filepath.Dir(path)
 	plain := statusLine(root, false)
 	file := statusLine(root, true)
-	md := filepath.Join(root, "docs", "news", "jobs.md")
+	md := filepath.Join(root, "docs", "news", "tiny", "jobs.md")
 	_ = md
 	if !strings.HasPrefix(file, "\x1b]8;;file://") || !strings.HasSuffix(file, "jobs.md\x1b\\"+plain+"\x1b]8;;\x1b\\") {
 		t.Fatalf("file link: %q", file)

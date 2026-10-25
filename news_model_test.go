@@ -269,7 +269,7 @@ func releaseFiles(t *testing.T, dir string) []string {
 
 func TestNewsReleaseSequence(t *testing.T) {
 	path := newsBoardAt(t, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
-	dir := filepath.Join(filepath.Dir(path), "docs", "news", "releases")
+	dir := filepath.Join(filepath.Dir(path), "docs", "news", "tiny", "releases")
 	out := newsOut(t, "--job", "tiny", "--release")
 	if !strings.HasPrefix(out, "released 1: ") {
 		t.Fatalf("release 1: %q", out)
@@ -369,7 +369,7 @@ func mustRead(t *testing.T, p string) string {
 func TestNewsReleaseLeavesNewsOutAlone(t *testing.T) {
 	path := newsBoardAt(t, time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC))
 	newsOut(t)
-	page := filepath.Join(filepath.Dir(path), "docs", "news", "status.md")
+	page := filepath.Join(filepath.Dir(path), "docs", "news", "tiny", "status.md")
 	before := mustRead(t, page)
 	newsOut(t, "--job", "tiny", "--release")
 	if after := mustRead(t, page); after != before || !strings.Contains(after, "Edition 1 (draft)") {
@@ -416,7 +416,7 @@ func TestNewsConcurrentRelease(t *testing.T) {
 	if len(seen) != n {
 		t.Fatalf("release numbers not distinct: %v", outs)
 	}
-	dir := filepath.Join(root, "docs", "news", "releases")
+	dir := filepath.Join(root, "docs", "news", "tiny", "releases")
 	for i := 1; i <= n; i++ {
 		m := decodeModel(t, mustRead(t, filepath.Join(dir, fmt.Sprintf("%d.json", i))))
 		if m.Release.Number == nil || *m.Release.Number != i {
@@ -542,7 +542,7 @@ func TestNewsMetricsDeltasAcrossReleases(t *testing.T) {
 	}
 	write(doc(8, 4, 3, "99.2"))
 	newsOut(t, "--job", "tiny", "--release")
-	r1 := decodeModel(t, mustRead(t, filepath.Join(root, "docs", "news", "releases", "1.json")))
+	r1 := decodeModel(t, mustRead(t, filepath.Join(root, "docs", "news", "tiny", "releases", "1.json")))
 	if r1.Metrics == nil || len(r1.Metrics.Sections) != 3 || r1.Metrics.Sections[0].Rows[0].Delta != nil {
 		t.Fatalf("release 1 metrics: %+v", r1.Metrics)
 	}
@@ -572,11 +572,11 @@ func TestNewsMetricsDeltasAcrossReleases(t *testing.T) {
 	// release 3 compares with release 2's frozen metrics, not release 1's
 	write(doc(7, 7, 5, "98.9"))
 	newsOut(t, "--job", "tiny", "--release")
-	r3 := decodeModel(t, mustRead(t, filepath.Join(root, "docs", "news", "releases", "3.json")))
+	r3 := decodeModel(t, mustRead(t, filepath.Join(root, "docs", "news", "tiny", "releases", "3.json")))
 	if g := r3.Metrics.Sections[0].Rows[0].Delta; g["good"] != 1 || len(g) != 1 {
 		t.Fatalf("release 3 delta: %v", g)
 	}
-	if !strings.Contains(mustRead(t, filepath.Join(root, "docs", "news", "releases", "3.md")), "metric row changed") {
+	if !strings.Contains(mustRead(t, filepath.Join(root, "docs", "news", "tiny", "releases", "3.md")), "metric row changed") {
 		t.Fatal("3.md lacks the metrics line")
 	}
 }
@@ -723,7 +723,7 @@ func TestNewsDefaultPathAndUnchanged(t *testing.T) {
 	path := newsBoard(t)
 	root := filepath.Dir(path)
 	out := newsOut(t)
-	file := filepath.Join(root, "docs", "news", "status.md")
+	file := filepath.Join(root, "docs", "news", "tiny", "status.md")
 	if b, err := os.ReadFile(file); err != nil || !strings.HasPrefix(out, "wrote ") || !strings.HasPrefix(string(b), "# ") {
 		t.Fatalf("first run: %q %v", out, err)
 	}

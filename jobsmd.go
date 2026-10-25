@@ -372,7 +372,6 @@ func jobsMDCommand(path string, w *Workspace, o map[string]string) error {
 	}
 	var docs []doc
 	var segs []string
-	seen := map[string]string{}
 	stdout := o["out"] == "-"
 	for _, id := range ids {
 		p := newsPart{job: id, title: w.Name, tenants: newsJobTenants(w, id)}
@@ -409,10 +408,6 @@ func jobsMDCommand(path string, w *Workspace, o map[string]string) error {
 				return err
 			}
 			d.target = filepath.Join(cd, "jobs.md")
-			if other, dup := seen[d.target]; dup {
-				return fmt.Errorf("jobs %q and %q share the file %s: set news.out per job (mw jobs set ID news.out=docs/news/ID/)", other, id, d.target)
-			}
-			seen[d.target] = id
 		}
 		segs = append(segs, jobsMDSummary(id, m))
 		docs = append(docs, d)
@@ -441,8 +436,17 @@ func jobsMDCommand(path string, w *Workspace, o map[string]string) error {
 		}
 		return jobsMDPut(docs[0].target, body, now)
 	}
-	for i, d := range docs { // one file per job; its status line names every job
-		if err := jobsMDPut(d.target, build(docs[i:i+1]), now); err != nil {
+	// one file per target: jobs that point at one file share one combined document
+	var order []string
+	byTarget := map[string][]doc{}
+	for _, d := range docs {
+		if _, ok := byTarget[d.target]; !ok {
+			order = append(order, d.target)
+		}
+		byTarget[d.target] = append(byTarget[d.target], d)
+	}
+	for _, t := range order {
+		if err := jobsMDPut(t, build(byTarget[t]), now); err != nil {
 			return err
 		}
 	}
