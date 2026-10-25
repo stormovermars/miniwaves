@@ -16,7 +16,7 @@ import (
 
 const (
 	jobsMDCapList  = 30 // rows per section before "... N more"
-	jobsMDCapReady = 15
+	jobsMDCapReady = 10
 	jobsMDCapDone  = 10
 	jobsMDBarWidth = 10
 )
@@ -32,6 +32,15 @@ func mdText(s string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// mdWhen is HH:MM for a time of today, "Mon DD HH:MM" for an older one, so events of mixed days read right.
+func mdWhen(t, now time.Time) string {
+	t, now = t.Local(), now.Local()
+	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
+		return t.Format("15:04")
+	}
+	return t.Format("Jan 02 15:04")
 }
 
 // mdAge is a coarse age (<1h, Nh, Nd) so the file changes at most hourly while nothing else happens.
@@ -50,6 +59,13 @@ func mdAge(since string, now time.Time) string {
 		return fmt.Sprintf("%dh", int(d.Hours()))
 	}
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
+}
+
+func mdAgeTail(it newsItem, now time.Time) string {
+	if a := mdAge(it.Since, now); a != "" {
+		return " · " + a
+	}
+	return ""
 }
 
 func mdBar(done, total int) string {
@@ -252,6 +268,28 @@ func renderJobsMD(in jobsMDInput, now time.Time) string {
 			row(it, "⏱", " · blocked")
 		}
 	}
+	if n := len(m.Next.Ready); n > 0 {
+		b.WriteString("\n### Ready\n\n")
+		for i, it := range m.Next.Ready {
+			if i == jobsMDCapReady {
+				fmt.Fprintf(&b, "- … %d more\n", n-i+m.Next.More["ready"])
+				break
+			}
+			fmt.Fprintf(&b, "- **%s** %s · %s%s\n", mdText(it.ID), mdText(it.Title), mdText(it.Tenant), mdAgeTail(it, now))
+		}
+		if n <= jobsMDCapReady && m.Next.More["ready"] > 0 {
+			fmt.Fprintf(&b, "- … %d more\n", m.Next.More["ready"])
+		}
+	}
+	if len(m.Now.RecentDone) > 0 {
+		b.WriteString("\n### Recently done\n\n")
+		for i, it := range m.Now.RecentDone {
+			if i == jobsMDCapDone {
+				break
+			}
+			fmt.Fprintf(&b, "- ✓ **%s** %s · %s%s\n", mdText(it.ID), mdText(it.Title), mdText(it.Tenant), mdAgeTail(it, now))
+		}
+	}
 	var closed []string
 	for _, t := range in.tenants {
 		for _, it := range t.Items {
@@ -288,13 +326,13 @@ func renderJobsMD(in jobsMDInput, now time.Time) string {
 				break
 			}
 			text := strings.TrimSpace(r.Tenant + " " + r.Item + " " + r.Action + " " + compactText(r.Note, 70))
-			fmt.Fprintf(&b, "- `%s` %s\n", r.sortKey.Local().Format("15:04"), mdText(text))
+			fmt.Fprintf(&b, "- `%s` %s\n", mdWhen(r.sortKey, now), mdText(text))
 		}
 	}
 	b.WriteString("\n---\n")
 	foot := []string{}
 	if !newest.IsZero() {
-		foot = append(foot, "updated "+newest.Local().Format("15:04"))
+		foot = append(foot, "updated "+mdWhen(newest, now))
 	}
 	if in.newsLink != "" {
 		foot = append(foot, fmt.Sprintf("[News](<%s>)", in.newsLink))

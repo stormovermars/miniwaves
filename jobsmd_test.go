@@ -33,7 +33,7 @@ func TestBoardMDRender(t *testing.T) {
 	if string(want) != got {
 		t.Errorf("board --md golden changed:\n--- want\n%s\n--- got\n%s", want, got)
 	}
-	for _, s := range []string{"### Needs you", "### In progress", "### Milestones", "! tiny"} {
+	for _, s := range []string{"### Needs you", "### In progress", "### Ready", "### Recently done", "### Milestones", "! tiny"} {
 		if !strings.Contains(got, s) {
 			t.Errorf("missing %q in:\n%s", s, got)
 		}
@@ -81,5 +81,15 @@ func TestBoardMDNoJob(t *testing.T) {
 	captureOutput(t, func() { runAll(t, []string{"board", "--md"}) })
 	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "docs", "news", "jobs.md")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMDWhen(t *testing.T) {
+	now := time.Date(2026, 10, 25, 9, 0, 0, 0, time.Local)
+	if got := mdWhen(time.Date(2026, 10, 25, 7, 5, 0, 0, time.Local), now); got != "07:05" {
+		t.Errorf("today: %q", got)
+	}
+	if got := mdWhen(time.Date(2026, 10, 23, 12, 10, 0, 0, time.Local), now); got != "Oct 23 12:10" {
+		t.Errorf("older: %q", got)
 	}
 }

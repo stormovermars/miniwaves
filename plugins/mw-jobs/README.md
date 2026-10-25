@@ -4,7 +4,7 @@ Your miniwaves (mw) jobs as Markdown files. No panes: `mw board --md` renders ev
 
 ## What jobs.md shows
 
-A status line over every job (`! tiny 2 need you · C2 5/6 │ demo ▸ D1 1/2`), then per job: headline, **Needs you** (`!`), **Review** (`◐`), **In progress** (`●`, or `⏱ stalled` after 45 minutes), **Milestones** (`done/total` with a text bar; closed ones fold into `✓ N closed`), **Harness** (only with a metrics file), **Last events**, and a footer (`updated HH:MM`, link to the news file, link to the published page). Empty sections are left out. Three meanings, always with their symbol: `!` needs you, `◐` `⏱` waiting, `✓` `●` progress.
+A status line over every job (`! tiny 2 need you · C2 5/6 │ demo ▸ D1 1/2`), then per job: headline, **Needs you** (`!`), **Review** (`◐`), **In progress** (`●`, or `⏱ stalled` after 45 minutes), **Ready** (queue, 10 + `… N more`), **Recently done** (`✓`, newest first, 10), **Milestones** (`done/total` with a text bar; closed ones fold into `✓ N closed`), **Harness** (only with a metrics file), **Last events** (`HH:MM` for today, `Mon DD HH:MM` for older), and a footer (`updated HH:MM`, link to the news file, link to the published page). Empty sections are left out. Three meanings, always with their symbol: `!` needs you, `◐` `⏱` waiting, `✓` `●` progress.
 
 Files live next to the job's news draft (`<news.out>/jobs.md` and `status.md`; `docs/news/` with no job). They are rewritten only when their content changed.
 
