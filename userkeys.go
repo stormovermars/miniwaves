@@ -13,7 +13,7 @@ import (
 
 type userKey struct {
 	Name    string
-	Group   string   // group id: pane, alerts, fanfare, status, discover
+	Group   string   // group id: fanfare, status, discover
 	Kind    string   // enum, bool, int, list, text
 	Choices []string // allowed values (enum, bool, int range, list members); nil for free text
 	Default string
@@ -22,26 +22,13 @@ type userKey struct {
 }
 
 var userGroups = []struct{ ID, Label string }{
-	{"pane", "Pane"}, {"alerts", "Alerts"}, {"fanfare", "Fanfare"}, {"status", "Chat bar"}, {"discover", "Discovery"},
+	{"fanfare", "Fanfare"}, {"status", "Chat bar"}, {"discover", "Discovery"},
 }
 
-var alertKinds = []string{"blocked", "ask", "review", "done", "release", "metrics", "new"}
-
 var userKeys = []userKey{
-	{Name: "pane.refresh", Group: "pane", Kind: "enum", Choices: []string{"15s", "30s", "1m", "5m", "off"}, Default: "30s", Help: "How often the live pane refreshes."},
-	{Name: "pane.style", Group: "pane", Kind: "enum", Choices: []string{"normal", "blocks", "gopher", "agile", "kanban"}, Default: "normal", Help: "Look of the pane."},
-	{Name: "pane.zoom", Group: "pane", Kind: "int", lo: -2, hi: 2, Default: "0", Help: "Pane text size step, -2 (smaller) to +2 (larger)."},
-	{Name: "pane.fit", Group: "pane", Kind: "enum", Choices: []string{"80", "fill"}, Default: "80", Help: "Pane width: 80 columns or fill the window."},
-	{Name: "pane.open", Group: "pane", Kind: "enum", Choices: []string{"jobs", "news"}, Default: "jobs", Help: "Which view the pane opens on."},
-	{Name: "alerts.enabled", Group: "alerts", Kind: "bool", Default: "true", Help: "Raise alerts for board events."},
-	{Name: "alerts.kinds", Group: "alerts", Kind: "list", Choices: alertKinds, Default: strings.Join(alertKinds, ","), Help: "Which events alert: a comma list, all, or none."},
-	{Name: "alerts.message", Group: "alerts", Kind: "bool", Default: "true", Help: "Show a message with an alert."},
-	{Name: "alerts.popup", Group: "alerts", Kind: "bool", Default: "true", Help: "Show a popup (toast) with an alert."},
-	{Name: "alerts.sound", Group: "alerts", Kind: "bool", Default: "true", Help: "Play a sound with an alert."},
 	{Name: "fanfare.enabled", Group: "fanfare", Kind: "bool", Default: "false", Help: "Play fanfares on wave close; overrides the board's fanfare.enabled when set."},
 	{Name: "fanfare.use", Group: "fanfare", Kind: "text", Default: "all", Help: "The fanfare set to play: a set name or all."},
 	{Name: "status.show", Group: "status", Kind: "bool", Default: "true", Help: "Show the mw line in the chat status bar."},
-	{Name: "status.detail", Group: "status", Kind: "enum", Choices: []string{"compact", "full"}, Default: "compact", Help: "How much the status line says."},
 	{Name: "discover.home", Group: "discover", Kind: "bool", Default: "true", Help: "Also look for boards under your home folder."},
 	{Name: "discover.depth", Group: "discover", Kind: "int", lo: 1, hi: 6, Default: "4", Help: "How many folder levels deep to look for boards."},
 }

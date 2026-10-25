@@ -119,6 +119,7 @@ mw ask ID QUESTION... [-t SLUG] [-s NAME]   # a question for a human, as an even
 mw answer ID TEXT... --by NAME [-t SLUG]   # human only; closes the item's open ask
 mw decide TEXT... [--by NAME] [-s SESSION] [-b WHY] [-p ID] [-t SLUG]   # a decision event on ID, else on the tenant's "Decisions" chore
 mw user show [-j] | get [KEY] [-j] | set KEY=VALUE...   # per-user config (see "Per-user config")
+mw status --line                       # one status-bar line: mw:N2R1B1:12/40 (see "Status line")
 mw configure [--show [-j]] | KEY=VALUE...   # walk the per-user settings, then Save or Discard (see "Per-user config")
 mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]   # coordinated-job config (see "Coordinated jobs")
 mw news [--job ID] [--full] [--format md|html|text|json] [--release [--force]] [-o PATH] [-j]   # news bulletin from board data (see "News")
@@ -337,20 +338,9 @@ mw-jobs alerts appear as pane rows plus sound only, never as OS notification ban
 
 | Key | Allowed | Default | Meaning |
 |---|---|---|---|
-| `pane.refresh` | `15s`, `30s`, `1m`, `5m`, `off` | `30s` | how often the live pane refreshes |
-| `pane.style` | `normal`, `blocks`, `gopher`, `agile`, `kanban` | `normal` | look of the pane |
-| `pane.zoom` | `-2`..`2` | `0` | pane text size step |
-| `pane.fit` | `80`, `fill` | `80` | pane width |
-| `pane.open` | `jobs`, `news` | `jobs` | the view the pane opens on |
-| `alerts.enabled` | `true`, `false` | `true` | raise alerts for board events |
-| `alerts.kinds` | comma list of `new`, `blocked`, `ask`, `review`, `done`, `release`, `metrics`; or `all`; or `none` | all seven | which events alert |
-| `alerts.message` | `true`, `false` | `true` | show a message with an alert |
-| `alerts.popup` | `true`, `false` | `true` | show a popup (toast) with an alert |
-| `alerts.sound` | `true`, `false` | `true` | play a sound with an alert |
 | `fanfare.enabled` | `true`, `false` | `false` (`mw user fanfare-defaults` sets `true` at install) | play fanfares; a board that runs `mw fanfare set enabled=false` still wins (see Fanfare) |
 | `fanfare.use` | a set name or `all` | `all` | the fanfare set to play |
-| `status.show` | `true`, `false` | `true` | show the mw line in the chat status bar |
-| `status.detail` | `compact`, `full` | `compact` | how much the status line says |
+| `status.show` | `true`, `false` | `true` | show the mw line in the chat status bar (`mw status --line`) |
 | `discover.home` | `true`, `false` | `true` | also look for boards under your home folder |
 | `discover.depth` | `1`..`6` | `4` | folder levels to search |
 
@@ -391,7 +381,6 @@ mw jobs show [ID] [-j]              # effective values (defaults applied) and th
 | `tracker_url` | none | the tracker's base URL: https only, no query, fragment or credentials; a trailing `/` is trimmed; clickup and asana may leave it empty |
 | `summary` | none | a path with the `news.out` rules |
 | `pane` | `on` | `on` or `off` |
-| `pane.style` | none | `^[a-z0-9-]{1,32}$` |
 | `ceremonies` | none | a comma list of `review`, `planning`, `triage`, `spike`; an unknown name is refused; stored in that order without duplicates; only the listed ceremonies reach the dispatcher prompt (see "Ceremonies") |
 | `ready_min` | `3` (shown once `ceremonies` is set) | 1..20; the planning trigger: fewer ready items than this |
 
@@ -508,6 +497,10 @@ totals (`DONE (n, +N archived)` with `-v`, `archived` in `board -j`); IDs are ne
 
 `mw board --md [--job ID] [-o PATH|-]` renders every job as Markdown for the Claude desktop file pane (the mw-jobs plugin's `/mw-jobs`). Layout per job: a headline (`! 2 need you`, else `◐ N awaiting review`, `⏱ N blocked`, `● N in progress`), then Needs you, Review, In progress (`●`, or `⏱ stalled` after 45 minutes), Ready (the queue, 10 then `… N more`), Recently done (`✓`, newest first, 10), Milestones (open waves with a text bar, closed ones folded into `✓ N closed`), Harness (only with a job `metrics` file, with ▲▼ deltas against the latest release), Last events (6; `HH:MM` for today, `Mon DD HH:MM` for older days) and a footer (`updated HH:MM` is the newest event, a link to `status.md` and, when a `jobs.artifact-url` file sits next to the page, the published page). Empty sections are left out. The first line under the title is a status line over every job: `! tiny 2 need you · C2 5/6 │ demo ▸ D1 1/2`. Default file: `<news.out>/jobs.md` per job (`docs/news/jobs.md` with no job); `-o PATH` writes one file with every job, `-o -` prints it. The file is rewritten only when its content changed (hash in `jobs.md.hash`); mw prints `wrote PATH` or `unchanged PATH`. Ages are in 5-minute steps (hours, then days) so an idle board does not rewrite the file. `mw news` stays the news view.
 
+## Status line
+
+`mw status --line` prints one short line for the Claude Code status bar: `mw:N2R1B1:12/40`. N = needs you, R = awaiting review, B = blocked (a letter is left out when its count is zero), then `open/all` items (open = not done) after a `:`. With N, R and B all zero the line is `mw:12/40`. It counts the nearest board (walking up from the cwd, or from `.workspace.current_dir` / `.cwd` of the status-line JSON on stdin) and prints nothing outside a board or when the user key `status.show` is `false`. It never writes, never fails (exit 0) and takes a few milliseconds. `--link` wraps the line in an OSC 8 hyperlink (`ESC ] 8 ; ; URL ESC \\ TEXT ESC ] 8 ; ; ESC \\`): URL is the published page from `jobs.artifact-url` next to `jobs.md` when that file exists, else the `file://` URL of `jobs.md`. The mw-jobs plugin ships `scripts/statusline.sh` (uses `--link`) and `/mw-status` (explains the line).
+
 ## Git
 
 Git is the coding agent's job, not mw's. Commit `.miniwaves.json` and `.miniwaves/` (and the published page) together with your code changes and resolve board conflicts in git like any file; a board with merge markers is refused with "board has merge markers: resolve it in git". `mw init` adds `.miniwaves/*.lock*`, `.miniwaves/*.tmp` and `.miniwaves.json.tmp` to `.git/info/exclude` so commits never include them.
@@ -542,7 +535,7 @@ Upgrading from 0.3.2 or 0.3.3: after `mw update`, run `mw update --plugins` once
 
 - New `mw boards [DIR] [--depth N] [--up] [-j]` finds boards (depth 1..6, default `discover.depth`; index files over 1 MB are errors; Windows skips AppData; macOS `--up` does not stat ancestors inside protected folders unless it starts in one).
 - `mw news --full` lifts the row caps (`full: true`, `trimmed_rows` in the json); only with `-o FILE`, `-o -`, `--format json` or `--format text`; never rewrites `status.md`; `--full --release` is refused.
-- New `mw configure` (Pane, Alerts, Fanfare, Chat bar, Discovery; Save or Discard; `--show [-j]`; `KEY=VALUE...` saves without prompting) and `mw user get [KEY] [-j]` (value, default, source `default|user|board`, group, choices). Writes to `mw-user.json` are locked.
+- New `mw configure` (Fanfare, Chat bar, Discovery; Save or Discard; `--show [-j]`; `KEY=VALUE...` saves without prompting) and `mw user get [KEY] [-j]` (value, default, source `default|user|board`, group, choices). Writes to `mw-user.json` are locked.
 - Fanfare: `mw user fanfare-defaults` (install, update) sets `fanfare.enabled=true` and `fanfare.use=all` only where unset (`MW_NO_FANFARE=1` or `MW_NO_PLUGINS=1` skips). A board that runs `mw fanfare set enabled=false` wins over the user layer; `mw fanfare use NAME` does not count as that. With no fanfare songs, a built-in fanfare plays.
 - `alerts.kinds` accepts `new`, `none` and `all`.
 - Plugins: `mw-jobs` is the only pane plugin; `mw-watch` (formerly `tidewatch`) is retired. `install.sh`, `install.ps1` and `mw update` install `mw` and `mw-jobs` first and only then uninstall `tidewatch` and `mw-watch`. A stub `tidewatch` plugin for one release tells users to run `mw update --plugins`.

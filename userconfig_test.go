@@ -245,15 +245,13 @@ func configureScript(t *testing.T, script string, fn func()) string {
 
 func TestConfigureInteractiveSaves(t *testing.T) {
 	p := userCfgPath(t)
-	// 18 prompts: pane(5) alerts(5) fanfare(2) status(2) discover(2); pane.style -> 5) kanban, zoom 2, fanfare.enabled 1) true, depth 6
-	script := "\n5\n2\n\n\n" + // pane
-		"\n\n\n\n\n" + // alerts
-		"1\n\n" + // fanfare
-		"\n\n" + // status
+	// 5 prompts: fanfare(2) status(1) discover(2); fanfare.enabled 1) true, status.show 2) false, depth 6
+	script := "1\n\n" + // fanfare
+		"2\n" + // status
 		"\n6\n" + // discover
 		"s\n"
 	out := configureScript(t, script, func() { runAll(t, []string{"configure"}) })
-	if !strings.Contains(out, "pane.style: normal -> kanban") || !strings.Contains(out, "Save or Discard") {
+	if !strings.Contains(out, "status.show: true -> false") || !strings.Contains(out, "Save or Discard") {
 		t.Fatalf("%s", out)
 	}
 	var c UserConfig
@@ -264,19 +262,19 @@ func TestConfigureInteractiveSaves(t *testing.T) {
 	if err := json.Unmarshal(b, &c); err != nil {
 		t.Fatal(err)
 	}
-	if c.Settings["pane.style"] != "kanban" || c.Settings["pane.zoom"] != "2" || c.Settings["discover.depth"] != "6" || c.Fanfare.Enabled == nil || !*c.Fanfare.Enabled {
+	if c.Settings["status.show"] != "false" || c.Settings["discover.depth"] != "6" || c.Fanfare.Enabled == nil || !*c.Fanfare.Enabled {
 		t.Fatalf("%s", b)
 	}
-	if len(c.Settings) != 3 {
+	if len(c.Settings) != 2 {
 		t.Fatalf("only changed keys are stored: %s", b)
 	}
 }
 
 func TestConfigureDiscardKeepsFileIdentical(t *testing.T) {
 	p := userCfgPath(t)
-	runAll(t, []string{"user", "set", "pane.style=blocks", "alerts.on=ask"})
+	runAll(t, []string{"user", "set", "status.show=false", "alerts.on=ask"})
 	before, _ := os.ReadFile(p)
-	out := configureScript(t, "3\nbogus\n1\n"+strings.Repeat("\n", 20)+"d\n", func() { runAll(t, []string{"configure"}) })
+	out := configureScript(t, "1\nbogus\n1\n"+strings.Repeat("\n", 20)+"d\n", func() { runAll(t, []string{"configure"}) })
 	after, _ := os.ReadFile(p)
 	if string(before) != string(after) || !strings.Contains(out, "discarded") {
 		t.Fatalf("file changed or no discard:\n%s\n%s", after, out)
@@ -298,27 +296,27 @@ func TestConfigureNoTTYPrintsSettings(t *testing.T) {
 	stdinIsTerminal, configureIn = func() bool { return false }, failReader{t}
 	t.Cleanup(func() { stdinIsTerminal, configureIn = oldTTY, oldIn })
 	out := captureOutput(t, func() { runAll(t, []string{"configure"}) })
-	if !strings.Contains(out, "pane.refresh") || !strings.Contains(out, "(default)") || !strings.Contains(out, "hint:") {
+	if !strings.Contains(out, "status.show") || !strings.Contains(out, "(default)") || !strings.Contains(out, "hint:") {
 		t.Fatalf("%s", out)
 	}
 }
 
 func TestConfigureKeyValue(t *testing.T) {
 	p := userCfgPath(t)
-	for _, bad := range []string{"pane.style=fancy", "pane.zoom=3", "pane.refresh=2m", "alerts.kinds=ask,nope", "alerts.enabled=yes", "discover.depth=0", "status.detail=x", "pane.fit=90", "nokey=1"} {
+	for _, bad := range []string{"status.show=yes", "discover.depth=0", "discover.depth=9", "status.detail=x", "pane.fit=90", "nokey=1"} {
 		if err := run([]string{"configure", bad}); err == nil {
 			t.Errorf("%s: expected an error", bad)
 		}
 	}
-	if err := run([]string{"configure", "pane.style=blocks", "pane.zoom=9"}); err == nil {
+	if err := run([]string{"configure", "status.show=false", "discover.depth=9"}); err == nil {
 		t.Fatal("one bad value must refuse all")
 	}
 	if _, err := os.Stat(p); err == nil {
 		t.Fatal("a refused configure wrote the file")
 	}
-	runAll(t, []string{"configure", "pane.style=Blocks", "pane.zoom=+1", "alerts.kinds=done, ask,done", "fanfare.use=all"})
+	runAll(t, []string{"configure", "status.show=False", "discover.depth=+3", "fanfare.use=all"})
 	out := captureOutput(t, func() { runAll(t, []string{"configure", "--show"}) })
-	for _, want := range []string{"pane.style", "blocks  (user)", "pane.zoom", "1  (user)", "ask,done  (user)"} {
+	for _, want := range []string{"status.show", "false  (user)", "discover.depth", "3  (user)"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q:\n%s", want, out)
 		}
@@ -327,7 +325,7 @@ func TestConfigureKeyValue(t *testing.T) {
 
 func TestUserGetJSONSource(t *testing.T) {
 	userCfgPath(t)
-	runAll(t, []string{"user", "set", "pane.fit=fill", "fanfare.enabled=true"})
+	runAll(t, []string{"user", "set", "discover.depth=5", "fanfare.enabled=true"})
 	var v struct {
 		Keys []userGetKey `json:"keys"`
 	}
@@ -339,24 +337,24 @@ func TestUserGetJSONSource(t *testing.T) {
 	for _, k := range v.Keys {
 		by[k.Key] = k
 	}
-	if k := by["pane.fit"]; k.Value != "fill" || k.Source != "user" || k.Default != "80" || k.Group != "pane" || len(k.Choices) != 2 {
+	if k := by["discover.depth"]; k.Value != "5" || k.Source != "user" || k.Default != "4" || k.Group != "discover" || len(k.Choices) != 6 {
 		t.Fatalf("%+v", k)
 	}
 	if k := by["fanfare.enabled"]; k.Value != "true" || k.Source != "user" {
 		t.Fatalf("%+v", k)
 	}
-	if k := by["pane.style"]; k.Value != "normal" || k.Source != "default" {
+	if k := by["status.show"]; k.Value != "true" || k.Source != "default" {
 		t.Fatalf("%+v", k)
 	}
 	if !strings.Contains(out, `"choices":[]`) && !strings.Contains(out, `"choices": []`) {
 		t.Fatalf("free-text choices must be an empty array: %s", out)
 	}
-	one := captureOutput(t, func() { runAll(t, []string{"user", "get", "pane.zoom", "-j"}) })
+	one := captureOutput(t, func() { runAll(t, []string{"user", "get", "discover.depth", "-j"}) })
 	if strings.Count(one, `"key"`) != 1 {
 		t.Fatalf("%s", one)
 	}
 	wantErr(t, "unknown user key", "user", "get", "nope")
-	if txt := captureOutput(t, func() { runAll(t, []string{"user", "get", "pane.fit"}) }); strings.TrimSpace(txt) != "pane.fit  fill  (user)" {
+	if txt := captureOutput(t, func() { runAll(t, []string{"user", "get", "discover.depth"}) }); strings.TrimSpace(txt) != "discover.depth  5  (user)" {
 		t.Fatalf("%q", txt)
 	}
 }
@@ -408,29 +406,9 @@ func TestUserGetFanfareSourceBoardOffWins(t *testing.T) {
 	}
 }
 
-func TestUserAlertKindsNoneAndNew(t *testing.T) {
-	userCfgPath(t)
-	runAll(t, []string{"user", "set", "alerts.kinds=none"})
-	if k := getKey(t, "alerts.kinds"); k.Value != "" || k.Source != "user" {
-		t.Fatalf("none: %+v", k)
-	}
-	runAll(t, []string{"user", "set", "alerts.kinds=new,done"})
-	if k := getKey(t, "alerts.kinds"); k.Value != "done,new" {
-		t.Fatalf("new,done: %+v", k)
-	}
-	runAll(t, []string{"user", "set", "alerts.kinds=all"})
-	if k := getKey(t, "alerts.kinds"); !strings.Contains(","+k.Value+",", ",new,") {
-		t.Fatalf("all lacks new: %+v", k)
-	}
-	if k := userKeyByName("alerts.kinds"); !strings.Contains(k.Default, "new") || !strings.Contains(k.allowed(), "none") {
-		t.Fatalf("default %q allowed %q", k.Default, k.allowed())
-	}
-}
-
 func TestUserConfigConcurrentSetsLoseNothing(t *testing.T) {
 	p := userCfgPath(t)
-	sets := [][2]string{{"pane.refresh", "5m"}, {"pane.style", "blocks"}, {"pane.zoom", "2"}, {"pane.fit", "fill"}, {"pane.open", "news"},
-		{"alerts.enabled", "false"}, {"alerts.sound", "false"}, {"status.detail", "full"}, {"discover.depth", "6"}, {"alerts.message", "false"}}
+	sets := [][2]string{{"status.show", "false"}, {"discover.depth", "6"}, {"discover.home", "false"}}
 	var wg sync.WaitGroup
 	errs := make(chan error, len(sets))
 	for _, kv := range sets {
@@ -465,13 +443,13 @@ func TestConfigureSaveKeepsConcurrentChange(t *testing.T) {
 	p := userCfgPath(t)
 	orig, _, _, _ := readUserConfig()
 	nc := cloneUserConfig(orig)
-	_ = setUserKey(&nc, "pane.zoom", "1")
-	runAll(t, []string{"user", "set", "pane.style=kanban"}) // lands while the session is open
+	_ = setUserKey(&nc, "discover.depth", "1")
+	runAll(t, []string{"user", "set", "status.show=false"}) // lands while the session is open
 	if err := saveConfigureDiff(orig, nc, p); err != nil {
 		t.Fatal(err)
 	}
 	c, _, _, _ := readUserConfig()
-	if c.Settings["pane.zoom"] != "1" || c.Settings["pane.style"] != "kanban" {
+	if c.Settings["discover.depth"] != "1" || c.Settings["status.show"] != "false" {
 		t.Fatalf("settings %v", c.Settings)
 	}
 }
@@ -545,4 +523,18 @@ func TestFanfareStatusHintBoardOffSilencesUser(t *testing.T) {
 	if strings.Contains(s, hint) || !strings.Contains(s, "fanfare: enabled (user; board: enabled)") {
 		t.Fatalf("after set enabled=true:\n%s", s)
 	}
+}
+
+func TestUserConfigIgnoresUnknownStoredKeys(t *testing.T) {
+	p := userCfgPath(t)
+	_ = os.MkdirAll(filepath.Dir(p), 0700)
+	if err := os.WriteFile(p, []byte(`{"settings":{"pane.style":"kanban","status.detail":"full","alerts.kinds":"ask","status.show":"false"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runAll(t, []string{"user", "get"})
+	runAll(t, []string{"configure", "--show"})
+	if v := getKey(t, "status.show"); v.Value != "false" {
+		t.Fatalf("%+v", v)
+	}
+	runAll(t, []string{"user", "set", "discover.depth=2"})
 }

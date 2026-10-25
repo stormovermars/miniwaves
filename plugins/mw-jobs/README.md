@@ -13,10 +13,21 @@ Files live next to the job's news draft (`<news.out>/jobs.md` and `status.md`; `
 - `/mw-jobs [ID]` regenerates `jobs.md` and shows it in the file pane (terminal: prints the path).
 - `/mw-news [ID]` regenerates the news draft and shows it.
 - `/mw-publish [ID]` publishes `jobs.md` + `status.md` as one private artifact `mw <job> board`; the URL is kept in `jobs.artifact-url` next to `jobs.md`, so later runs update the same artifact.
+- `/mw-status` explains the chat-bar line with the live numbers, lists what needs you, shows your settings and every installed `/mw` command.
 - `/mw-fanfare [next | on | off | use NAME | test [milestone|finale] | stop]` the fanfare settings (the fanfare itself lives in the mw CLI).
 
 ## Hooks
 
 SessionStart and PostToolUse on Bash commands that run `mw ` quietly refresh `jobs.md` and `status.md` (`hooks/refresh.sh`; silent, fast, failures ignored). No notifications, no toasts.
+
+## Status line
+
+`scripts/statusline.sh` (a thin wrapper around `mw status --line`) prints `mw:N2R1B1:12/40` for the Claude Code status bar: N needs you, R awaiting review, B blocked (each hidden at zero), then open/all items. Nothing is printed outside a board or with `mw user set status.show=false`. To switch it on, add this to `~/.claude/settings.json` (the plugin never edits it):
+
+```json
+"statusLine": {"type": "command", "command": "<abs path to the plugin>/scripts/statusline.sh"}
+```
+
+or simply `"command": "mw status --line"`. The wrapper passes `--link`: the whole line is an OSC 8 hyperlink, so a click opens the published artifact (the URL in `jobs.artifact-url`) or else `jobs.md` (Cmd+click on macOS, in terminals that support OSC 8). Plain `mw status --line` is not linked. For the explanation in chat, use `/mw-status`.
 
 Settings live in the CLI: `mw configure`. Requires the `mw` binary (the `mw` plugin installs it).

@@ -135,6 +135,9 @@ func run(args []string) error {
 	if args[0] == "boards" {
 		return boardsCommand(args[1:])
 	}
+	if args[0] == "status" { // read-only, silent on any problem, always exit 0
+		return statusCommand(args[1:])
+	}
 	path, err := findWorkspace()
 	if err != nil {
 		if args[0] == "dirs" {
@@ -323,6 +326,11 @@ func usage(topic string) error {
 		"description": `mw description [-j]
 Explain what miniwaves does and show the human and coding-assistant workflows.
 Works before initialization. Output is TOON by default; -j selects JSON.`,
+		"status": `mw status --line [--link]
+One short line for the Claude Code status bar: "mw:N2R1B1:12/40" = needs you, awaiting review, blocked (each hidden at 0),
+then open/all items. Counts the nearest board (walking up from the cwd; or from .workspace.current_dir / .cwd of status-line JSON
+on stdin); --link wraps the line in an OSC 8 hyperlink to the published page (jobs.artifact-url) or the file:// URL of jobs.md;
+prints nothing outside a board, when status.show is false, or on any error; never writes; always exits 0.`,
 		"boards": `mw boards [DIR] [--depth N] [--up] [-j]
 Read-only discovery of mw boards: scans DIR (default .) down to --depth (1..6; default: your discover.depth, 4) for
 .miniwaves.json; --up also adds the nearest ancestor board, never looking inside macOS-protected
@@ -443,15 +451,14 @@ mw user set KEY=VALUE...
 mw user fanfare-defaults
 Per-user choices, kept out of the committed board, in os.UserConfigDir()/miniwaves/mw-user.json (MW_USER_CONFIG overrides the path).
 Works without a board. get lists every settings key (or one) with its effective value and source (default|user); -j:
-{"keys":[{"key","value","default","source","group","choices"}]}. Keys: pane.refresh, pane.style, pane.zoom, pane.fit, pane.open,
-alerts.enabled, alerts.kinds, alerts.message, alerts.popup, alerts.sound, fanfare.enabled, fanfare.use, status.show, status.detail,
+{"keys":[{"key","value","default","source","group","choices"}]}. Keys: fanfare.enabled, fanfare.use, status.show,
 discover.home, discover.depth (see mw configure). Also alerts.on (comma list of event names) and alerts.exec (a JSON argv
 array, never run through a shell). fanfare.enabled overrides the board's fanfare enabled. An empty VALUE unsets a key.
 On Unix a file that is group- or world-writable is refused (chmod 600); on Windows there is no mode check.
 fanfare-defaults sets fanfare.enabled=true and fanfare.use=all only where they are unset and never overwrites (install and update run it; MW_NO_FANFARE=1 or MW_NO_PLUGINS=1 skips).
-Example: mw user set fanfare.enabled=false pane.style=kanban`,
+Example: mw user set fanfare.enabled=false status.show=false`,
 		"configure": `mw configure [--show [-j]] | mw configure KEY=VALUE...
-Walk your per-user settings (Pane, Alerts, Fanfare, Chat bar, Discovery) with plain prompts: Enter keeps the value, a number
+Walk your per-user settings (Fanfare, Chat bar, Discovery) with plain prompts: Enter keeps the value, a number
 picks a choice, d resets to the default, t test-plays a fanfare. A summary and Save/Discard prompt end the walk; nothing is
 written before Save. --show prints the settings like mw user get. KEY=VALUE... validates and saves without prompting.
 Without a terminal on stdin it prints the settings and a hint, and exits 0. Works without a board.`,
@@ -590,6 +597,7 @@ TOON by default; use -j for JSON and -v for more detail.
 
 Usage:
   mw description [-j]
+  mw status --line                      one line for the Claude Code status bar (mw:N2R1B1:12/40)
   mw boards [DIR] [--depth N] [--up] [-j]
   mw migrate [--dry-run] [PATH]
   mw version [-j]
