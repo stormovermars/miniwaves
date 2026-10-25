@@ -12,15 +12,6 @@
       "version": "0.3.9"
     },
     {
-      "name": "tidewatch",
-      "source": "./plugins/tidewatch",
-      "description": "Retired: run mw update --plugins to move to mw-jobs.",
-      "version": "0.3.9",
-      "author": {
-        "name": "stormovermars"
-      }
-    },
-    {
       "name": "mw-jobs",
       "source": "./plugins/mw-jobs",
       "description": "mw jobs and news as Markdown files in the Claude file pane.",

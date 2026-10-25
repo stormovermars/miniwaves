@@ -541,7 +541,7 @@ Upgrading from 0.3.2 or 0.3.3: after `mw update`, run `mw update --plugins` once
 - New `mw configure` (Fanfare, Chat bar, Discovery; Save or Discard; `--show [-j]`; `KEY=VALUE...` saves without prompting) and `mw user get [KEY] [-j]` (value, default, source `default|user|board`, group, choices). Writes to `mw-user.json` are locked.
 - Fanfare: `mw user fanfare-defaults` (install, update) sets `fanfare.enabled=true` and `fanfare.use=all` only where unset (`MW_NO_FANFARE=1` or `MW_NO_PLUGINS=1` skips). A board that runs `mw fanfare set enabled=false` wins over the user layer; `mw fanfare use NAME` does not count as that. With no fanfare songs, a built-in fanfare plays.
 - `alerts.kinds` accepts `new`, `none` and `all`.
-- Plugins: `mw-jobs` is the only pane plugin; `mw-watch` (formerly `tidewatch`) is retired. `install.sh`, `install.ps1` and `mw update` install `mw` and `mw-jobs` first and only then uninstall `tidewatch` and `mw-watch`. A stub `tidewatch` plugin for one release tells users to run `mw update --plugins`.
+- Plugins: `mw-jobs` is the only pane plugin; `mw-watch` (formerly `tidewatch`) is retired. `install.sh`, `install.ps1` and `mw update` install `mw` and `mw-jobs` first and only then uninstall `tidewatch` and `mw-watch`. The `tidewatch` plugin is gone from the marketplace; `mw update --plugins` removes an installed copy.
 - mw-jobs: alerts show in the pane and as a toast plus a ping, never as macOS notification banners; alert text is `<job> ▸ <What>: <ref> <title>`; the chat-bar status shows per-job segments with zero setup; news releases are called issues in the pane (`mw news --release` is unchanged).
 
 ### 0.3.3

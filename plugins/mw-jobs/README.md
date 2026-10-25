@@ -13,8 +13,8 @@ Files live next to the job's news draft (`<news.out>/jobs.md` and `status.md`; `
 - `/mw-jobs [ID]` regenerates `jobs.md` and shows it in the file pane (terminal: prints the path).
 - `/mw-news [ID]` regenerates the draft tabloid edition (what happened since the last published one, proof, what is coming) and shows it.
 - `/mw-publish ID` publishes the tabloid as a private artifact (local proof images uploaded as artifact assets), then cuts the edition (`mw news --release`) so the next draft starts from it; the URL is kept in `jobs.artifact-url` next to `jobs.md`, so later runs update the same artifact.
-- `/mw-status` runs `mw status --explain`: the chat-bar line with live numbers, what needs you, your settings, versions and every installed command.
-- `/mw-fanfare [ARGS]` runs `mw fanfare ARGS` (settings, `set`, `use`, `sets`, `test`, `stop`).
+- `/mw-status` runs `mw status --explain` (the chat-bar line with live numbers, what needs you, your settings) and adds the plugin versions from `claude plugin list`.
+- `/mw-fanfare [ARGS]` runs `mw fanfare ARGS` (`on`, `off`, `stop`, `test`, `use`, `sets`, `set`; none shows the settings).
 
 ## Hooks
 
