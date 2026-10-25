@@ -393,6 +393,20 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		return newsCutRelease(o, format, jobs[0].model, jobs[0].relDir, jobs[0].nums, jobs[0].prevNum, jobs[0].nextNum, o["force"] == "true", jobs[0].jobsAbs)
 	}
 
+	// liveJobs drops the quiet jobs of a multi-job md/html edition, unless every job is quiet
+	liveJobs := func(js []*job) []*job {
+		var live []*job
+		for _, j := range js {
+			if !tabloidQuiet(j.model) {
+				live = append(live, j)
+			}
+		}
+		if len(live) == 0 || len(js) == 1 || format == "text" || format == "json" {
+			return js
+		}
+		return live
+	}
+
 	if plain { // stdout by default; a file only with -o PATH
 		out := ""
 		if o["out"] != "" && !stdout {
@@ -400,6 +414,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 				return err
 			}
 		}
+		jobs := liveJobs(jobs)
 		docs := make([]string, len(jobs))
 		for i, j := range jobs {
 			if docs[i], err = newsRender(format, j.model, j.nums, tabloidContext(out, j.relDir, j.jobsAbs)); err != nil {
@@ -436,6 +451,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	}
 	// combine renders several jobs into one document for target
 	combine := func(target string, js []*job) string {
+		js = liveJobs(js)
 		if format == "html" {
 			var blocks []string
 			for _, j := range js {

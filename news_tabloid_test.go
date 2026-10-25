@@ -35,6 +35,7 @@ func TestTabloidMasthead(t *testing.T) {
 func TestTabloidLeadPriority(t *testing.T) {
 	rel, ms, plain := di("a", "TSK-1", "Cut release 1.2"), di("a", "WAV-1", "Search"), di("b", "TSK-2", "Fix x")
 	ms.Done, ms.Total = 3, 3
+	rel.Release = true // release work is detected by its release-notes file, never by the title
 	need := di("c", "TSK-9", "Pick a name")
 	need.Note = "A or B?"
 	cases := []struct {
@@ -131,8 +132,8 @@ func TestTabloidProofSelection(t *testing.T) {
 	logOnly.Proof = []newsProof{file}
 	rev := di("a", "TSK-3", "Review me")
 	rev.Proof = []newsProof{file}
-	rel := di("a", "TSK-4", "Release 2.0")
-	rel.Proof = []newsProof{file}
+	rel := di("a", "TSK-4", "Cut 2.0")
+	rel.Proof, rel.Release = []newsProof{file, {Path: filepath.ToSlash(filepath.Join(dir, "ev", "extra.txt"))}}, true
 	m.Happened.Done = []newsItem{shot, logOnly, rel}
 	m.Now.Review = []newsItem{rev}
 	for i := 0; i < 8; i++ {
@@ -147,9 +148,15 @@ func TestTabloidProofSelection(t *testing.T) {
 	if n := strings.Count(md, "!["); n != tabloidImageCap {
 		t.Errorf("%d images, want %d", n, tabloidImageCap)
 	}
-	// review and release items show their files; a done item with only a log does not
-	if !strings.Contains(md, "**a/TSK-3**") || !strings.Contains(md, "**a/TSK-4**") || strings.Contains(md, "**a/TSK-2** Log only\n\n- [") {
+	// review items show their files; release work links one; a done item with only a log does not
+	if !strings.Contains(md, "**a/TSK-3**") || !strings.Contains(md, "**a/TSK-4**") || strings.Contains(md, "**a/TSK-2** Log only\n\n") {
 		t.Errorf("selection:\n%s", md)
+	}
+	if strings.Contains(md, "extra.txt") || strings.Count(md, `[log\.txt]`) != 2 { // review item + the one release link
+		t.Errorf("release work must link one file:\n%s", md)
+	}
+	if strings.Contains(md, "TSK-1** Shot\n\n- [") { // the shot's text file is not proof
+		t.Errorf("a plain text file is not proof:\n%s", md)
 	}
 	pr := md[strings.Index(md, "### Proof"):]
 	if strings.Index(pr, "a/TSK-3") > strings.Index(pr, "a/TSK-1** Shot") {
@@ -216,5 +223,75 @@ func TestTabloidEscaping(t *testing.T) {
 	h := bulletinHTMLBlock(m, nil, tabloidCtx{})
 	if strings.Contains(h, "<i>") || !strings.Contains(h, "&lt;i&gt;x&lt;/i&gt;") || strings.Contains(h, "<bad>") {
 		t.Errorf("html not escaped:\n%s", h)
+	}
+}
+
+func TestTabloidLeadIsNewestRelease(t *testing.T) {
+	m := tabModel()
+	newer, older := di("a", "CHR-2", "Cut 0.3.9"), di("a", "CHR-1", "Cut 0.3.8")
+	newer.Release, older.Release = true, true
+	newer.Since, older.Since = "2026-10-25T09:00:00Z", "2026-10-23T09:00:00Z"
+	m.Happened.Done = []newsItem{newer, older} // the model lists the newest first
+	if md := renderTabloidMD(m, nil, tabloidCtx{}); !strings.Contains(md, "\n## Done: Cut 0.3.9\n") {
+		t.Errorf("the newest release leads:\n%s", md)
+	}
+	if releaseWork(Item{Kind: "bug", Title: "Release 1", Evidence: []string{"release.txt 3"}}) || releaseWork(Item{Kind: "chore", Title: "Release 1"}) {
+		t.Error("release work needs a chore with a release-notes file")
+	}
+	if !releaseWork(Item{Kind: "chore", Title: "x", Evidence: []string{"release.txt 3"}}) || !releaseWork(Item{Kind: "chore", Evidence: []string{"sub/Release-Notes.md 9"}}) {
+		t.Error("a chore with release.txt or release-notes.md is release work")
+	}
+}
+
+func TestTabloidNoByLocalAndFullTitles(t *testing.T) {
+	m := tabModel()
+	it := di("a", "TSK-1", "Done by the implicit session")
+	it.By = localName
+	m.Happened.Done = []newsItem{it}
+	long := strings.Repeat("word ", 30)
+	m.Now.Counts.Doing = 1
+	m.Now.Doing = []newsItem{di("a", "TSK-2", long)}
+	md := renderTabloidMD(m, nil, tabloidCtx{})
+	if strings.Contains(md, "by local") {
+		t.Errorf("by local shown:\n%s", md)
+	}
+	if strings.Contains(md, "~") {
+		t.Errorf("tilde truncation:\n%s", md)
+	}
+	if !strings.Contains(md, "…") || !strings.Contains(md, "word word word") {
+		t.Errorf("coming up wants long titles cut with …:\n%s", md)
+	}
+}
+
+func TestTabloidQuietJobsOmitted(t *testing.T) {
+	quiet, busy := tabModel(), tabModel()
+	quiet.Job.Title, busy.Job.Title = "Idle", "Busy"
+	quiet.Release.Changes = 0
+	busy.Happened.Done = []newsItem{di("a", "TSK-1", "Shipped")}
+	if tabloidQuiet(busy) || !tabloidQuiet(quiet) {
+		t.Fatal("quiet rule")
+	}
+	busy.Now.Counts.Doing = 1
+	if tabloidQuiet(busy) {
+		t.Fatal("work in progress is not quiet")
+	}
+}
+
+func TestNewsMultiJobOmitsQuietJobs(t *testing.T) {
+	inTempDir(t)
+	runAll(t, []string{"init", "Two"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"}, []string{"tenant", "add", "b", "B"},
+		[]string{"jobs", "enable", "busy", "-t", "two"}, []string{"jobs", "enable", "idle", "-t", "b"})
+	all := captureOutput(t, func() { runAll(t, []string{"news", "-o", "-"}) })
+	if !strings.Contains(all, "busy News") || !strings.Contains(all, "idle News") {
+		t.Errorf("every job quiet: all stay:\n%s", all)
+	}
+	runAll(t, []string{"add", "task", "work", "-S", "ready", "-t", "two"}, []string{"start", "TSK-001", "-t", "two"}, []string{"done", "TSK-001", "ok", "--no-evidence", "x", "-t", "two"})
+	some := captureOutput(t, func() { runAll(t, []string{"news", "-o", "-"}) })
+	if !strings.Contains(some, "busy News") || strings.Contains(some, "idle News") {
+		t.Errorf("the quiet job must be omitted:\n%s", some)
+	}
+	one := captureOutput(t, func() { runAll(t, []string{"news", "--job", "idle", "-o", "-"}) })
+	if !strings.Contains(one, "idle News") {
+		t.Errorf("a single requested job always shows:\n%s", one)
 	}
 }

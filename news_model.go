@@ -59,6 +59,8 @@ type newsItem struct {
 	Total int `json:"total,omitempty"`
 	// evidence files of a done or review item (absolute slash path; image marks png/jpg/jpeg/gif/webp), at most 4
 	Proof []newsProof `json:"proof,omitempty"`
+	// release work: a done chore that recorded a release-notes file (release.txt, release-notes.md ...)
+	Release bool `json:"release,omitempty"`
 }
 
 // newsSprintItem is a member of the sprint with its state (todo, doing, review, blocked, done); needs marks an
@@ -830,6 +832,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 				tick(&x, it)
 				if e.Action == "done" && it.Kind != "wave" {
 					x.Proof = proofFor(w, t, it)
+					x.Release = releaseWork(it)
 					x.Milestone = it.Wave
 					x.MilestoneTitle = waveTitle[t.Slug+"/"+it.Wave]
 				}

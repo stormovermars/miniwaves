@@ -32,7 +32,33 @@ type newsProof struct {
 
 var proofImageExt = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true}
 
-var releaseTitleRe = regexp.MustCompile(`(?i)\brelease[ds]?\b|\bshipp(ed|ing)\b`)
+var releaseNotesRe = regexp.MustCompile(`(?i)^(release|releases|release[-_ ]?notes|releasenotes)$`)
+
+// releaseWork reports release work: a chore that recorded a release-notes file as evidence. The title is never read.
+func releaseWork(it Item) bool {
+	if it.Kind != "chore" {
+		return false
+	}
+	for _, e := range it.Evidence {
+		name := e
+		if i := strings.LastIndex(e, " "); i > 0 {
+			name = e[:i]
+		}
+		name = filepath.Base(filepath.FromSlash(name))
+		if releaseNotesRe.MatchString(strings.TrimSuffix(name, filepath.Ext(name))) {
+			return true
+		}
+	}
+	return false
+}
+
+// byShown is who did it, left out for the implicit local session.
+func byShown(by string) string {
+	if by == localName {
+		return ""
+	}
+	return by
+}
 
 // proofFor lists the evidence files an item recorded at done (kept: images first, at most tabloidProofItem).
 // Files that are gone are left out.
@@ -114,8 +140,8 @@ func tline(it newsItem, tail string) tabloidLine {
 
 func itemTail(it newsItem) string {
 	var p []string
-	if it.By != "" {
-		p = append(p, "by "+bc(it.By))
+	if by := byShown(it.By); by != "" {
+		p = append(p, "by "+bc(by))
 	}
 	if d := bulletinDate(it.Since); d != "-" {
 		p = append(p, d)
@@ -151,7 +177,7 @@ func namesOf(items []newsItem, n int) string {
 			p = append(p, fmt.Sprintf("+%d", len(items)-n))
 			break
 		}
-		p = append(p, it.Tenant+"/"+it.ID+" "+bulletinCut(bc(it.Title), 40))
+		p = append(p, it.Tenant+"/"+it.ID+" "+compactText(it.Title, 80))
 	}
 	return strings.Join(p, "; ")
 }
@@ -184,7 +210,7 @@ func newsTabloid(m *newsModel, releases []int, c tabloidCtx) tabloidDoc {
 	if m.Release.Changes > 0 {
 		var lead *newsItem
 		for i := range h.Done {
-			if releaseTitleRe.MatchString(h.Done[i].Title) {
+			if h.Done[i].Release { // the list is newest first: the newest release work leads
 				lead = &h.Done[i]
 				break
 			}
@@ -302,14 +328,24 @@ func newsTabloid(m *newsModel, releases []int, c tabloidCtx) tabloidDoc {
 	}
 	d.NeedsMore = max(m.Now.Counts.Needs-len(d.Needs), 0)
 
-	// proof: items awaiting review first, then release work, then the rest of the done items
-	var cand []newsItem
+	// proof is only for things worth seeing: images, and the files of items awaiting review. Release work adds
+	// one link (its release-notes file); a plain text file of an ordinary done item is never proof.
+	type candidate struct {
+		it   newsItem
+		mode int // proofReview: every file; proofRelease: images and one file; proofImages: images only
+	}
+	const (
+		proofReview = iota
+		proofRelease
+		proofImages
+	)
+	var cand []candidate
 	seen := map[string]bool{}
-	add := func(l []newsItem, f func(newsItem) bool) {
+	add := func(l []newsItem, mode int, f func(newsItem) bool) {
 		for _, it := range l {
 			if !seen[key(it)] && len(it.Proof) > 0 && f(it) {
 				seen[key(it)] = true
-				cand = append(cand, it)
+				cand = append(cand, candidate{it, mode})
 			}
 		}
 	}
@@ -321,13 +357,14 @@ func newsTabloid(m *newsModel, releases []int, c tabloidCtx) tabloidDoc {
 		}
 		return false
 	}
-	any := func(newsItem) bool { return true }
-	add(m.Now.Review, any)
-	add(h.Done, func(it newsItem) bool { return releaseTitleRe.MatchString(it.Title) })
-	add(h.Done, hasImg)
+	add(m.Now.Review, proofReview, func(newsItem) bool { return true })
+	add(h.Done, proofRelease, func(it newsItem) bool { return it.Release })
+	add(h.Done, proofImages, hasImg)
 	imgs, files := 0, 0
-	for _, it := range cand {
+	for _, cd := range cand {
+		it := cd.it
 		pi := tabloidProofItem{Line: tline(it, "")}
+		itemFiles := 0
 		for _, p := range it.Proof {
 			if !proofSafe(p.Path) {
 				continue
@@ -338,8 +375,9 @@ func newsTabloid(m *newsModel, releases []int, c tabloidCtx) tabloidDoc {
 			case p.Image && imgs < tabloidImageCap:
 				imgs++
 				pi.Images = append(pi.Images, tabloidImg{it.ID + " " + name, ref})
-			case !p.Image && files < tabloidFileCap:
+			case !p.Image && cd.mode != proofImages && files < tabloidFileCap && (cd.mode == proofReview || itemFiles == 0):
 				files++
+				itemFiles++
 				pi.Files = append(pi.Files, tabloidImg{name, ref})
 			}
 		}
@@ -366,7 +404,7 @@ func newsTabloid(m *newsModel, releases []int, c tabloidCtx) tabloidDoc {
 				p = append(p, fmt.Sprintf("+%d", len(co.Milestones.Open)-i))
 				break
 			}
-			p = append(p, fmt.Sprintf("%s/%s %s %d/%d", ms.Tenant, ms.ID, bulletinCut(bc(ms.Title), 40), ms.Done, ms.Total))
+			p = append(p, fmt.Sprintf("%s/%s %s %d/%d", ms.Tenant, ms.ID, compactText(ms.Title, 80), ms.Done, ms.Total))
 		}
 		d.Coming = append(d.Coming, "Milestones: "+strings.Join(p, "; "))
 	}
@@ -390,10 +428,16 @@ func newsTabloid(m *newsModel, releases []int, c tabloidCtx) tabloidDoc {
 	return d
 }
 
+// tabloidQuiet is a job with nothing new since the last edition and nothing needing attention or running.
+func tabloidQuiet(m *newsModel) bool {
+	c := m.Now.Counts
+	return m.Release.Changes == 0 && c.Needs == 0 && c.Review == 0 && c.Doing == 0
+}
+
 func onBy(it newsItem) string {
 	var s string
-	if it.By != "" {
-		s += " by " + bc(it.By)
+	if by := byShown(it.By); by != "" {
+		s += " by " + bc(by)
 	}
 	if dt := bulletinDate(it.Since); dt != "-" {
 		s += " on " + dt

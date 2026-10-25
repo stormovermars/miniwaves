@@ -38,10 +38,10 @@ blockquote{margin:1em 0;padding:.5em 1em;background:var(--box);border-left:4px s
 </ul></blockquote>
 <h3>Coming up</h3>
 <ul>
-<li>In progress (100): stress/DNG-0001 DNG 1 long title long title long title ~; stress/DNG-0002 DNG 2 long title long title long title ~; +48</li>
+<li>In progress (100): stress/DNG-0001 DNG 1 long title long title long title long title long title long title long ti…; stress/DNG-0002 DNG 2 long title long title long title long title long title long title long ti…; +48</li>
 <li>Awaiting review: 100</li>
-<li>Up next (200 ready): stress/ASK-0001 ASK 1 long title long title long title ~; stress/ASK-0002 ASK 2 long title long title long title ~; +8</li>
-<li>Milestones: stress/WAV-0001 WAV 1 long title long title long title ~ 0/0; stress/WAV-0002 WAV 2 long title long title long title ~ 0/0; +198</li>
+<li>Up next (200 ready): stress/ASK-0001 ASK 1 long title long title long title long title long title long title long ti…; stress/ASK-0002 ASK 2 long title long title long title long title long title long title long ti…; +8</li>
+<li>Milestones: stress/WAV-0001 WAV 1 long title long title long title long title long title long title long ti… 0/0; stress/WAV-0002 WAV 2 long title long title long title long title long title long title long ti… 0/0; +198</li>
 <li>Blocked: 100</li>
 </ul>
 <hr>
