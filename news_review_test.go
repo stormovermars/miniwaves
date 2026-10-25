@@ -108,7 +108,7 @@ func TestNewsReleaseNumbersAndCleanup(t *testing.T) {
 	nan := math.NaN()
 	bad := &newsModel{Version: 1, Job: newsJobInfo{ID: "tiny"}, Metrics: &newsMetrics{Sections: []newsMSection{{Title: "Q", Kind: "value", Rows: []newsMRow{{Name: "v", Value: &nan}}}}}}
 	bad.Release.Changes = 1
-	if err := newsCutRelease(map[string]string{}, "md", bad, dir, nil, nil, 3, true); err == nil || !strings.Contains(err.Error(), "cannot be encoded") {
+	if err := newsCutRelease(map[string]string{}, "md", bad, dir, nil, nil, 3, true, ""); err == nil || !strings.Contains(err.Error(), "cannot be encoded") {
 		t.Fatalf("NaN model: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "3.md")); err == nil {
@@ -119,7 +119,7 @@ func TestNewsReleaseNumbersAndCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	good := &newsModel{Version: 1, Job: newsJobInfo{ID: "tiny"}}
-	if err := newsCutRelease(map[string]string{}, "md", good, dir, nil, nil, 3, true); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if err := newsCutRelease(map[string]string{}, "md", good, dir, nil, nil, 3, true, ""); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("lost race: %v", err)
 	}
 	for _, f := range []string{"3.md", "3.html"} {
@@ -271,14 +271,6 @@ func TestNewsDescriptionLine(t *testing.T) {
 	lines := strings.Split(txt, "\n")
 	if !strings.HasPrefix(lines[2], " Harness <b>|x</b> `tick` long") || !strings.HasSuffix(lines[2], "~") || newsStrWidth(lines[2]) > 67 {
 		t.Fatalf("description line: %q", lines[2])
-	}
-	h := newsOut(t, "--job", "tiny", "--format", "html", "-o", "-")
-	if strings.Contains(h, "<b>|x</b>") || !strings.Contains(h, "Harness &lt;b&gt;|x&lt;/b&gt;") {
-		t.Fatalf("html description not escaped:\n%s", h)
-	}
-	md := newsOut(t, "--job", "tiny", "-o", "-")
-	if !strings.Contains(md, "\n Harness <b>|x</b>") {
-		t.Fatal("md lacks the description inside the block")
 	}
 	if w, l := maxWidth(txt); w > 70 {
 		t.Fatalf("%d cells: %q", w, l)

@@ -128,6 +128,10 @@ mw's text, md and html news, and the panes in gopher style, are plain-text bulle
 - **The published page stays as it is (Sir, 2026-10-22).** A job's own page at `news_url` (tiny: the claude.ai news page the news desk publishes) belongs to the desk and keeps its design. mw never replaces it, and the gopher look doesn't apply to it. The ↗ button keeps opening it. mw's own `--format html` is the bulletin, for jobs that have no page of their own.
 - **The jobs pane is not a bulletin.** It keeps its live dashboard look.
 
+### Tabloid edition (Sir, 2026-10-25, TSK-074)
+
+The md and html renderings are a tabloid edition, not the bulletin: "a tabloid-like summary of what happened since the last tabloid published; show published proof if the user should see it; also what is planned or queued, in short. `mw jobs` is about what is running now." The window is the existing one (since the latest release, so the draft is edition N+1). Model change: items in `happened.done` and `now.review` carry `proof` (`[{path, image}]`, absolute slash paths of the evidence files, images first, at most 4; absent without evidence). Release counts and other fields are unchanged, and `text` and `json` keep their shape. Lead story priority: release work done (title mentions release or shipped), milestone closed, tenant with the most items done, item that needs Sir, a count of what else happened. Proof is shown for review items, release work and done items with image evidence, at most 6 images. See USAGE.md "News".
+
 ### Alerts
 
 Alerts stay in the panes (per type, deduplicated, one path). A new release counts as one alert (alertNew). Draft changes raise no alerts, and a metric drop counts as an alertMilestone-class alert.

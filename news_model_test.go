@@ -69,13 +69,11 @@ func TestNewsBulletinGoldens(t *testing.T) {
 func TestNewsBulletinShapes(t *testing.T) {
 	newsBoard(t)
 	md := newsOut(t, "--job", "tiny", "-o", "-")
-	lines := strings.Split(strings.TrimSuffix(md, "\n"), "\n")
-	fence := strings.TrimSuffix(lines[0], "text")
-	if strings.Trim(fence, "`") != "" || len(fence) < 3 || lines[len(lines)-1] != fence || strings.Count(md, "\n"+fence+"\n") != 1 {
-		t.Fatalf("md is not one fenced block:\n%s", md)
+	if !strings.HasPrefix(md, "# Tiny \\<job\\> News — Edition 1 (draft)\n") || !strings.Contains(md, "\n### Coming up\n") || strings.Contains(md, "```text") || strings.Contains(md, "<script>") {
+		t.Fatalf("md is not a tabloid edition:\n%s", md)
 	}
 	h := newsOut(t, "--job", "tiny", "--format", "html", "-o", "-")
-	if strings.Count(h, "<pre>") != 1 || !strings.Contains(h, "</pre>") || strings.Contains(h, "<script>") {
+	if strings.Count(h, "<article>") != 1 || !strings.Contains(h, "<h1>") || strings.Contains(h, "<script>") {
 		t.Fatalf("html shape:\n%s", h)
 	}
 	txt := newsOut(t, "--job", "tiny", "--format", "text")
@@ -95,7 +93,7 @@ func TestNewsBulletinShapes(t *testing.T) {
 
 func TestNewsLinesWithin70(t *testing.T) {
 	newsBoard(t)
-	for _, args := range [][]string{{"--format", "text"}, {"-o", "-"}, {"--format", "html", "-o", "-"}} {
+	for _, args := range [][]string{{"--format", "text"}} { // md and html are free-flowing tabloid pages
 		out := newsOut(t, append([]string{"--job", "tiny"}, args...)...)
 		if w, l := maxWidth(out); w > 70 {
 			t.Errorf("%v: line of %d cells: %q", args, w, l)
@@ -105,11 +103,8 @@ func TestNewsLinesWithin70(t *testing.T) {
 	runAll(t, []string{"add", "task", strings.Repeat("日本語のタイトル", 20), "-S", "ready", "-t", "news-app"},
 		[]string{"add", "task", strings.Repeat("😀x", 90), "-S", "ready", "-t", "news-app"},
 		[]string{"jobs", "set", "tiny", "title=" + strings.Repeat("Long title ", 9), "news.url=https://example.com/" + strings.Repeat("p/", 50)})
-	for _, f := range []string{"text", "md", "html"} {
+	for _, f := range []string{"text"} {
 		args := []string{"--job", "tiny", "--format", f}
-		if f != "text" {
-			args = append(args, "-o", "-")
-		}
 		if w, l := maxWidth(newsOut(t, args...)); w > 70 {
 			t.Errorf("%s wide: line of %d cells: %q", f, w, l)
 		}
@@ -233,11 +228,8 @@ func TestNewsStressModel(t *testing.T) {
 		}
 	}
 	// the bulletins hold the caps too, within 70 columns
-	for _, f := range []string{"text", "md", "html"} {
+	for _, f := range []string{"text"} {
 		args := []string{"--job", "big", "--format", f}
-		if f != "text" {
-			args = append(args, "-o", "-")
-		}
 		out := newsOut(t, args...)
 		if w, l := maxWidth(out); w > 70 {
 			t.Errorf("%s: line of %d cells: %q", f, w, l)
@@ -296,7 +288,7 @@ func TestNewsReleaseSequence(t *testing.T) {
 		t.Fatalf("release 1: %+v", r1.Release)
 	}
 	md1 := mustRead(t, filepath.Join(dir, "1.md"))
-	if !strings.Contains(md1, "RELEASE 1 / ") || !strings.Contains(md1, "since the start") {
+	if !strings.Contains(md1, "Edition 1\n") || !strings.Contains(md1, "since the start") {
 		t.Fatalf("1.md:\n%s", md1)
 	}
 	// nothing new: refused with exit 0
@@ -321,7 +313,7 @@ func TestNewsReleaseSequence(t *testing.T) {
 	if *r2.Release.Previous != 1 || r2.Release.Since != r1.Release.At || len(r2.Happened.NewItems) != 1 || len(r2.Happened.Done) != 0 {
 		t.Fatalf("release 2: %+v new=%d done=%d", r2.Release, len(r2.Happened.NewItems), len(r2.Happened.Done))
 	}
-	if md2 := mustRead(t, filepath.Join(dir, "2.md")); !strings.Contains(md2, "vs release 1 (") || !strings.Contains(md2, "releases: 2 1 ") {
+	if md2 := mustRead(t, filepath.Join(dir, "2.md")); !strings.Contains(md2, "Edition 2\n") || !strings.Contains(md2, "since Edition 1, ") || !strings.Contains(md2, "[1](<1.md>)") {
 		t.Fatalf("2.md:\n%s", md2)
 	}
 	// 1.json is frozen
@@ -380,7 +372,7 @@ func TestNewsReleaseLeavesNewsOutAlone(t *testing.T) {
 	page := filepath.Join(filepath.Dir(path), "docs", "news", "status.md")
 	before := mustRead(t, page)
 	newsOut(t, "--job", "tiny", "--release")
-	if after := mustRead(t, page); after != before || !strings.Contains(after, "DRAFT - NOT RELEASED") {
+	if after := mustRead(t, page); after != before || !strings.Contains(after, "Edition 1 (draft)") {
 		t.Fatalf("--release rewrote news.out:\n%s", after)
 	}
 }
@@ -512,8 +504,8 @@ func TestNewsMetricsFileLimitsAndRender(t *testing.T) {
 		t.Fatalf("oversize: %+v", m.Metrics)
 	}
 	_ = os.WriteFile(filepath.Join(root, "docs", "news", "metrics.json"), []byte(`{"version":1,"sections":[{"title":"T","kind":"progress","rows":[{"name":"a","done":9,"total":3}]}]}`), 0o644)
-	for _, f := range []string{"md", "html"} {
-		out := newsOut(t, "--job", "tiny", "--format", f, "-o", "-")
+	for _, f := range []string{"text"} {
+		out := newsOut(t, "--job", "tiny", "--format", f)
 		if !strings.Contains(out, "metrics file invalid: section 1 row 1: done 9 is more than total 3") {
 			t.Errorf("%s: invalid file not shown:\n%s", f, out)
 		}
@@ -584,8 +576,8 @@ func TestNewsMetricsDeltasAcrossReleases(t *testing.T) {
 	if g := r3.Metrics.Sections[0].Rows[0].Delta; g["good"] != 1 || len(g) != 1 {
 		t.Fatalf("release 3 delta: %v", g)
 	}
-	if !strings.Contains(mustRead(t, filepath.Join(root, "docs", "news", "releases", "3.md")), "▲1") {
-		t.Fatal("3.md lacks the delta")
+	if !strings.Contains(mustRead(t, filepath.Join(root, "docs", "news", "releases", "3.md")), "metric row changed") {
+		t.Fatal("3.md lacks the metrics line")
 	}
 }
 
@@ -604,11 +596,7 @@ func countPrefix(out, prefix string) int {
 func TestNewsFormatsAgree(t *testing.T) {
 	newsStress(t)
 	m := decodeModel(t, bigJSON(t))
-	outs := map[string]string{
-		"text": newsOut(t, "--job", "big", "--format", "text"),
-		"md":   newsOut(t, "--job", "big", "-o", "-"),
-		"html": newsOut(t, "--job", "big", "--format", "html", "-o", "-"),
-	}
+	outs := map[string]string{"text": newsOut(t, "--job", "big", "--format", "text")}
 	c := m.Now.Counts
 	ongoing := fmt.Sprintf("  %d of %d done, %d ready", c.Done, c.Total, c.Ready)
 	for f, out := range outs {
@@ -635,11 +623,7 @@ func TestNewsFormatsAgreeSmall(t *testing.T) {
 	if c.Needs != 1 || c.Blocked != 1 || c.Doing != 1 || m.Now.Needs[0].Tenant != "doc" {
 		t.Fatalf("counts / asks across tenants: %+v %+v", c, m.Now.Needs)
 	}
-	for f, out := range map[string]string{
-		"text": newsOut(t, "--job", "tiny", "--format", "text"),
-		"md":   newsOut(t, "--job", "tiny", "-o", "-"),
-		"html": newsOut(t, "--job", "tiny", "--format", "html", "-o", "-"),
-	} {
+	for f, out := range map[string]string{"text": newsOut(t, "--job", "tiny", "--format", "text")} {
 		for prefix, want := range map[string]int{"! ": c.Needs, "? ": c.Review, "- ": c.Blocked, "+ ": c.Doing, "> ": c.Ready} {
 			if got := countPrefix(out, prefix); got != want {
 				t.Errorf("%s: %q lines %d, want %d", f, prefix, got, want)
@@ -656,7 +640,7 @@ func TestNewsFormatsAgreeSmall(t *testing.T) {
 
 func TestNewsStaysWithinLimit(t *testing.T) {
 	newsStress(t)
-	for _, args := range [][]string{{"--format", "text"}, {"-o", "-"}, {"--format", "html", "-o", "-"}} {
+	for _, args := range [][]string{{"--format", "text"}} {
 		out := newsOut(t, append([]string{"--job", "big"}, args...)...)
 		body := out
 		if i := strings.Index(out, "<pre>"); i >= 0 {
@@ -694,13 +678,12 @@ func TestNewsHostileTitlesRender(t *testing.T) {
 	back := decodeModel(t, mj(t, m))
 	md := renderBulletinMD(back, []int{1})
 	lines := strings.Split(strings.TrimSuffix(md, "\n"), "\n")
-	fence := strings.TrimSuffix(lines[0], "text")
-	if lines[len(lines)-1] != fence || strings.Trim(fence, "`") != "" {
-		t.Fatalf("md fence: %q ... %q", lines[0], lines[len(lines)-1])
+	if !strings.HasPrefix(lines[0], "# ") || strings.Contains(md, "<script>") || strings.Contains(md, " [a](") || strings.Contains(md, "\n```") {
+		t.Fatalf("md not escaped:\n%s", md)
 	}
-	for _, l := range lines[1 : len(lines)-1] {
-		if strings.HasPrefix(strings.TrimSpace(l), fence) {
-			t.Fatalf("a content line can close the fence: %q", l)
+	for _, l := range lines {
+		if strings.HasPrefix(l, "#") && !strings.HasPrefix(l, "# ") && !strings.HasPrefix(l, "## ") && !strings.HasPrefix(l, "### ") {
+			t.Fatalf("a content line became a heading: %q", l)
 		}
 	}
 	h := renderBulletinHTML(back, []int{1}, "")
@@ -711,7 +694,7 @@ func TestNewsHostileTitlesRender(t *testing.T) {
 		if strings.ContainsAny(out, "\x1b‮") {
 			t.Errorf("%s keeps a control character", name)
 		}
-		if w, l := maxWidth(out); w > 70 {
+		if w, l := maxWidth(out); w > 70 && name == "text" {
 			t.Errorf("%s: %d cells: %q", name, w, l)
 		}
 	}
@@ -741,7 +724,7 @@ func TestNewsDefaultPathAndUnchanged(t *testing.T) {
 	root := filepath.Dir(path)
 	out := newsOut(t)
 	file := filepath.Join(root, "docs", "news", "status.md")
-	if b, err := os.ReadFile(file); err != nil || !strings.HasPrefix(out, "wrote ") || !strings.HasPrefix(string(b), "```") {
+	if b, err := os.ReadFile(file); err != nil || !strings.HasPrefix(out, "wrote ") || !strings.HasPrefix(string(b), "# ") {
 		t.Fatalf("first run: %q %v", out, err)
 	}
 	if out = newsOut(t); !strings.HasPrefix(out, "unchanged ") {

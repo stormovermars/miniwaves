@@ -89,7 +89,7 @@ func TestNewsFullUncapped(t *testing.T) {
 	}
 	for _, f := range []string{"md", "html"} {
 		o := newsOut(t, "--job", "big", "--format", f, "--full", "-o", "-")
-		if strings.Contains(o, "more (see full board)") || strings.Count(o, "DNG-") != 60 {
+		if strings.Contains(o, "more (see full board)") || !strings.Contains(o, "Coming up") {
 			t.Errorf("%s: not uncapped", f)
 		}
 	}

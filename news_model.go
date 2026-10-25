@@ -57,6 +57,8 @@ type newsItem struct {
 	// member progress of a closed milestone (happened.closed_milestones only)
 	Done  int `json:"done,omitempty"`
 	Total int `json:"total,omitempty"`
+	// evidence files of a done or review item (absolute slash path; image marks png/jpg/jpeg/gif/webp), at most 4
+	Proof []newsProof `json:"proof,omitempty"`
 }
 
 // newsSprintItem is a member of the sprint with its state (todo, doing, review, blocked, done); needs marks an
@@ -746,6 +748,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 				if it.Attempts > 0 {
 					x.Note = fmt.Sprintf("attempt %d", it.Attempts+1)
 				}
+				x.Proof = proofFor(w, t, it)
 				review = append(review, x)
 			}
 			switch it.Status {
@@ -755,6 +758,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 					x.Note, x.Since, x.By = newsCap(e.Note), e.At, displayName(e.By)
 				}
 				if awaitingReviewNote(it) { // a block that waits for a reviewer is a review, not a block
+					x.Proof = proofFor(w, t, it)
 					review = append(review, x)
 					break
 				}
@@ -796,6 +800,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 				}
 				tick(&x, it)
 				if e.Action == "done" && it.Kind != "wave" {
+					x.Proof = proofFor(w, t, it)
 					x.Milestone = it.Wave
 					x.MilestoneTitle = waveTitle[t.Slug+"/"+it.Wave]
 				}

@@ -11,10 +11,10 @@ Files live next to the job's news draft (`<news.out>/jobs.md` and `status.md`; `
 ## Commands
 
 - `/mw-jobs [ID]` regenerates `jobs.md` and shows it in the file pane (terminal: prints the path).
-- `/mw-news [ID]` regenerates the news draft and shows it.
-- `/mw-publish [ID]` publishes `jobs.md` + `status.md` as one private artifact `mw <job> board`; the URL is kept in `jobs.artifact-url` next to `jobs.md`, so later runs update the same artifact.
-- `/mw-status` explains the chat-bar line with the live numbers, lists what needs you, shows your settings and every installed `/mw` command.
-- `/mw-fanfare [next | on | off | use NAME | test [milestone|finale] | stop]` the fanfare settings (the fanfare itself lives in the mw CLI).
+- `/mw-news [ID]` regenerates the draft tabloid edition (what happened since the last published one, proof, what is coming) and shows it.
+- `/mw-publish ID` publishes the tabloid as a private artifact (local proof images uploaded as artifact assets), then cuts the edition (`mw news --release`) so the next draft starts from it; the URL is kept in `jobs.artifact-url` next to `jobs.md`, so later runs update the same artifact.
+- `/mw-status` runs `mw status --explain`: the chat-bar line with live numbers, what needs you, your settings, versions and every installed command.
+- `/mw-fanfare [ARGS]` runs `mw fanfare ARGS` (settings, `set`, `use`, `sets`, `test`, `stop`).
 
 ## Hooks
 

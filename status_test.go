@@ -108,3 +108,28 @@ func TestStatusLineLink(t *testing.T) {
 		t.Fatalf("artifact link: %q want %q", got, want)
 	}
 }
+
+func TestStatusExplain(t *testing.T) {
+	userCfgPath(t)
+	path := newsBoard(t)
+	root := filepath.Dir(path)
+	plug := filepath.Join(t.TempDir(), "p")
+	for _, p := range []string{"alpha", "beta"} {
+		_ = os.MkdirAll(filepath.Join(plug, p, ".claude-plugin"), 0755)
+		_ = os.MkdirAll(filepath.Join(plug, p, "commands"), 0755)
+		_ = os.WriteFile(filepath.Join(plug, p, ".claude-plugin", "plugin.json"), []byte(`{"name":"`+p+`","version":"9.1"}`), 0644)
+		_ = os.WriteFile(filepath.Join(plug, p, "commands", "x-"+p+".md"), []byte("---\ndescription: does "+p+"\n---\nbody\n"), 0644)
+	}
+	out := statusExplain(root, plug)
+	for _, want := range []string{"mw " + version + " (schema 9) · plugins alpha 9.1, beta 9.1", "N = needs you: 1", "\nNeeds you\n- doc/TSK-001 Doc work", "- status.show = true (default;", "- /x-alpha: does alpha", "- /x-beta: does beta"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("lacks %q:\n%s", want, out)
+		}
+	}
+	// no board, no plugins folder: still a version line and settings
+	out = statusExplain(t.TempDir(), "")
+	if !strings.HasPrefix(out, "mw "+version) || !strings.Contains(out, "No mw board here") || strings.Contains(out, "\nCommands") {
+		t.Errorf("no board:\n%s", out)
+	}
+	wantErr(t, "unknown option", "status", "--explain", "--bogus")
+}

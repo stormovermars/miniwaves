@@ -1,49 +1,33 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tiny &lt;job&gt; bulletin</title>
+<title>Tiny &lt;job&gt; News — Edition 1 (draft)</title>
 <style>
-body{margin:0;background:#000;color:#33ff33;font:15px/1.3 ui-monospace,Menlo,Consolas,monospace}
-pre{margin:0 auto;padding:16px;max-width:72ch;white-space:pre;overflow-x:auto}
-a{color:#ffb000}a:visited{color:#cc8a00}
-@media (prefers-color-scheme:light){body{background:#fffbe6;color:#1a4d1a}a{color:#8a5a00}}
+:root{--bg:#fff;--fg:#1b1b1f;--dim:#5b5b66;--acc:#2563eb;--box:#fef2f2;--bar:#b91c1c}
+@media (prefers-color-scheme:dark){:root{--bg:#121214;--fg:#e8e8ec;--dim:#a0a0ab;--acc:#7aa7ff;--box:#2a1517;--bar:#f87171}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 -apple-system,system-ui,sans-serif}
+article{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:1.6rem;margin:.2em 0}h2{font-size:1.35rem}h3{font-size:1.05rem;margin-top:1.4em}
+.range,.foot{color:var(--dim)}a{color:var(--acc)}img{max-width:100%;height:auto}
+blockquote{margin:1em 0;padding:.5em 1em;background:var(--box);border-left:4px solid var(--bar)}
 </style></head><body>
-<pre>
-======================================================================
- TINY &lt;JOB&gt; BULLETIN                             DRAFT - NOT RELEASED
- since the start - 7 changes        gopher://example.com/news?a=1&amp;b=2
-======================================================================
-
-1. IN SHORT
------------
-  Harness: 3 pass
-  &lt;script&gt;alert(1)&lt;/script&gt; | ``` fence
-
-2. WHAT HAPPENED
-----------------
-0 news-app/TSK-001  Fix &lt;script&gt;alert(1)&lt;/script&gt; now ........... done
-0 doc/CHR-001  Decisions ..................................... decided
-    Ship &lt;it&gt; (why: cheap)
-
-3. ONGOING
-----------
-  2 of 5 done, 1 ready
-! doc/TSK-001  Doc work .................................... needs you
-    Keep | or cut `X`?
-- news-app/TSK-003  Wait for keys ............................ blocked
-    needs &lt;b&gt;keys&lt;/b&gt; second line
-+ doc/TSK-001  Doc work ........................................ doing
-
-4. WHAT&#39;S NEXT
---------------
-&gt; news-app/TSK-002  Pipe | in `title` &amp; more ................... ready
-1 news-app/WAV-001  First | milestone ............................ 1/2
-
-5. METRICS
-----------
-  (no metrics)
-
-----------------------------------------------------------------------
- releases: none                                       end of bulletin
-======================================================================
-</pre>
+<article>
+<h1>Tiny &lt;job&gt; News — Edition 1 (draft)</h1>
+<p class="range">since the start · up to 2026-10-22</p>
+<p>Harness: 3 pass &lt;script&gt;alert(1)&lt;/script&gt; | ``` fence</p>
+<h2>Fix &lt;script&gt;alert(1)&lt;/script&gt; now</h2>
+<p>news-app/TSK-001 was marked done by alice on 2026-10-22.</p>
+<blockquote><strong>Needs you</strong>
+<ul>
+<li><strong>doc/TSK-001</strong> Doc work — Keep | or cut `X`?</li>
+</ul></blockquote>
+<h3>Coming up</h3>
+<ul>
+<li>In progress (1): doc/TSK-001 Doc work</li>
+<li>Up next (1 ready): news-app/TSK-002 Pipe | in `title` &amp; more</li>
+<li>Milestones: news-app/WAV-001 First | milestone 1/2</li>
+<li>Blocked: 1</li>
+</ul>
+<hr>
+<p class="foot">Editions: none yet</p>
+</article>
 </body></html>

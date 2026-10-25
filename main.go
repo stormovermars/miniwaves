@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "ticket": true, "format": true, "width": true, "message": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -326,7 +326,11 @@ func usage(topic string) error {
 		"description": `mw description [-j]
 Explain what miniwaves does and show the human and coding-assistant workflows.
 Works before initialization. Output is TOON by default; -j selects JSON.`,
-		"status": `mw status --line [--link]
+		"status": `mw status --explain [--plugins DIR]
+Explains the status line with live numbers for the nearest board, lists what needs Sir, shows the user settings and, with --plugins DIR
+(the folder holding the installed plugins), the plugin versions and every slash command's description. Read-only; the /mw-status command runs it.
+
+mw status --line [--link]
 One short line for the Claude Code status bar: "mw:N2R1B1:12/40" = needs you, awaiting review, blocked (each hidden at 0),
 then open/all items. Counts the nearest board (walking up from the cwd; or from .workspace.current_dir / .cwd of status-line JSON
 on stdin); --link wraps the line in an OSC 8 hyperlink to the published page (jobs.artifact-url) or the file:// URL of jobs.md;
@@ -892,7 +896,7 @@ func options(args []string) (map[string]string, []string, error) {
 		if key == "" || !validOptions[key] {
 			return nil, nil, fmt.Errorf("unknown option %s", a)
 		}
-		if key == "json" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "md" || key == "archived" || key == "follow" || key == "exec" {
+		if key == "json" || key == "explain" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "md" || key == "archived" || key == "follow" || key == "exec" {
 			o[key] = "true"
 			continue
 		}

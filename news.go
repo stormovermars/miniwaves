@@ -193,17 +193,37 @@ type newsReleaseResult struct {
 }
 
 // newsRender draws one model in a format; the releases list feeds the footer, prefix the html links.
-func newsRender(format string, m *newsModel, releases []int, prefix string) (string, error) {
+func newsRender(format string, m *newsModel, releases []int, c tabloidCtx) (string, error) {
 	switch format {
 	case "html":
-		return bulletinHTMLPage(bulletinTitle(m), []string{bulletinHTMLBlock(m, releases, prefix)}), nil
+		return bulletinHTMLPage(bulletinTitle(m), []string{bulletinHTMLBlock(m, releases, c)}), nil
 	case "text":
 		return renderBulletinText(m, releases), nil
 	case "json":
 		b, err := newsModelJSON(m)
 		return string(b), err
 	}
-	return renderBulletinMD(m, releases), nil
+	return renderTabloidMD(m, releases, c), nil
+}
+
+// tabloidContext says where an edition file will sit: its folder (for relative proof images), the path from it
+// to the editions folder and to jobs.md.
+func tabloidContext(target, relDir, jobsAbs string) tabloidCtx {
+	if target == "" {
+		return tabloidCtx{}
+	}
+	c := tabloidCtx{OutDir: filepath.Dir(target)}
+	if relDir != "" {
+		if c.Prefix = relPrefix(target, relDir); c.Prefix == "./" {
+			c.Prefix = ""
+		}
+	}
+	if jobsAbs != "" {
+		if r, err := filepath.Rel(c.OutDir, jobsAbs); err == nil {
+			c.JobsHref = filepath.ToSlash(r)
+		}
+	}
+	return c
 }
 
 func relPrefix(from, dir string) string {
@@ -296,6 +316,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		prevNum  *int
 		metrics  *newsMetrics
 		target   string
+		jobsAbs  string // <news.out>/jobs.md, for the edition footer
 		nextNum  int
 		draftWin newsWindow
 	}
@@ -329,6 +350,9 @@ func newsCommand(path string, w *Workspace, args []string) error {
 			}
 			if v.Metrics != "" {
 				j.metrics = newsMetricsLoad(root, v.Metrics)
+			}
+			if d, e := newsConfined(root, "news.out", dir); e == nil {
+				j.jobsAbs = filepath.Join(d, "jobs.md")
 			}
 			if j.relDir, err = newsReleaseDir(root, v); err != nil {
 				if release || w.Jobs[id].NewsReleases != "" {
@@ -371,7 +395,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 	}
 
 	if release {
-		return newsCutRelease(o, format, jobs[0].model, jobs[0].relDir, jobs[0].nums, jobs[0].prevNum, jobs[0].nextNum, o["force"] == "true")
+		return newsCutRelease(o, format, jobs[0].model, jobs[0].relDir, jobs[0].nums, jobs[0].prevNum, jobs[0].nextNum, o["force"] == "true", jobs[0].jobsAbs)
 	}
 
 	if plain { // stdout by default; a file only with -o PATH
@@ -383,7 +407,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		}
 		docs := make([]string, len(jobs))
 		for i, j := range jobs {
-			if docs[i], err = newsRender(format, j.model, j.nums, ""); err != nil {
+			if docs[i], err = newsRender(format, j.model, j.nums, tabloidContext(out, j.relDir, j.jobsAbs)); err != nil {
 				return err
 			}
 		}
@@ -421,7 +445,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 			var blocks []string
 			title := w.Name
 			for _, j := range jobs {
-				blocks = append(blocks, bulletinHTMLBlock(j.model, j.nums, relPrefix(jobs[0].target, j.relDir)))
+				blocks = append(blocks, bulletinHTMLBlock(j.model, j.nums, tabloidContext(jobs[0].target, j.relDir, j.jobsAbs)))
 			}
 			if len(jobs) == 1 {
 				title = bulletinTitle(jobs[0].model)
@@ -430,7 +454,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		} else {
 			docs := make([]string, len(jobs))
 			for i, j := range jobs {
-				docs[i] = renderBulletinMD(j.model, j.nums)
+				docs[i] = renderTabloidMD(j.model, j.nums, tabloidContext(jobs[0].target, j.relDir, j.jobsAbs))
 			}
 			content = strings.Join(docs, "\n")
 		}
@@ -439,11 +463,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 		}
 	} else {
 		for _, j := range jobs {
-			prefix := ""
-			if j.target != "" {
-				prefix = relPrefix(j.target, j.relDir)
-			}
-			content, err := newsRender(format, j.model, j.nums, prefix)
+			content, err := newsRender(format, j.model, j.nums, tabloidContext(j.target, j.relDir, j.jobsAbs))
 			if err != nil {
 				return err
 			}
@@ -472,7 +492,7 @@ func newsCommand(path string, w *Workspace, args []string) error {
 // drawn from the model, N.json (the frozen model) is linked in after them, and latest is updated last. Files
 // of a failed run are removed again. Nothing new since the last release is refused with exit 0 unless force.
 // Releases live only in the releases folder: news.out keeps holding the draft.
-func newsCutRelease(o map[string]string, format string, m *newsModel, dir string, nums []int, prevNum *int, n int, force bool) (err error) {
+func newsCutRelease(o map[string]string, format string, m *newsModel, dir string, nums []int, prevNum *int, n int, force bool, jobsAbs string) (err error) {
 	res := newsReleaseResult{Job: m.Job.ID, Number: n}
 	say := func() error {
 		if o["json"] == "true" {
@@ -518,10 +538,11 @@ func newsCutRelease(o map[string]string, format string, m *newsModel, dir string
 		made = append(made, p)
 		return nil
 	}
-	if err = put(num+".md", []byte(renderBulletinMD(m, all))); err != nil { // the first file claims the number
+	rc := tabloidContext(filepath.Join(dir, num+".md"), dir, jobsAbs)
+	if err = put(num+".md", []byte(renderTabloidMD(m, all, rc))); err != nil { // the first file claims the number
 		return err
 	}
-	if err = put(num+".html", []byte(renderBulletinHTML(m, all, ""))); err != nil {
+	if err = put(num+".html", []byte(bulletinHTMLPage(bulletinTitle(m), []string{bulletinHTMLBlock(m, all, rc)}))); err != nil {
 		return err
 	}
 	if err = put(num+".json", js); err != nil {

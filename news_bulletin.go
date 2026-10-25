@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"html"
 	"math"
-	"net/url"
 	"strconv"
 	"strings"
 	"unicode"
@@ -523,21 +521,6 @@ func mdLabel(s string) string {
 	return b.String()
 }
 
-// renderBulletinMD is one fenced text block; tickets that have a link follow it as a Markdown list
-// ([KEY](url)), because links do not render inside a code block.
-func renderBulletinMD(m *newsModel, releases []int) string {
-	body := renderBulletinText(m, releases)
-	f := newsFence(body)
-	out := f + "text\n" + body + f + "\n"
-	if links := newsTicketLinks(m); len(links) > 0 && urlsSafe(links) {
-		out += "\nTickets:\n\n"
-		for _, it := range links {
-			out += fmt.Sprintf("- [%s](<%s>) %s\n", mdLabel(it.TicketLabel), it.TicketURL, mdLabel(it.Tenant+"/"+it.ID))
-		}
-	}
-	return out
-}
-
 // urlsSafe re-checks the links of a model that may have come from a file: only https URLs of the tracker charset.
 func urlsSafe(items []newsItem) bool {
 	for _, it := range items {
@@ -549,64 +532,4 @@ func urlsSafe(items []newsItem) bool {
 		}
 	}
 	return true
-}
-
-// linkTicket escapes a line and turns its "[LABEL]" into a link when a ticket of the model has that label.
-func linkTicket(l string, tl []newsItem, esc func(string) string) string {
-	if len(l) < 3 || (l[0] != '0' && l[0] != '1' && l[0] != '!' && l[0] != '?' && l[0] != '-' && l[0] != '+' && l[0] != '>') || l[1] != ' ' {
-		return esc(l)
-	}
-	for _, it := range tl {
-		tag := "[" + it.TicketLabel + "]"
-		if i := strings.LastIndex(l, tag); i > 1 && strings.Contains(l[:i], it.Tenant+"/"+it.ID) {
-			return esc(l[:i]) + `<a href="` + esc(it.TicketURL) + `">` + esc(tag) + `</a>` + esc(l[i+len(tag):])
-		}
-	}
-	return esc(l)
-}
-
-func bulletinTitle(m *newsModel) string { return bulletinCut(bc(m.Job.Title), 72) + " bulletin" }
-
-// bulletinHTMLBlock is one bulletin as <pre>; each footer release number links to hrefPrefix + N + ".html".
-func bulletinHTMLBlock(m *newsModel, releases []int, hrefPrefix string) string {
-	esc := html.EscapeString
-	link := func(n int) string {
-		u := (&url.URL{Path: hrefPrefix + strconv.Itoa(n) + ".html"}).String()
-		return `<a href="` + esc(u) + `">` + strconv.Itoa(n) + `</a>`
-	}
-	lines := bulletinLines(m, releases)
-	tl := newsTicketLinks(m)
-	if !urlsSafe(tl) {
-		tl = nil
-	}
-	var b strings.Builder
-	b.WriteString("<pre>\n")
-	for i, l := range lines {
-		if i == len(lines)-2 { // the footer: release numbers become links
-			b.WriteString(bulletinFooter(releases, link, esc) + "\n")
-			continue
-		}
-		b.WriteString(linkTicket(l, tl, esc) + "\n")
-	}
-	b.WriteString("</pre>\n")
-	return b.String()
-}
-
-// bulletinHTMLPage wraps bulletin blocks in a green-on-black page.
-func bulletinHTMLPage(title string, blocks []string) string {
-	return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>` + html.EscapeString(title) + `</title>
-<style>
-body{margin:0;background:#000;color:#33ff33;font:15px/1.3 ui-monospace,Menlo,Consolas,monospace}
-pre{margin:0 auto;padding:16px;max-width:72ch;white-space:pre;overflow-x:auto}
-a{color:#ffb000}a:visited{color:#cc8a00}
-@media (prefers-color-scheme:light){body{background:#fffbe6;color:#1a4d1a}a{color:#8a5a00}}
-</style></head><body>
-` + strings.Join(blocks, "") + `</body></html>
-`
-}
-
-func renderBulletinHTML(m *newsModel, releases []int, hrefPrefix string) string {
-	return bulletinHTMLPage(bulletinTitle(m), []string{bulletinHTMLBlock(m, releases, hrefPrefix)})
 }

@@ -1,39 +1,24 @@
-````text
-======================================================================
- TINY <JOB> BULLETIN                             DRAFT - NOT RELEASED
- since the start - 7 changes        gopher://example.com/news?a=1&b=2
-======================================================================
+# Tiny \<job\> News — Edition 1 (draft)
 
-1. IN SHORT
------------
-  Harness: 3 pass
-  <script>alert(1)</script> | ``` fence
+_since the start · up to 2026-10-22_
 
-2. WHAT HAPPENED
-----------------
-0 news-app/TSK-001  Fix <script>alert(1)</script> now ........... done
-0 doc/CHR-001  Decisions ..................................... decided
-    Ship <it> (why: cheap)
+Harness: 3 pass \<script\>alert(1)\</script\> \| \`\`\` fence
 
-3. ONGOING
-----------
-  2 of 5 done, 1 ready
-! doc/TSK-001  Doc work .................................... needs you
-    Keep | or cut `X`?
-- news-app/TSK-003  Wait for keys ............................ blocked
-    needs <b>keys</b> second line
-+ doc/TSK-001  Doc work ........................................ doing
+## Fix \<script\>alert(1)\</script\> now
 
-4. WHAT'S NEXT
---------------
-> news-app/TSK-002  Pipe | in `title` & more ................... ready
-1 news-app/WAV-001  First | milestone ............................ 1/2
+news-app/TSK-001 was marked done by alice on 2026-10-22.
 
-5. METRICS
-----------
-  (no metrics)
+> **Needs you**
+>
+> - **doc/TSK-001** Doc work — Keep \| or cut \`X\`?
 
-----------------------------------------------------------------------
- releases: none                                       end of bulletin
-======================================================================
-````
+### Coming up
+
+- In progress (1): doc/TSK-001 Doc work
+- Up next (1 ready): news-app/TSK-002 Pipe \| in \`title\` \& more
+- Milestones: news-app/WAV-001 First \| milestone 1/2
+- Blocked: 1
+
+---
+
+Editions: none yet

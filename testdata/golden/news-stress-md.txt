@@ -1,113 +1,40 @@
-```text
-======================================================================
- BIG BULLETIN                                    DRAFT - NOT RELEASED
- since the start - 550 changes              gopher://local/1/news/big
-======================================================================
+# big News — Edition 1 (draft)
 
-1. IN SHORT
------------
-  150 items done, 100 milestones closed, 150 accepted.
-  100 need you, 100 in review, 100 blocked, 100 in progress.
+_since the start · up to 2026-10-01_
 
-2. WHAT HAPPENED
-----------------
-1 stress/WAV-1000  WAV 1000 long title long title long tit~ ... closed
-1 stress/WAV-0990  WAV 990 long title long title long titl~ ... closed
-1 stress/WAV-0980  WAV 980 long title long title long titl~ ... closed
-1 stress/WAV-0970  WAV 970 long title long title long titl~ ... closed
-1 stress/WAV-0960  WAV 960 long title long title long titl~ ... closed
-1 stress/WAV-0950  WAV 950 long title long title long titl~ ... closed
-1 stress/WAV-0940  WAV 940 long title long title long titl~ ... closed
-1 stress/WAV-0930  WAV 930 long title long title long titl~ ... closed
-1 stress/WAV-0920  WAV 920 long title long title long titl~ ... closed
-1 stress/WAV-0910  WAV 910 long title long title long titl~ ... closed
-  ... 90 more (see full board)
-0 stress/DON-0150  DON 150 long title long title long title ~ ... done
-0 stress/DON-0149  DON 149 long title long title long title ~ ... done
-0 stress/DON-0148  DON 148 long title long title long title ~ ... done
-0 stress/DON-0147  DON 147 long title long title long title ~ ... done
-0 stress/DON-0146  DON 146 long title long title long title ~ ... done
-0 stress/DON-0145  DON 145 long title long title long title ~ ... done
-0 stress/DON-0144  DON 144 long title long title long title ~ ... done
-0 stress/DON-0143  DON 143 long title long title long title ~ ... done
-0 stress/DON-0142  DON 142 long title long title long title ~ ... done
-0 stress/DON-0141  DON 141 long title long title long title ~ ... done
-  ... 140 more (see full board)
-0 stress/DON-0150  DON 150 long title long title long ti~ ... accepted
-0 stress/DON-0149  DON 149 long title long title long ti~ ... accepted
-0 stress/DON-0148  DON 148 long title long title long ti~ ... accepted
-0 stress/DON-0147  DON 147 long title long title long ti~ ... accepted
-0 stress/DON-0146  DON 146 long title long title long ti~ ... accepted
-0 stress/DON-0145  DON 145 long title long title long ti~ ... accepted
-0 stress/DON-0144  DON 144 long title long title long ti~ ... accepted
-0 stress/DON-0143  DON 143 long title long title long ti~ ... accepted
-0 stress/DON-0142  DON 142 long title long title long ti~ ... accepted
-0 stress/DON-0141  DON 141 long title long title long ti~ ... accepted
-  ... 140 more (see full board)
+## Milestone closed: WAV 1000 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title lon…
 
-3. ONGOING
-----------
-  150 of 650 done, 200 ready
-! stress/ASK-0001  ASK 1 long title long title long tit~ ... needs you
-    long title long title long title long title long title long title~
-! stress/ASK-0002  ASK 2 long title long title long tit~ ... needs you
-    long title long title long title long title long title long title~
-! stress/ASK-0003  ASK 3 long title long title long tit~ ... needs you
-    long title long title long title long title long title long title~
-! stress/ASK-0004  ASK 4 long title long title long tit~ ... needs you
-    long title long title long title long title long title long title~
-! stress/ASK-0005  ASK 5 long title long title long tit~ ... needs you
-    long title long title long title long title long title long title~
-  ... 95 more (see full board)
-? stress/REV-0001  REV 1 long title long title long title ~ ... review
-? stress/REV-0002  REV 2 long title long title long title ~ ... review
-? stress/REV-0003  REV 3 long title long title long title ~ ... review
-? stress/REV-0004  REV 4 long title long title long title ~ ... review
-? stress/REV-0005  REV 5 long title long title long title ~ ... review
-  ... 95 more (see full board)
-- stress/BLK-0001  BLK 1 long title long title long title~ ... blocked
-    long title long title long title long title long title long title~
-- stress/BLK-0002  BLK 2 long title long title long title~ ... blocked
-    long title long title long title long title long title long title~
-- stress/BLK-0003  BLK 3 long title long title long title~ ... blocked
-    long title long title long title long title long title long title~
-- stress/BLK-0004  BLK 4 long title long title long title~ ... blocked
-    long title long title long title long title long title long title~
-- stress/BLK-0005  BLK 5 long title long title long title~ ... blocked
-    long title long title long title long title long title long title~
-  ... 95 more (see full board)
-+ stress/DNG-0001  DNG 1 long title long title long title l~ ... doing
-+ stress/DNG-0002  DNG 2 long title long title long title l~ ... doing
-+ stress/DNG-0003  DNG 3 long title long title long title l~ ... doing
-+ stress/DNG-0004  DNG 4 long title long title long title l~ ... doing
-+ stress/DNG-0005  DNG 5 long title long title long title l~ ... doing
-  ... 95 more (see full board)
+stress/WAV-1000 closed with 0 of 0 items done by s on 2026-10-01.
 
-4. WHAT'S NEXT
---------------
-> stress/ASK-0001  ASK 1 long title long title long title l~ ... ready
-> stress/ASK-0002  ASK 2 long title long title long title l~ ... ready
-> stress/ASK-0003  ASK 3 long title long title long title l~ ... ready
-> stress/ASK-0004  ASK 4 long title long title long title l~ ... ready
-> stress/ASK-0005  ASK 5 long title long title long title l~ ... ready
-> stress/ASK-0006  ASK 6 long title long title long title l~ ... ready
-> stress/ASK-0007  ASK 7 long title long title long title l~ ... ready
-> stress/ASK-0008  ASK 8 long title long title long title l~ ... ready
-> stress/ASK-0009  ASK 9 long title long title long title l~ ... ready
-> stress/ASK-0010  ASK 10 long title long title long title ~ ... ready
-  ... 190 more (see full board)
-1 stress/WAV-0001  WAV 1 long title long title long title lon~ ... 0/0
-1 stress/WAV-0002  WAV 2 long title long title long title lon~ ... 0/0
-1 stress/WAV-0003  WAV 3 long title long title long title lon~ ... 0/0
-1 stress/WAV-0004  WAV 4 long title long title long title lon~ ... 0/0
-1 stress/WAV-0005  WAV 5 long title long title long title lon~ ... 0/0
-  ... 895 more (see full board)
+### Also in this edition
 
-5. METRICS
-----------
-  (no metrics)
+- **stress/WAV-0990** Milestone closed: WAV 990 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long… (0/0) — by s, 2026-10-01
+- **stress/WAV-0980** Milestone closed: WAV 980 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long… (0/0) — by s, 2026-10-01
+- **stress/WAV-0970** Milestone closed: WAV 970 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long… (0/0) — by s, 2026-10-01
+- **stress/WAV-0960** Milestone closed: WAV 960 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long… (0/0) — by s, 2026-10-01
+- **stress/WAV-0950** Milestone closed: WAV 950 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long… (0/0) — by s, 2026-10-01
+- **stress/WAV-0940** Milestone closed: WAV 940 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long… (0/0) — by s, 2026-10-01
+- **stress/WAV-0930** Milestone closed: WAV 930 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long… (0/0) — by s, 2026-10-01
+- **stress/WAV-0920** Milestone closed: WAV 920 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long… (0/0) — by s, 2026-10-01
+- +241 more
 
-----------------------------------------------------------------------
- releases: none                                       end of bulletin
-======================================================================
-```
+> **Needs you**
+>
+> - **stress/ASK-0001** ASK 1 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long t… — long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title l…
+> - **stress/ASK-0002** ASK 2 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long t… — long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title l…
+> - **stress/ASK-0003** ASK 3 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long t… — long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title l…
+> - **stress/ASK-0004** ASK 4 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long t… — long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title l…
+> - **stress/ASK-0005** ASK 5 long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long t… — long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title long title l…
+> - +95 more
+
+### Coming up
+
+- In progress (100): stress/DNG-0001 DNG 1 long title long title long title ~; stress/DNG-0002 DNG 2 long title long title long title ~; +48
+- Awaiting review: 100
+- Up next (200 ready): stress/ASK-0001 ASK 1 long title long title long title ~; stress/ASK-0002 ASK 2 long title long title long title ~; +8
+- Milestones: stress/WAV-0001 WAV 1 long title long title long title ~ 0/0; stress/WAV-0002 WAV 2 long title long title long title ~ 0/0; +198
+- Blocked: 100
+
+---
+
+Editions: none yet
