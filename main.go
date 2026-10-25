@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "out": true, "ticket": true, "format": true, "width": true, "message": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "ticket": true, "format": true, "width": true, "message": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -567,6 +567,9 @@ mw board --html [-o PATH]   one static page for all tenants (no JS); PATH defaul
 ("publish": {"html": PATH, "auto": true, "interval": 60} in .miniwaves.json regenerates it after a write when the
 board changed and the last write is at least interval seconds old: default 60, minimum 5, lower values clamp to 5;
 an explicit mw board --html always writes; the hash is kept in PATH.hash); no path = stdout
+mw board --md [--job ID] [-o PATH|-]   a readable Markdown jobs view (Needs you, To review, In progress, Ready,
+Recently done, Waves with progress) for the Claude desktop file pane; default <news.out>/jobs.md per job (docs/news/jobs.md
+with no job), rewritten only when the content changed (hash in jobs.md.hash), prints "wrote PATH" or "unchanged PATH"
 Show a small progress bar, a "last: <ago> <item> <action>  today: N done" line and active work.
 -A shows every tenant, most recently active first; -v includes history. A gates line appears when any gate is on.`,
 		"context": `mw context [-t SLUG] [-s NAME] [-j]
@@ -621,7 +624,7 @@ Usage:
   mw log [-t SLUG | -A] [-n N] [-j] | mw log [-t SLUG | -A] --since CURSOR|start [-j]
   mw wave create|add|remove|step|unstep|show|list|close ...  (mw help wave)
   mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v] | mw next --claim [-s NAME] [-a ROLE] [-j] [--prompt]
-  mw board [-t SLUG | -A] [-v] [-j] | mw board --html [-o PATH]
+  mw board [-t SLUG | -A] [-v] [-j] | mw board --html [-o PATH] | mw board --md [--job ID] [-o PATH|-]
   mw archive [--days N] [-t SLUG] [--dry-run]
   mw context [-t SLUG] [-s NAME] [-j]
 
@@ -881,7 +884,7 @@ func options(args []string) (map[string]string, []string, error) {
 		if key == "" || !validOptions[key] {
 			return nil, nil, fmt.Errorf("unknown option %s", a)
 		}
-		if key == "json" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "archived" || key == "follow" || key == "exec" {
+		if key == "json" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "md" || key == "archived" || key == "follow" || key == "exec" {
 			o[key] = "true"
 			continue
 		}

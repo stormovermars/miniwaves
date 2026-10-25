@@ -970,12 +970,26 @@ func boardCommand(path string, w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "tenant", "session", "all", "verbose", "json", "html", "out", "tag", "archived"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "all", "verbose", "json", "html", "md", "job", "out", "tag", "archived"); err != nil {
 		return err
 	}
 	w.showArchived = o["archived"] == "true"
+	if o["md"] == "true" {
+		if o["html"] == "true" || o["json"] == "true" || o["tenant"] != "" || o["session"] != "" {
+			return errors.New("mw board --md takes only --job ID and -o PATH|-")
+		}
+		for i := range w.Tenants {
+			if !w.Tenants[i].Hidden {
+				announceTenant(w, &w.Tenants[i])
+			}
+		}
+		return jobsMDCommand(path, w, o)
+	}
+	if o["job"] != "" {
+		return errors.New("--job needs --md")
+	}
 	if o["out"] != "" && o["html"] != "true" {
-		return errors.New("-o needs --html")
+		return errors.New("-o needs --html or --md")
 	}
 	if o["html"] == "true" {
 		for i := range w.Tenants {

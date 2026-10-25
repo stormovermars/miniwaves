@@ -373,7 +373,7 @@ func scopeOf(w *Workspace, args []string) scope {
 		return all
 	}
 	hasT := o["tenant"] != "" || os.Getenv("MW_TENANT") != ""
-	if o["all"] == "true" || o["html"] == "true" {
+	if o["all"] == "true" || o["html"] == "true" || o["md"] == "true" {
 		return all
 	}
 	if !hasT && (o["session"] != "" || os.Getenv("MW_SESSION") != "") {

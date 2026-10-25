@@ -148,6 +148,7 @@ mw log [-t SLUG | -A] [-n N] [-j]   # activity feed, newest first
 mw log [-t SLUG | -A] --since CURSOR|start [-n N] [-j]   # resumable feed, oldest first, plus a next cursor
 mw log [-t SLUG | -A] --follow [--since CURSOR|start] [--poll SEC] [--exec] [-j]   # live feed; --exec runs alerts.exec per alerts.on event
 mw board [-t SLUG | -A] [-v] [-j]   # last: <ago> <item> <action>, today: N done; -A sorted by last activity
+mw board --md [--job ID] [-o PATH|-]   # Markdown jobs view (see "Jobs view")
 mw context [-t SLUG] [-s NAME] [-j]
 ```
 
@@ -502,6 +503,10 @@ totals (`DONE (n, +N archived)` with `-v`, `archived` in `board -j`); IDs are ne
 ## Static page
 
 `mw board --html [-o PATH]` writes one self-contained page (all tenants with counts and open items, last/today, the last 40 events; dark mode via `prefers-color-scheme`; no JS, no CDN). Set `"publish": {"html": "site/index.html", "auto": true}` in `.miniwaves.json` to regenerate it after writes. The page is rewritten only when the board changed (a hash of the rendered page is kept in `<page>.hash`) and the last write is at least `"interval"` seconds old (default 60, minimum 5; lower values clamp to 5); a change skipped inside the interval is marked `pending` in `<page>.hash`, and the next mw invocation after the interval (a read such as `mw list` too, while `publish.auto` is on) publishes it, so the last change is never lost; an explicit `mw board --html` always writes. The page is written through a unique temp file, then its hash. GitHub Pages: copy `docs/publish.yml` to `.github/workflows/`. Vercel: set the output directory to the folder that holds the page (no build command), or add `vercel.json` with `{"outputDirectory": "site"}`, and commit the page (`git add site/index.html`).
+
+## Jobs view
+
+`mw board --md [--job ID] [-o PATH|-]` renders every job as Markdown for the Claude desktop file pane (the mw-jobs plugin's `/mw-jobs`). Layout per job: a headline (`! 2 need you`, else `◐ N awaiting review`, `⏱ N blocked`, `● N in progress`), then Needs you, Review, In progress (`●`, or `⏱ stalled` after 45 minutes), Milestones (open waves with a text bar, closed ones folded into `✓ N closed`), Harness (only with a job `metrics` file, with ▲▼ deltas against the latest release), Last events (6) and a footer (`updated HH:MM` is the newest event, a link to `status.md` and, when a `jobs.artifact-url` file sits next to the page, the published page). Empty sections are left out. The first line under the title is a status line over every job: `! tiny 2 need you · C2 5/6 │ demo ▸ D1 1/2`. Default file: `<news.out>/jobs.md` per job (`docs/news/jobs.md` with no job); `-o PATH` writes one file with every job, `-o -` prints it. The file is rewritten only when its content changed (hash in `jobs.md.hash`); mw prints `wrote PATH` or `unchanged PATH`. Ages are in 5-minute steps (hours, then days) so an idle board does not rewrite the file. `mw news` stays the news view.
 
 ## Git
 
