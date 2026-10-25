@@ -99,6 +99,7 @@ type Event struct {
 	Action string `json:"action"`
 	By     string `json:"by,omitempty"`
 	Note   string `json:"note,omitempty"`
+	On     string `json:"on,omitempty"` // block events: the item this one waits for (mw block --on ID)
 }
 
 // Step is one delivery-protocol checkbox on a wave.

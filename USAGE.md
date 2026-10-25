@@ -133,7 +133,7 @@ mw show ID [-t SLUG] [-j] [-v] [--full]   # full brief: body, acceptance + sourc
 mw reopen ID [-t SLUG] [-m REASON]   # back to inbox; optional -m REASON is kept on the reopen event (mw show events, -j, mw log)
 mw ready|reopen ID [-t SLUG] [-s NAME]
 mw start ID [-t SLUG] [-s NAME] [-a ROLE]   # inbox/ready only (or your own item); -a ROLE registers a missing session with that role
-mw block ID REASON... [-t SLUG] [-s NAME]
+mw block ID REASON... [--on ID] [-t SLUG] [-s NAME]
 mw done ID VERIFICATION... [--evidence PATH]... [--no-evidence REASON] [-t SLUG] [-s NAME]
 mw wave create TITLE... [-t SLUG] [-p WAVE] [-b TEXT]
 mw wave add|remove WAVE ID... [-t SLUG]
@@ -160,7 +160,7 @@ Short flags: `-t` tenant, `-s` session, `-a` agent, `-p` parent,
 supported. Use `--` before a title or note beginning with `-`.
 
 Kinds are `prompt`, `story`, `task`, `spike`, `bug`, and `chore`. States are
-`inbox`, `ready`, `doing`, `blocked`, and `done`. Blocking requires a reason,
+`inbox`, `ready`, `doing`, `blocked`, and `done`. Blocking requires a reason (`--on ID` names the open item it waits for),
 completion requires verification, and a parent cannot close with open children.
 
 Session liveness: a session's last activity is set by `session start` and by every
@@ -294,6 +294,7 @@ block/done note.
 - `mw ask ID QUESTION... [-s NAME]` records a question for a human. Any session may ask.
 - `mw answer ID TEXT... --by NAME` is human only, like `accept`: it is refused under `MW_SESSION` or `-s`, and `--by` is required when stdin is not a terminal. It is refused when the item has no open ask.
 - An **open ask** is the last `ask` of an item with no later `answer` on that item (one answer closes every earlier ask).
+- **N and B.** N (needs you) counts an item with an open ask, or a blocked item with no dependency; B counts a blocked item whose `mw block --on ID` names an open item. An item is counted once (ask, then review, then N/B), and a block on a done item counts as no dependency.
 - `mw review` shows open asks as `needs you`, `mw review -j` and `mw board -j` gain `needs` (`[{tenant, item, question, by, at}]`, always an array), and the text `mw board` prints a `NEEDS YOU` block.
 - `mw decide TEXT... [--by NAME] [-b WHY] [-p ID]` is open to humans and sessions. With `-s` (or `MW_SESSION`) the event is recorded by that session and a `--by NAME` becomes `(for NAME)` at the end of the note; without a session it is recorded by `--by NAME` (required when stdin is not a terminal), else the login name. It appends a `decide` event to `-p ID`, else to the tenant's `Decisions` chore, created on first use (already `done`, so it never holds the tenant open). `-b WHY` is stored as `(why: WHY)` at the end of the note.
 
@@ -502,7 +503,7 @@ totals (`DONE (n, +N archived)` with `-v`, `archived` in `board -j`); IDs are ne
 
 `mw status --explain [--plugins DIR]` prints the version line, the status line explained with the live numbers, the items that need Sir, the user settings and (with `--plugins DIR`, the folder that holds the installed plugins, which `/mw-status` passes) the plugin versions and the description of every slash command; read-only.
 
-`mw status --line` prints one short line for the Claude Code status bar: `mw:N2R1B1:12/40`. N = needs you, R = awaiting review, B = blocked (a letter is left out when its count is zero), then `open/all` items (open = not done) after a `:`. With N, R and B all zero the line is `mw:12/40`. It counts the nearest board (walking up from the cwd, or from `.workspace.current_dir` / `.cwd` of the status-line JSON on stdin) and prints nothing outside a board or when the user key `status.show` is `false`. It never writes, never fails (exit 0) and takes a few milliseconds. `--link` wraps the line in an OSC 8 hyperlink (`ESC ] 8 ; ; URL ESC \\ TEXT ESC ] 8 ; ; ESC \\`): URL is the published page from `jobs.artifact-url` next to `jobs.md` when that file exists, else the `file://` URL of `jobs.md`. The mw-jobs plugin ships `scripts/statusline.sh` (uses `--link`) and `/mw-status` (explains the line).
+`mw status --line` prints one short line for the Claude Code status bar: `mw:N2R1B1:12/40`. N = needs you (open ask, or blocked with no `--on`), R = awaiting review, B = blocked on another open item (a letter is left out when its count is zero; no item is counted twice), then `open/all` items after a `:` (open = not done; inbox drafts are in neither number). With N, R and B all zero the line is `mw:12/40`. It counts the nearest board (walking up from the cwd, or from `.workspace.current_dir` / `.cwd` of the status-line JSON on stdin) and prints nothing outside a board or when the user key `status.show` is `false`. It never writes, never fails (exit 0) and takes a few milliseconds. `--link` wraps the line in an OSC 8 hyperlink (`ESC ] 8 ; ; URL ESC \\ TEXT ESC ] 8 ; ; ESC \\`): URL is the published page from `jobs.artifact-url` next to `jobs.md` when that file exists, else the `file://` URL of `jobs.md`. To switch it on add `"statusLine":{"type":"command","command":"mw status --line --link"}` to `~/.claude/settings.json`; `mw status --explain` and the mw-jobs `/mw-status` explain the line.
 
 ## Git
 

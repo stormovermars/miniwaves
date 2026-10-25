@@ -121,6 +121,7 @@ type newsCounts struct {
 	Ready   int `json:"ready"`
 	Done    int `json:"done"`
 	Total   int `json:"total"`
+	Work    int `json:"-"` // Total without inbox drafts: the "all" of open/all in mw status --line
 }
 
 type newsMilestones struct {
@@ -569,6 +570,20 @@ func lastEvent(it Item, actions ...string) (Event, bool) {
 	return out, ok
 }
 
+// blockedOnOpenItem reports a blocked item whose last block event names (--on) another item that is not done.
+func blockedOnOpenItem(t *Tenant, it Item) bool {
+	e, ok := lastEvent(it, "block")
+	if !ok || e.On == "" {
+		return false
+	}
+	for _, o := range t.Items {
+		if o.ID == e.On {
+			return o.Status != "done"
+		}
+	}
+	return false
+}
+
 func newsSortItems(l []newsItem, newestFirst bool) {
 	sort.SliceStable(l, func(i, j int) bool {
 		a, b := l[i], l[j]
@@ -713,6 +728,9 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 				continue
 			}
 			c.Total++
+			if it.Status != "inbox" {
+				c.Work++
+			}
 			if it.Status == "done" {
 				c.Done++
 				x := base
@@ -735,12 +753,14 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 				drafts = append(drafts, x)
 				c.Draft++
 			}
+			asked := false // N and B never overlap: an item is counted once, as needs-you or as blocked
 			if e, ok := openAsk(it); ok {
 				x := base
 				x.Note, x.Since, x.By = newsCap(e.Note), e.At, displayName(e.By)
 				needs = append(needs, x)
+				asked = true
 			}
-			if judgeOn && awaitingJudgement(t, it) {
+			if judgeOn && awaitingJudgement(t, it) && !asked {
 				x := base
 				if e, ok := lastEvent(it, "done"); ok {
 					x.Since, x.By = e.At, displayName(e.By)
@@ -758,11 +778,19 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 					x.Note, x.Since, x.By = newsCap(e.Note), e.At, displayName(e.By)
 				}
 				if awaitingReviewNote(it) { // a block that waits for a reviewer is a review, not a block
-					x.Proof = proofFor(w, t, it)
-					review = append(review, x)
+					if !asked {
+						x.Proof = proofFor(w, t, it)
+						review = append(review, x)
+					}
 					break
 				}
-				blocked = append(blocked, x)
+				switch {
+				case asked: // already counted as needs-you
+				case blockedOnOpenItem(t, it):
+					blocked = append(blocked, x)
+				default: // blocked with no dependency waits for Sir
+					needs = append(needs, x)
+				}
 			case "doing":
 				x := base
 				if e, ok := lastEvent(it, "start"); ok {
@@ -784,6 +812,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 			}
 		}
 		c.Total += t.Archived
+		c.Work += t.Archived
 		c.Done += t.Archived
 		lastDone := map[string]int{}
 		var tdone []newsItem
@@ -841,7 +870,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 		}
 		done = append(done, tdone...)
 		tr.Counts = newsCounts{Needs: len(needs) - cNeeds, Review: len(review) - cReview, Blocked: len(blocked) - cBlocked, Doing: len(doing) - cDoing, Ready: len(ready) - cReady, Draft: c.Draft - before.Draft,
-			Done: c.Done - before.Done, Total: c.Total - before.Total}
+			Done: c.Done - before.Done, Total: c.Total - before.Total, Work: c.Work - before.Work}
 		tr.LastChange, _, _ = lastActivity(t)
 		trows = append(trows, tr)
 	}

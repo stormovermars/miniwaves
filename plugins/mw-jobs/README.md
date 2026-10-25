@@ -22,12 +22,12 @@ One PostToolUse hook on Bash: after an `mw` verb that writes the board (add, rea
 
 ## Status line
 
-`scripts/statusline.sh` (a thin wrapper around `mw status --line`) prints `mw:N2R1B1:12/40` for the Claude Code status bar: N needs you, R awaiting review, B blocked (each hidden at zero), then open/all items. Nothing is printed outside a board or with `mw user set status.show=false`. To switch it on, add this to `~/.claude/settings.json` (the plugin never edits it):
+`mw status --line --link` prints `mw:N2R1B1:12/40` for the Claude Code status bar: N needs you (an open ask, or blocked with no `--on`), R awaiting review, B blocked on another item (`mw block ID REASON --on OTHER`), each hidden at zero and no item counted twice, then open/all items (inbox drafts are in neither number). Nothing is printed outside a board or with `mw user set status.show=false`. To switch it on, add this to `~/.claude/settings.json` (the plugin never edits it):
 
 ```json
-"statusLine": {"type": "command", "command": "<abs path to the plugin>/scripts/statusline.sh"}
+"statusLine":{"type":"command","command":"mw status --line --link"}
 ```
 
-or simply `"command": "mw status --line"`. The wrapper passes `--link`: the whole line is an OSC 8 hyperlink, so a click opens the published artifact (the URL in `jobs.artifact-url`) or else `jobs.md` (Cmd+click on macOS, in terminals that support OSC 8). Plain `mw status --line` is not linked. For the explanation in chat, use `/mw-status`.
+`--link` makes the whole line an OSC 8 hyperlink: a click opens the published artifact (the URL in `jobs.artifact-url`) or else `jobs.md` (Cmd+click on macOS, in terminals that support OSC 8). Without `--link` the line is plain. `mw status --explain` (or `/mw-status`) explains it with live numbers.
 
 Settings live in the CLI: `mw configure`. Requires the `mw` binary (the `mw` plugin installs it).

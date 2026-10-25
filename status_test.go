@@ -13,10 +13,10 @@ func TestFormatStatusLine(t *testing.T) {
 		in   newsCounts
 		want string
 	}{
-		{newsCounts{Needs: 2, Review: 1, Blocked: 1, Done: 28, Total: 40}, "mw:N2R1B1:12/40"},
-		{newsCounts{Review: 1, Done: 3, Total: 4}, "mw:R1:1/4"},
-		{newsCounts{Blocked: 3, Total: 3}, "mw:B3:3/3"},
-		{newsCounts{Done: 28, Total: 40}, "mw:12/40"},
+		{newsCounts{Needs: 2, Review: 1, Blocked: 1, Done: 28, Total: 40, Work: 40}, "mw:N2R1B1:12/40"},
+		{newsCounts{Review: 1, Done: 3, Total: 4, Work: 4}, "mw:R1:1/4"},
+		{newsCounts{Blocked: 3, Total: 3, Work: 3}, "mw:B3:3/3"},
+		{newsCounts{Done: 28, Total: 40, Work: 40}, "mw:12/40"},
 		{newsCounts{}, "mw:0/0"},
 	} {
 		if got := formatStatusLine(c.in); got != c.want {

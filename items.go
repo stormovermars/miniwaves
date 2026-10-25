@@ -568,6 +568,9 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 	if command == "start" {
 		allowed = append(allowed, "agent")
 	}
+	if command == "block" {
+		allowed = append(allowed, "on")
+	}
 	if err := allowOptions(o, allowed...); err != nil {
 		return nil, nil, err
 	}
@@ -667,6 +670,17 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 	if command == "start" && !implicitLocal && s != nil && s.Item != "" && s.Item != it.ID {
 		return nil, nil, fmt.Errorf("session %s already owns %s", s.ID, s.Item)
 	}
+	dep := ""
+	if o["on"] != "" {
+		d, e := itemByID(t, o["on"])
+		if e != nil {
+			return nil, nil, fmt.Errorf("--on: %v", e)
+		}
+		if d.ID == it.ID {
+			return nil, nil, errors.New("--on: an item cannot wait for itself")
+		}
+		dep = d.ID
+	}
 	var evidence []string
 	judgeOn := false
 	if to == "done" {
@@ -734,6 +748,9 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 		enote = o["message"]
 	}
 	emit(it, it.Updated, command, actor, enote)
+	if dep != "" {
+		it.Events[len(it.Events)-1].On = dep
+	}
 	if to == "done" {
 		fanfareAfterChange(w, t, false, stamp)
 	}

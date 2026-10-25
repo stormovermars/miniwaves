@@ -40,6 +40,9 @@ func newsTenantsBoard(t *testing.T, n, perTenant, asks int) string {
 			st := statuses[k%len(statuses)]
 			it := Item{ID: fmt.Sprintf("TSK-%03d", k+1), Kind: "task", Title: fmt.Sprintf("Item %d of tenant %d %s", k, i, strings.Repeat("x", 80)), Status: st, Created: at(), Updated: at()}
 			it.Events = append(it.Events, Event{At: at(), Action: "created"}, Event{At: at(), Action: st, By: "s"})
+			if st == "blocked" {
+				it.Events[1].Action, it.Events[1].On = "block", "TSK-003" // a ready item: blocked on another item, so B not N
+			}
 			if st == "done" {
 				it.Judged = "ungated"
 			}

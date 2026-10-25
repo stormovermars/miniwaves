@@ -121,7 +121,7 @@ func formatStatusLine(c newsCounts) string {
 	if l.Len() > 0 {
 		l.WriteString(":")
 	}
-	return fmt.Sprintf("mw:%s%d/%d", l.String(), c.Total-c.Done, c.Total)
+	return fmt.Sprintf("mw:%s%d/%d", l.String(), c.Work-c.Done, c.Work)
 }
 
 func statusCommand(args []string) error {
@@ -208,11 +208,12 @@ func statusExplain(cwd, pluginsDir string) string {
 		c := m.Now.Counts
 		fmt.Fprintf(&b, "%s\n", formatStatusLine(c))
 		fmt.Fprintln(&b, "- mw: is the mw board.")
-		fmt.Fprintf(&b, "- N = needs you: %d (items waiting on Sir's answer or action).\n", c.Needs)
+		fmt.Fprintf(&b, "- N = needs you: %d (an open ask, or blocked with no dependency).\n", c.Needs)
 		fmt.Fprintf(&b, "- R = review: %d (finished items waiting for their review).\n", c.Review)
-		fmt.Fprintf(&b, "- B = blocked: %d (stuck on something other than Sir).\n", c.Blocked)
-		fmt.Fprintf(&b, "- %d/%d = open items over all items (done included).\n", c.Total-c.Done, c.Total)
-		fmt.Fprintln(&b, "A letter that is missing means its count is zero.")
+		fmt.Fprintf(&b, "- B = blocked: %d (blocked on another item, mw block --on ID).\n", c.Blocked)
+		fmt.Fprintf(&b, "- %d/%d = open items over all items (done included, inbox drafts left out).\n", c.Work-c.Done, c.Work)
+		fmt.Fprintln(&b, "An item is counted once. A letter that is missing means its count is zero.")
+		fmt.Fprintln(&b, `To show it in the chat bar add to ~/.claude/settings.json: "statusLine":{"type":"command","command":"mw status --line --link"}`)
 		if len(m.Now.Needs) > 0 {
 			fmt.Fprintln(&b, "\nNeeds you")
 			for _, it := range m.Now.Needs {

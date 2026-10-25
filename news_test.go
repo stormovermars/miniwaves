@@ -43,7 +43,7 @@ func newsBoardAt(t *testing.T, base time.Time) string {
 		[]string{"start", "TSK-001", "-s", "alice", "-t", "news-app"},
 		[]string{"done", "TSK-001", "checked", "--no-evidence", "none", "-t", "news-app"},
 		[]string{"start", "TSK-003", "-s", "bob", "-t", "news-app"},
-		[]string{"block", "TSK-003", "needs <b>keys</b>\nsecond line", "-t", "news-app"},
+		[]string{"block", "TSK-003", "needs <b>keys</b>\nsecond line", "--on", "TSK-002", "-t", "news-app"},
 		[]string{"start", "TSK-001", "-s", "carol", "-t", "doc"},
 		[]string{"ask", "TSK-001", "Keep | or cut `X`?", "-s", "carol", "-t", "doc"},
 		[]string{"decide", "Ship <it>", "--by", "sir", "-b", "cheap", "-t", "doc"},

@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -331,8 +331,9 @@ Explains the status line with live numbers for the nearest board, lists what nee
 (the folder holding the installed plugins), the plugin versions and every slash command's description. Read-only; the /mw-status command runs it.
 
 mw status --line [--link]
-One short line for the Claude Code status bar: "mw:N2R1B1:12/40" = needs you, awaiting review, blocked (each hidden at 0),
-then open/all items. Counts the nearest board (walking up from the cwd; or from .workspace.current_dir / .cwd of status-line JSON
+One short line for the Claude Code status bar: "mw:N2R1B1:12/40" = N needs you (an open ask, or blocked with no --on),
+R awaiting review, B blocked on another item (each hidden at 0; an item counts once), then open/all items (inbox drafts
+are in neither). Settings: "statusLine":{"type":"command","command":"mw status --line --link"}. Counts the nearest board (walking up from the cwd; or from .workspace.current_dir / .cwd of status-line JSON
 on stdin); --link wraps the line in an OSC 8 hyperlink to the published page (jobs.artifact-url) or the file:// URL of jobs.md;
 prints nothing outside a board, when status.show is false, or on any error; never writes; always exits 0.`,
 		"boards": `mw boards [DIR] [--depth N] [--up] [-j]
@@ -521,8 +522,9 @@ Claim inbox/ready work and mark it doing (anything else is refused: "start: ID i
 mw reopen"; re-starting your own item is fine). A named session can own one item; an unknown name is
 registered on first use, with role ROLE when -a is given. Without -s/MW_SESSION the tenant's implicit session "local" claims it
 (it may own many items); done/block without -s are attributed to the item's owner.`,
-		"block": `mw block ID REASON... [-t SLUG] [-s NAME]
-Mark work blocked and record the required reason.`,
+		"block": `mw block ID REASON... [--on ID] [-t SLUG] [-s NAME]
+Mark work blocked and record the required reason. Without --on the item waits for a human (the status line counts it
+as N, needs you); --on ID names the open item it waits for (counted as B, blocked). Done items count as no dependency.`,
 		"done": `mw done ID VERIFICATION... [--evidence PATH]... [--no-evidence REASON] [-t SLUG] [-s NAME]
 Complete work with evidence. --evidence copies the files (or a folder's files) into
 <evidence>/<tenant>/<ID>/ before the gate check, so done is one command. One path per --evidence (also --evidence=PATH), repeat the flag for more; a word after the path is a note. Parents cannot close while children remain open.

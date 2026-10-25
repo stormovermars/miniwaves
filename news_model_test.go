@@ -158,7 +158,7 @@ func newsStress(t *testing.T) string {
 		add("DON", i, "task", "done", "ungated", "created", "done", "accept")
 	}
 	for i := 1; i <= 100; i++ {
-		add("BLK", i, "task", "blocked", "", "block")
+		add("BLK", i, "task", "blocked", "", "block").Events[0].On = "RDY-0001" // waits for an open item: B, not N
 	}
 	for i := 1; i <= 100; i++ { // blocked items that wait for a reviewer are review, not blocked
 		rv := add("REV", i, "task", "blocked", "", "block")
