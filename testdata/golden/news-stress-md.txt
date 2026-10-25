@@ -29,10 +29,10 @@ stress/WAV-1000 closed with 0 of 0 items done by s on 2026-10-01.
 
 ### Coming up
 
-- In progress (100): stress/DNG-0001 DNG 1 long title long title long title ~; stress/DNG-0002 DNG 2 long title long title long title ~; +48
+- In progress (100): stress/DNG-0001 DNG 1 long title long title long title \~; stress/DNG-0002 DNG 2 long title long title long title \~; +48
 - Awaiting review: 100
-- Up next (200 ready): stress/ASK-0001 ASK 1 long title long title long title ~; stress/ASK-0002 ASK 2 long title long title long title ~; +8
-- Milestones: stress/WAV-0001 WAV 1 long title long title long title ~ 0/0; stress/WAV-0002 WAV 2 long title long title long title ~ 0/0; +198
+- Up next (200 ready): stress/ASK-0001 ASK 1 long title long title long title \~; stress/ASK-0002 ASK 2 long title long title long title \~; +8
+- Milestones: stress/WAV-0001 WAV 1 long title long title long title \~ 0/0; stress/WAV-0002 WAV 2 long title long title long title \~ 0/0; +198
 - Blocked: 100
 
 ---

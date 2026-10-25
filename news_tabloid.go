@@ -401,9 +401,9 @@ func onBy(it newsItem) string {
 	return s
 }
 
-// mdEsc backslash-escapes what Markdown would act on, plus & (entities).
+// mdEsc backslash-escapes what Markdown would act on (mdText also covers & and ~).
 func mdEsc(s string) string {
-	return strings.ReplaceAll(mdText(bc(s)), "&", `\&`)
+	return mdText(bc(s))
 }
 
 func mdLineText(l tabloidLine) string {

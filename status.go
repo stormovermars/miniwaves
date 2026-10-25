@@ -76,31 +76,67 @@ func statusLine(cwd string, link bool) string {
 	m := buildNewsModel(w, newsPart{title: w.Name, tenants: newsJobTenants(w, "")}, nil, newsWindow{full: true})
 	line := formatStatusLine(m.Now.Counts)
 	if link {
-		line = statusLink(line, statusTarget(path, w))
+		line = statusLink(line, statusTarget(path, w, cwd))
 	}
 	return line
 }
 
 // statusTarget is what a click on the line opens: the published artifact URL (jobs.artifact-url next to
 // jobs.md) when that file exists, else the file:// URL of jobs.md. Pure path work; nothing is created.
-func statusTarget(path string, w *Workspace) string {
+func statusTarget(path string, w *Workspace, cwd string) string {
 	root := filepath.Dir(path)
 	dir := "docs/news/"
-	var ids []string
-	for id := range w.Jobs {
-		ids = append(ids, id)
-	}
-	if len(ids) > 0 {
-		sort.Strings(ids)
-		dir = jobView(w, ids[0]).NewsOut
+	if id := statusJob(w, root, cwd); id != "" {
+		dir = jobView(w, id).NewsOut
 	}
 	md := filepath.Join(root, filepath.FromSlash(dir), "jobs.md")
 	if b, err := os.ReadFile(filepath.Join(filepath.Dir(md), "jobs.artifact-url")); err == nil {
-		if u := strings.TrimSpace(string(b)); u != "" && !strings.ContainsAny(u, "\x00\x1b\x07\n\r") {
+		if u := strings.TrimSpace(string(b)); jobsMDValidURL(u) {
 			return u
 		}
 	}
-	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(md)}).String()
+	return fileURL(md)
+}
+
+// statusJob is the job of the folder cwd: the job of the tenant whose path holds cwd (the longest match), else
+// the first job by id, "" when the board has no jobs.
+func statusJob(w *Workspace, root, cwd string) string {
+	abs, _ := filepath.Abs(cwd)
+	best, id := -1, ""
+	for _, t := range w.Tenants {
+		if t.Path == "" || t.Job == "" {
+			continue
+		}
+		p := t.Path
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(root, p)
+		}
+		p = filepath.Clean(p)
+		if (abs == p || strings.HasPrefix(abs, p+string(os.PathSeparator))) && len(p) > best {
+			best, id = len(p), t.Job
+		}
+	}
+	if id != "" {
+		return id
+	}
+	ids := make([]string, 0, len(w.Jobs))
+	for j := range w.Jobs {
+		ids = append(ids, j)
+	}
+	sort.Strings(ids)
+	if len(ids) > 0 {
+		return ids[0]
+	}
+	return ""
+}
+
+// fileURL is the file:// URL of an absolute path. A Windows volume gets a leading slash (file:///C:/...).
+func fileURL(p string) string {
+	s := strings.ReplaceAll(p, `\`, "/")
+	if len(s) >= 2 && s[1] == ':' {
+		s = "/" + s
+	}
+	return (&url.URL{Scheme: "file", Path: s}).String()
 }
 
 // statusLink wraps text in an OSC 8 hyperlink.

@@ -22,7 +22,7 @@
 
 ### Ready
 
-- **TSK-002** Pipe \| in \`title\` & more · news-app · 2d
+- **TSK-002** Pipe \| in \`title\` \& more · news-app · 2d
 
 ### Recently done
 
@@ -37,11 +37,8 @@
 ### Last events
 
 - `Oct 22 11:13` doc CHR-001 decide Ship \<it\> (why: cheap)
-- `Oct 22 11:06` doc CHR-001 created
 - `Oct 22 10:59` doc TSK-001 ask Keep \| or cut \`X\`?
 - `Oct 22 10:52` doc TSK-001 start
 - `Oct 22 10:45` doc TSK-001 ready
-- `Oct 22 10:38` doc TSK-001 created
-
----
-updated Oct 22 11:13 · [News](<status.md>)
+- `Oct 22 10:31` news-app TSK-003 block needs \<b\>keys\</b\> second line
+- `Oct 22 10:24` news-app TSK-003 start
