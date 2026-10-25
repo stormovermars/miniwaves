@@ -951,12 +951,18 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 	if len(pos) > 0 {
 		sub, pos = pos[0], pos[1:]
 	}
+	if sub == "on" || sub == "off" { // short for: set enabled=true|false
+		if len(pos) != 0 {
+			return fmt.Errorf("usage: mw fanfare %s", sub)
+		}
+		sub, pos = "set", []string{"enabled=" + map[string]string{"on": "true", "off": "false"}[sub]}
+	}
 	c := fanfareCfg(w)
 	dir := expandHome(c.Dir)
 	switch sub {
 	case "":
 		if len(pos) != 0 {
-			return errors.New("usage: mw fanfare [set K=V... | sets | use NAME|all | test [milestone|finale] | fetch | list | stop]")
+			return errors.New("usage: mw fanfare [on | off | set K=V... | sets | use NAME|all | test [milestone|finale] | fetch | list | stop]")
 		}
 		pairs := scanPairs(dir)
 		ready, unplayable, incomplete, empty := 0, 0, 0, 0

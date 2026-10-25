@@ -26,7 +26,7 @@ func TestJobsEnableSetShowDisable(t *testing.T) {
 	runAll(t,
 		[]string{"jobs", "enable", "tiny", "-t", "sheet", "-t", "doc"},
 		[]string{"jobs", "set", "tiny", "title=Tiny corpus", "max_workers=3", "worktrees=off", "lock=buildlock.sh",
-			"news.out=docs/n/", "news.url=https://example.com/n", "summary=out/summary.txt", "pane=off", "pane.style=blocks"},
+			"news.out=docs/n/", "news.url=https://example.com/n", "summary=out/summary.txt"},
 	)
 	w, err := load(path)
 	if err != nil {
@@ -34,7 +34,7 @@ func TestJobsEnableSetShowDisable(t *testing.T) {
 	}
 	c := w.Jobs["tiny"]
 	if c.Title != "Tiny corpus" || c.MaxWorkers != 3 || c.Worktrees != "off" || c.Lock != "buildlock.sh" || c.NewsOut != "docs/n/" ||
-		c.NewsURL != "https://example.com/n" || c.Summary != "out/summary.txt" || c.Pane != "off" || c.PaneStyle != "blocks" {
+		c.NewsURL != "https://example.com/n" || c.Summary != "out/summary.txt" {
 		t.Fatalf("job: %+v", c)
 	}
 	if w.Version != 9 {
@@ -66,13 +66,13 @@ func TestJobsEnableSetShowDisable(t *testing.T) {
 		t.Fatalf("show: %+v", v)
 	}
 	// reset to defaults with an empty value
-	runAll(t, []string{"jobs", "set", "tiny", "max_workers=", "news.out=", "pane=", "title="})
+	runAll(t, []string{"jobs", "set", "tiny", "max_workers=", "news.out=", "title="})
 	out = captureOutput(t, func() { runAll(t, []string{"jobs", "show", "-j"}) })
 	var all []JobView
 	if err := json.Unmarshal([]byte(out), &all); err != nil || len(all) != 1 {
 		t.Fatalf("%v: %s", err, out)
 	}
-	if all[0].MaxWorkers != 4 || all[0].NewsOut != "docs/news/tiny/" || all[0].Pane != "on" || all[0].Title != "tiny" || all[0].Worktrees != "off" {
+	if all[0].MaxWorkers != 4 || all[0].NewsOut != "docs/news/tiny/" || all[0].Title != "tiny" || all[0].Worktrees != "off" {
 		t.Fatalf("defaults: %+v", all[0])
 	}
 
@@ -142,7 +142,7 @@ func TestJobsValidation(t *testing.T) {
 		t.Fatalf("partial write: %s", out)
 	}
 	// clean forms are accepted and normalized
-	runAll(t, []string{"jobs", "set", "j1", "news.out=docs//news/./", "summary=out\\s.txt", "max_workers=32", "pane.style=a-1"})
+	runAll(t, []string{"jobs", "set", "j1", "news.out=docs//news/./", "summary=out\\s.txt", "max_workers=32"})
 	out = captureOutput(t, func() { runAll(t, []string{"jobs", "show", "j1", "-j"}) })
 	var v JobView
 	_ = json.Unmarshal([]byte(out), &v)
@@ -301,5 +301,20 @@ func TestJobsShowNewsPath(t *testing.T) {
 	os.Symlink(filepath.Join(outside, "x.md"), filepath.Join(root, "ok", "status.md"))
 	if got := get(); got != "" {
 		t.Fatalf("symlinked status.md out: news_path = %q, want empty", got)
+	}
+}
+
+func TestJobDeadPaneKeysIgnored(t *testing.T) {
+	var c JobConfig
+	if err := json.Unmarshal([]byte(`{"title":"T","pane":"off","pane_style":"kanban","pane.style":"x","news.out":"docs/n/"}`), &c); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(c)
+	if c.Title != "T" || c.NewsOut != "docs/n/" || strings.Contains(string(b), "pane") {
+		t.Fatalf("old pane keys must be read and dropped: %+v %s", c, b)
+	}
+	out, _ := json.Marshal(jobView(&Workspace{Jobs: map[string]JobConfig{"j": c}}, "j"))
+	if strings.Contains(string(out), "pane") {
+		t.Fatalf("jobs show still lists pane keys: %s", out)
 	}
 }

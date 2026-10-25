@@ -308,7 +308,7 @@ func readOnly(args []string) bool {
 	case "dirs":
 		return sub != "set" && sub != "init"
 	case "fanfare":
-		return sub != "set" && sub != "use" && !(sub == "sets" && (has("add") || has("drop")))
+		return sub != "set" && sub != "use" && sub != "on" && sub != "off" && !(sub == "sets" && (has("add") || has("drop")))
 	case "jobs":
 		return sub == "show"
 	case "news": // stdout only (-o -, or --format text|json without -o; never --release) writes no file and no sidecar
@@ -406,6 +406,7 @@ Change an item's acceptance (-c), body (-b) and/or parent (-p; "-" clears; kind 
 cycles are enforced, waves are not parents: use mw wave add). A session may set -c only while
 the acceptance is empty (drafting); changing a non-empty acceptance is humans only.`,
 		"fanfare": `mw fanfare [-j]
+mw fanfare on | off
 mw fanfare set enabled=true milestone_seconds=15 finale_seconds=60 volume=1 stop_dialog=true dir=~/fanfare-finale-songs
 mw fanfare test [milestone|finale]
 mw fanfare fetch
@@ -437,7 +438,7 @@ mw jobs show [ID] [-j]
 Coordinated-job config (data only; mw starts no sessions). Jobs live in .miniwaves.json, a tenant joins one with enable.
 -t repeats or takes a comma list. disable clears the tenants (all, or -t SLUG) and keeps the job's data.
 Keys (defaults): title (the id), description (none, one line ≤120), max_workers 1..32 (4), worktrees on|off (on), lock (a command name, none),
-news.out (docs/news/<job>/), news.url (http/https), news_releases (<news.out>/releases), metrics (none), tracker (none; jira linear youtrack github gitlab azure shortcut clickup asana), tracker_url (https base URL), summary (none), pane on|off (on), pane.style ([a-z0-9-]{1,32}).
+news.out (docs/news/<job>/), news.url (http/https), news_releases (<news.out>/releases), metrics (none), tracker (none; jira linear youtrack github gitlab azure shortcut clickup asana), tracker_url (https base URL), summary (none).
 news.out, news_releases, metrics and summary must be relative, inside the workspace (no .., no absolute path, no ~). An empty VALUE resets a key.
 Job ids match ^[a-z0-9][a-z0-9-]{0,31}$. Example: mw jobs enable tiny -t sheet,doc && mw jobs set tiny max_workers=3`,
 		"ask": `mw ask ID QUESTION... [-t SLUG] [-s NAME]
@@ -581,7 +582,7 @@ mw board --html [-o PATH]   one static page for all tenants (no JS); PATH defaul
 board changed and the last write is at least interval seconds old: default 60, minimum 5, lower values clamp to 5;
 an explicit mw board --html always writes; the hash is kept in PATH.hash); no path = stdout
 mw board --md [--job ID] [-o PATH|-]   a readable Markdown jobs view (Needs you, To review, In progress, Ready,
-Recently done, Waves with progress) for the Claude desktop file pane; default <news.out>/jobs.md per job (docs/news/jobs.md
+Recently done, Waves with progress) for the Claude desktop app's file view; default <news.out>/jobs.md per job (docs/news/jobs.md
 with no job), rewritten only when the content changed (hash in jobs.md.hash), prints "wrote PATH" or "unchanged PATH"
 Show a small progress bar, a "last: <ago> <item> <action>  today: N done" line and active work.
 -A shows every tenant, most recently active first; -v includes history. A gates line appears when any gate is on.`,
@@ -603,7 +604,7 @@ TOON by default; use -j for JSON and -v for more detail.
 
 Usage:
   mw description [-j]
-  mw status --line                      one line for the Claude Code status bar (mw:N2R1B1:12/40)
+  mw status --line [--link]             one line for the Claude Code status bar (mw:N2R1B1:12/40); mw status --explain
   mw boards [DIR] [--depth N] [--up] [-j]
   mw migrate [--dry-run] [PATH]
   mw version [-j]
@@ -633,12 +634,13 @@ Usage:
   mw ready ID [-t SLUG] [-s NAME]
   mw reopen ID [-t SLUG] [-s NAME] [-m REASON]
   mw start ID [-t SLUG] [-s NAME] [-a ROLE]
-  mw block ID REASON... [-t SLUG] [-s NAME]
+  mw block ID REASON... [--on ID] [-t SLUG] [-s NAME]
   mw done ID VERIFICATION... [--evidence PATH]... [--no-evidence REASON] [-t SLUG] [-s NAME]
   mw log [-t SLUG | -A] [-n N] [-j] | mw log [-t SLUG | -A] --since CURSOR|start [-j]
   mw wave create|add|remove|step|unstep|show|list|close ...  (mw help wave)
   mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v] | mw next --claim [-s NAME] [-a ROLE] [-j] [--prompt]
   mw board [-t SLUG | -A] [-v] [-j] | mw board --html [-o PATH] | mw board --md [--job ID] [-o PATH|-]
+  mw fanfare [on|off|stop|test|use NAME|set KEY=VALUE...]   sounds when a wave closes or a tenant is finished
   mw archive [--days N] [-t SLUG] [--dry-run]
   mw context [-t SLUG] [-s NAME] [-j]
 

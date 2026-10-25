@@ -15,7 +15,7 @@ func TestJobsRoundTripAndOldReader(t *testing.T) {
 	path := jobsBoard(t)
 	runAll(t,
 		[]string{"jobs", "enable", "tiny", "-t", "sheet"},
-		[]string{"jobs", "set", "tiny", "title=Tiny", "news.out=docs/n/", "pane.style=blocks"},
+		[]string{"jobs", "set", "tiny", "title=Tiny", "news.out=docs/n/"},
 		[]string{"add", "task", "x", "-t", "sheet"},
 	)
 	before, _ := os.ReadFile(path)

@@ -18,9 +18,8 @@ import (
 // Nothing here executes: every value is data, and every path stays relative to the workspace.
 
 var (
-	jobIDPattern     = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
-	paneStylePattern = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
-	lockNamePattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+	jobIDPattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+	lockNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 )
 
 // JobConfig holds the explicitly set keys of one job; zero values mean "default".
@@ -37,8 +36,6 @@ type JobConfig struct {
 	TrackerURL   string `json:"tracker_url,omitempty"`
 	Metrics      string `json:"metrics,omitempty"`
 	Summary      string `json:"summary,omitempty"`
-	Pane         string `json:"pane,omitempty"`
-	PaneStyle    string `json:"pane_style,omitempty"`
 	Ceremonies   string `json:"ceremonies,omitempty"` // canonical comma list of ceremonyNames
 	ReadyMin     int    `json:"ready_min,omitempty"`
 
@@ -46,7 +43,10 @@ type JobConfig struct {
 }
 
 // jobDotted maps the 0.2.9-dev dotted storage keys to their snake_case names.
-var jobDotted = map[string]string{"news.out": "news_out", "news.url": "news_url", "pane.style": "pane_style"}
+var jobDotted = map[string]string{"news.out": "news_out", "news.url": "news_url"}
+
+// jobDeadKeys are job keys of older mw versions (the panes are gone): stored values are read and dropped, never an error.
+var jobDeadKeys = []string{"pane", "pane_style", "pane.style"}
 
 // UnmarshalJSON reads the snake_case keys, falls back to the old dotted ones when the new one is missing,
 // and keeps unknown keys. Writing always uses the snake_case names, so a save migrates the board.
@@ -61,7 +61,7 @@ func (c *JobConfig) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	known := map[string]bool{}
-	for _, k := range []string{"title", "description", "max_workers", "worktrees", "lock", "news_out", "news_url", "news_releases", "tracker", "tracker_url", "metrics", "summary", "pane", "pane_style", "ceremonies", "ready_min"} {
+	for _, k := range []string{"title", "description", "max_workers", "worktrees", "lock", "news_out", "news_url", "news_releases", "tracker", "tracker_url", "metrics", "summary", "ceremonies", "ready_min"} {
 		known[k] = true
 	}
 	for old, nw := range jobDotted {
@@ -76,14 +76,15 @@ func (c *JobConfig) UnmarshalJSON(b []byte) error {
 					p.NewsOut = s
 				case "news_url":
 					p.NewsURL = s
-				case "pane_style":
-					p.PaneStyle = s
 				}
 			}
 			delete(raw, old)
 		}
 	}
 	for k := range known {
+		delete(raw, k)
+	}
+	for _, k := range jobDeadKeys {
 		delete(raw, k)
 	}
 	p.extra = nil
@@ -127,20 +128,18 @@ type JobView struct {
 	Tracker      string   `json:"tracker,omitempty" toon:"tracker,omitempty"`
 	TrackerURL   string   `json:"tracker_url,omitempty" toon:"tracker_url,omitempty"`
 	Summary      string   `json:"summary" toon:"summary"`
-	Pane         string   `json:"pane" toon:"pane"`
-	PaneStyle    string   `json:"pane_style" toon:"pane_style"`
 	Ceremonies   []string `json:"ceremonies,omitempty" toon:"ceremonies,omitempty"`
 	ReadyMin     int      `json:"ready_min,omitempty" toon:"ready_min,omitempty"`
 	NewsPath     string   `json:"news_path" toon:"news_path"` // jobs show only: the real, confined path of the desk's status.md; "" when it does not resolve
 }
 
-var jobKeys = []string{"title", "description", "max_workers", "worktrees", "lock", "news.out", "news.url", "news_releases", "metrics", "tracker", "tracker_url", "summary", "pane", "pane.style", "ceremonies", "ready_min"}
+var jobKeys = []string{"title", "description", "max_workers", "worktrees", "lock", "news.out", "news.url", "news_releases", "metrics", "tracker", "tracker_url", "summary", "ceremonies", "ready_min"}
 
 // jobView applies the defaults.
 func jobView(w *Workspace, id string) JobView {
 	c := w.Jobs[id]
 	v := JobView{ID: id, Title: c.Title, Description: c.Description, Tenants: []string{}, MaxWorkers: c.MaxWorkers, Worktrees: c.Worktrees, Lock: c.Lock,
-		NewsOut: c.NewsOut, NewsURL: c.NewsURL, NewsReleases: c.NewsReleases, Metrics: c.Metrics, Tracker: c.Tracker, TrackerURL: c.TrackerURL, Summary: c.Summary, Pane: c.Pane, PaneStyle: c.PaneStyle}
+		NewsOut: c.NewsOut, NewsURL: c.NewsURL, NewsReleases: c.NewsReleases, Metrics: c.Metrics, Tracker: c.Tracker, TrackerURL: c.TrackerURL, Summary: c.Summary}
 	if v.Title == "" {
 		v.Title = id
 	}
@@ -155,9 +154,6 @@ func jobView(w *Workspace, id string) JobView {
 	}
 	if v.NewsReleases == "" {
 		v.NewsReleases = strings.TrimSuffix(v.NewsOut, "/") + "/releases"
-	}
-	if v.Pane == "" {
-		v.Pane = "on"
 	}
 	// Shown only when a job uses them, so a job without ceremonies prints exactly as before.
 	if cl := ceremonyList(c.Ceremonies); len(cl) > 0 {
@@ -273,8 +269,6 @@ func setJobKey(c *JobConfig, key, val string) error {
 		key = "news.out"
 	case "news_url":
 		key = "news.url"
-	case "pane_style":
-		key = "pane.style"
 	}
 	switch key {
 	case "title":
@@ -297,15 +291,11 @@ func setJobKey(c *JobConfig, key, val string) error {
 			return fmt.Errorf("max_workers: %q is not a number from 1 to 32", val)
 		}
 		c.MaxWorkers = n
-	case "worktrees", "pane":
+	case "worktrees":
 		if val != "" && val != "on" && val != "off" {
 			return fmt.Errorf("%s: %q must be on or off", key, val)
 		}
-		if key == "pane" {
-			c.Pane = val
-		} else {
-			c.Worktrees = val
-		}
+		c.Worktrees = val
 	case "lock":
 		if val != "" && !lockNamePattern.MatchString(val) {
 			return fmt.Errorf("lock: %q must be a command name the kit provides (letters, digits, . _ -), not a command line", val)
@@ -366,11 +356,6 @@ func setJobKey(c *JobConfig, key, val string) error {
 			return fmt.Errorf("ready_min: %q is not a number from 1 to 20", val)
 		}
 		c.ReadyMin = n
-	case "pane.style":
-		if val != "" && !paneStylePattern.MatchString(val) {
-			return fmt.Errorf("pane.style: %q must match ^[a-z0-9-]{1,32}$", val)
-		}
-		c.PaneStyle = val
 	default:
 		return fmt.Errorf("unknown job key %q (keys: %s)", key, strings.Join(jobKeys, ", "))
 	}

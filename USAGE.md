@@ -300,7 +300,7 @@ block/done note.
 
 ## Discovering boards
 
-`mw boards [DIR] [--depth N] [--up] [-j]` lists the boards under DIR (default `.`) so pane plugins need no setup.
+`mw boards [DIR] [--depth N] [--up] [-j]` lists the boards under DIR (default `.`) so plugins need no setup.
 
 - `--depth N` is 1..6; the default is your `discover.depth` (4, see "Per-user config"). `--up` also adds the nearest ancestor board.
 - It reads only each `.miniwaves.json` (no tenant files, no locks, no writes). An index over 1 MB is listed as an error entry, not read.
@@ -334,9 +334,9 @@ mw user fanfare-defaults     # fanfare.enabled=true and fanfare.use=all, only wh
 mw configure KEY=VALUE...    # validate and save without prompting
 ```
 
-`mw configure` without a terminal on stdin prints the settings plus a hint and exits 0; it never reads stdin then. It uses plain stdin and stdout, so it works on Windows too. `user get -j` prints `{"keys":[{"key","value","default","source","group","choices"}]}`: `value` is the effective value, `source` is `default`, `user` or `board` (only `fanfare.enabled`, when the board runs `mw fanfare set enabled=false`), `group` is one of pane, alerts, fanfare, status (the chat bar), discover, and `choices` lists the allowed values (empty for free text). These keys are per user and never stored on a board; an invalid value is refused with a non-zero exit.
+`mw configure` without a terminal on stdin prints the settings plus a hint and exits 0; it never reads stdin then. It uses plain stdin and stdout, so it works on Windows too. `user get -j` prints `{"keys":[{"key","value","default","source","group","choices"}]}`: `value` is the effective value, `source` is `default`, `user` or `board` (only `fanfare.enabled`, when the board runs `mw fanfare set enabled=false`), `group` is one of fanfare, status (the chat bar), discover, and `choices` lists the allowed values (empty for free text). These keys are per user and never stored on a board; an invalid value is refused with a non-zero exit.
 
-mw-jobs alerts appear as pane rows plus sound only, never as OS notification banners. The fanfare Stop dialog and your own `alerts.exec` are unaffected.
+mw opens no notification of its own: sounds are the fanfare, and your own `alerts.exec` (run by `mw log --follow --exec`) is unaffected.
 
 | Key | Allowed | Default | Meaning |
 |---|---|---|---|
@@ -359,7 +359,7 @@ Writes (`user set`, `configure`, `user fanfare-defaults`) take `mw-user.json.loc
 
 A job groups tenants under one coordinator. mw only stores the config and ships prompts and data; it never starts a session. The config lives in `.miniwaves.json` as an omitempty `jobs` object keyed by job id (a tenant carries `"job": ID`), in schema 9 (a board from 0.2.x needs `mw migrate`, which only bumps the version; a 0.2.8 or older mw then refuses the board instead of silently rewriting the index without `jobs`, `job` and fanfare `sets`).
 
-JSON uses snake_case keys like every other `-j` output: the board and `jobs show -j` store `news_out`, `news_url` and `pane_style`, and `user show -j` has `alerts_on`, `alerts_exec`, `fanfare_enabled`, `fanfare_use`. `news_releases`, `metrics`, `tracker` and `tracker_url` are plain snake_case in both places; the snake_case names `news_out`, `news_url` and `pane_style` also work in `mw jobs set`. The dotted CLI keys stay (`mw jobs set ID news.out=...`, `mw user set fanfare.use=...`). `mw jobs enable` prints `moved SLUG from job OLD` when a tenant leaves another job.
+JSON uses snake_case keys like every other `-j` output: the board and `jobs show -j` store `news_out` and `news_url`, and `user show -j` has `alerts_on`, `alerts_exec`, `fanfare_enabled`, `fanfare_use`. `news_releases`, `metrics`, `tracker` and `tracker_url` are plain snake_case in both places; the snake_case names `news_out` and `news_url` also work in `mw jobs set`. The dotted CLI keys stay (`mw jobs set ID news.out=...`, `mw user set fanfare.use=...`). `mw jobs enable` prints `moved SLUG from job OLD` when a tenant leaves another job.
 
 ```text
 mw jobs enable ID -t SLUG...        # create the job if needed and put the tenants in it (-t repeats or takes a comma list)
@@ -382,7 +382,6 @@ mw jobs show [ID] [-j]              # effective values (defaults applied) and th
 | `tracker` | none | one of `jira linear youtrack github gitlab azure shortcut clickup asana`; off unless set (see "Tickets") |
 | `tracker_url` | none | the tracker's base URL: https only, no query, fragment or credentials; a trailing `/` is trimmed; clickup and asana may leave it empty |
 | `summary` | none | a path with the `news.out` rules |
-| `pane` | `on` | `on` or `off` |
 | `ceremonies` | none | a comma list of `review`, `planning`, `triage`, `spike`; an unknown name is refused; stored in that order without duplicates; only the listed ceremonies reach the dispatcher prompt (see "Ceremonies") |
 | `ready_min` | `3` (shown once `ceremonies` is set) | 1..20; the planning trigger: fewer ready items than this |
 
@@ -497,7 +496,7 @@ totals (`DONE (n, +N archived)` with `-v`, `archived` in `board -j`); IDs are ne
 
 ## Jobs view
 
-`mw board --md [--job ID] [-o PATH|-]` renders every job as Markdown for the Claude desktop file pane (the mw-jobs plugin's `/mw-jobs`). Layout per job: a headline (`! 2 need you`, else `◐ N awaiting review`, `⏱ N blocked`, `● N in progress`), then Needs you, Review, In progress (`●`, or `⏱ stalled` after 45 minutes), Ready (the queue, 10 then `… N more`), Recently done (`✓`, what was done today, at most 10, else the last 5; titles are cut at 80 characters with `…`), Milestones (open waves with a text bar, closed ones folded into `✓ N closed`), Harness (only with a job `metrics` file, with ▲▼ deltas against the latest release), Last events (6, without `created`; `HH:MM` for today, `Mon DD HH:MM` for older days) and one footer at the end of the file (`updated HH:MM` is the newest event of any job, then per job a link to its own `status.md` and, when that job has a valid http(s) `jobs.artifact-url` next to its page, the published page). Empty sections are left out. The first line under the title is a status line over every job: `! tiny 2 need you · C2 5/6 │ demo ▸ D1 1/2` (`3 in progress` or `2 blocked` instead of waves when a job has none; `quiet` only when nothing is going on). Default file: `<news.out>/jobs.md` per job (`docs/news/<job>/jobs.md`; `docs/news/jobs.md` with no job; jobs that share a file share one combined document); `-o PATH` writes one file with every job, `-o -` prints it. The file is rewritten only when its content changed (hash in `jobs.md.hash`); mw prints `wrote PATH` or `unchanged PATH`. Ages are in 5-minute steps (hours, then days) so an idle board does not rewrite the file. `mw news` is the tabloid edition (see "News").
+`mw board --md [--job ID] [-o PATH|-]` renders every job as Markdown for the Claude desktop app's file view (the mw-jobs plugin's `/mw-jobs`). Layout per job: a headline (`! 2 need you`, else `◐ N awaiting review`, `⏱ N blocked`, `● N in progress`), then Needs you, Review, In progress (`●`, or `⏱ stalled` after 45 minutes), Ready (the queue, 10 then `… N more`), Recently done (`✓`, what was done today, at most 10, else the last 5; titles are cut at 80 characters with `…`), Milestones (open waves with a text bar, closed ones folded into `✓ N closed`), Harness (only with a job `metrics` file, with ▲▼ deltas against the latest release), Last events (6, without `created`; `HH:MM` for today, `Mon DD HH:MM` for older days) and one footer at the end of the file (`updated HH:MM` is the newest event of any job, then per job a link to its own `status.md` and, when that job has a valid http(s) `jobs.artifact-url` next to its page, the published page). Empty sections are left out. The first line under the title is a status line over every job: `! tiny 2 need you · C2 5/6 │ demo ▸ D1 1/2` (`3 in progress` or `2 blocked` instead of waves when a job has none; `quiet` only when nothing is going on). Default file: `<news.out>/jobs.md` per job (`docs/news/<job>/jobs.md`; `docs/news/jobs.md` with no job; jobs that share a file share one combined document); `-o PATH` writes one file with every job, `-o -` prints it. The file is rewritten only when its content changed (hash in `jobs.md.hash`); mw prints `wrote PATH` or `unchanged PATH`. Ages are in 5-minute steps (hours, then days) so an idle board does not rewrite the file. `mw news` is the tabloid edition (see "News").
 
 ## Status line
 
