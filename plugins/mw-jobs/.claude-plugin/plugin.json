@@ -1,19 +1,10 @@
 {
   "name": "mw-jobs",
   "version": "0.3.9",
-  "description": "Live mw jobs and news panes, settings and alerts",
+  "description": "mw jobs and news as Markdown files in the Claude file pane, optional claude.ai artifact",
   "author": {
     "name": "stormovermars"
   },
   "homepage": "https://github.com/stormovermars/miniwaves",
-  "license": "MIT",
-  "types": "./types/index.d.ts",
-  "userConfig": {
-    "registry": {
-      "type": "string",
-      "title": "Jobs registry file",
-      "description": "Optional JSON file that lists jobs. A missing file is normal: boards are discovered on their own. Per-job logs go in a logs folder next to it.",
-      "default": "~/.mw/jobs.json"
-    }
-  }
+  "license": "MIT"
 }

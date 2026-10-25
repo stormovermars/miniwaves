@@ -12,7 +12,7 @@ curl -fsSL https://raw.githubusercontent.com/stormovermars/miniwaves/main/instal
 irm https://raw.githubusercontent.com/stormovermars/miniwaves/main/install.ps1 | iex        # Windows
 ```
 
-This installs the `mw` binary and, when Claude Code (`claude`) is on PATH, the Claude Code plugins `mw` (skill, `/mw-next`, `/mw-board`) and `mw-jobs` (live jobs and news panes, settings, alerts). The plugin step is best effort: if it fails, the binary is still installed.
+This installs the `mw` binary and, when Claude Code (`claude`) is on PATH, the Claude Code plugins `mw` (skill, `/mw-next`, `/mw-board`) and `mw-jobs` (jobs and news as Markdown files in the Claude file pane, optional artifact). The plugin step is best effort: if it fails, the binary is still installed.
 
 Upgrade: `mw update` (checks GitHub releases, verifies the checksum, replaces the binary and updates the plugins; `--check` only reports).
 
@@ -22,7 +22,7 @@ Upgrade: `mw update` (checks GitHub releases, verifies the checksum, replaces th
 - `MW_INSTALL_FILE=<path>` makes `install.sh` / `install.ps1` install a local `mw` binary (or a `.tar.gz` / `.zip` holding it) instead of downloading a release; checksum verification is skipped (CI smoke tests).
 - No Claude Code, or the binary only: `go install github.com/stormovermars/miniwaves@latest` (the binary is named `miniwaves`). By hand: `claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves mw-jobs@miniwaves`.
 
-Open the panes: run `/mw-watch` (or `/mw-jobs`, `/mw-news`; settings: `/mw-configure`; fanfare: `/mw-fanfare`). That is the whole setup: mw-jobs finds the boards this session used, then those near the session folder, then under `~`, with their tenants (`mw boards` does the finding). Fanfare is switched on with defaults at install (change it with `mw configure`). `mw-watch` (formerly `tidewatch`) is retired; mw-jobs replaces it.
+Open the jobs view: run `/mw-jobs` (or `/mw-news`; `/mw-publish` for a claude.ai artifact; fanfare: `/mw-fanfare`). It renders `jobs.md` with `mw board --md` and the Claude desktop app shows it in its file pane. No panes. Fanfare is switched on with defaults at install (change it with `mw configure`). `mw-watch` (formerly `tidewatch`) is retired; mw-jobs replaces it.
 
 ## Use
 
@@ -59,7 +59,7 @@ All off until you turn them on. Details in [USAGE.md](USAGE.md).
 | Uncapped news lists | `mw news --job ID --full -o FILE` (or `-o -`, `--format json\|text`) | leave `--full` off |
 | Personal settings (pane, alerts, fanfare, chat bar, discovery) | `mw configure` (or `mw configure KEY=VALUE...`) | `mw user set KEY=` resets a key |
 | Fanfare set | `mw fanfare use NAME` | `mw fanfare use all` |
-| mw-jobs panes: jobs, news, settings, alerts, chat-bar status (Claude Code): `/mw-watch`, `/mw-jobs`, `/mw-news`, `/mw-configure`, `/mw-fanfare` | installed with the `mw` plugin (`mw update --plugins`); no setup, it finds your boards | `claude plugin uninstall mw-jobs` |
+| mw-jobs md files: jobs, news (Claude Code): `/mw-jobs`, `/mw-news`, `/mw-publish`, `/mw-fanfare` | installed with the `mw` plugin (`mw update --plugins`); no setup, it finds your boards | `claude plugin uninstall mw-jobs` |
 
 To share mw-jobs with your team, install it, then ask Claude Code: "publish the mw-jobs plugin to my organization". It shows every file and asks before sending; an admin may review it first. Colleagues then install it from the organization library.
 

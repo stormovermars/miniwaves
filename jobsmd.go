@@ -175,15 +175,15 @@ func renderJobsMD(in jobsMDInput, now time.Time) string {
 	}
 	switch {
 	case c.Needs > 0:
-		fmt.Fprintf(&b, "**! %d need you**\n\n", c.Needs)
+		fmt.Fprintf(&b, "**! %d need you**\n", c.Needs)
 	case c.Review > 0:
-		fmt.Fprintf(&b, "**◐ %d awaiting review**\n\n", c.Review)
+		fmt.Fprintf(&b, "**◐ %d awaiting review**\n", c.Review)
 	case c.Blocked > 0:
-		fmt.Fprintf(&b, "**⏱ %d blocked**\n\n", c.Blocked)
+		fmt.Fprintf(&b, "**⏱ %d blocked**\n", c.Blocked)
 	case c.Doing > 0:
-		fmt.Fprintf(&b, "**● %d in progress**\n\n", c.Doing)
+		fmt.Fprintf(&b, "**● %d in progress**\n", c.Doing)
 	default:
-		b.WriteString("**✓ all quiet**\n\n")
+		b.WriteString("**✓ all quiet**\n")
 	}
 	var sub []string
 	if c.Needs > 0 && c.Review > 0 {
@@ -199,7 +199,7 @@ func renderJobsMD(in jobsMDInput, now time.Time) string {
 		sub = append(sub, fmt.Sprintf("%d in progress", c.Doing))
 	}
 	if len(sub) > 0 {
-		b.WriteString(strings.Join(sub, " · ") + "\n")
+		b.WriteString("\n" + strings.Join(sub, " · ") + "\n")
 	}
 	if len(m.Now.Needs) > 0 {
 		b.WriteString("\n### Needs you\n\n")

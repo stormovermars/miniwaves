@@ -17,6 +17,10 @@ PATH defaults to the `.miniwaves.json` found upward from the current folder. `mw
 
 Schema 8 stores each tenant in its own file: `.miniwaves.json` is the index, items, counters, gate state and sessions are in `.miniwaves/<slug>.json`, the archive in `.miniwaves/<slug>.archive.json`. Commit `.miniwaves.json` and `.miniwaves/`, and add `.miniwaves/*.lock*` and `.miniwaves/*.tmp` to `.git/info/exclude` (`mw init` does it for new boards). An old mw cannot read schema 8.
 
+## 0.4: panes replaced by md files (mw-jobs)
+
+No schema change, no migration step. The mw-jobs panes (Jobs, News, settings, image pane, alert rows, toasts, chat-bar status, `mw_panes_open`) are gone. New `mw board --md` writes `jobs.md` next to the news draft; `/mw-jobs` and `/mw-news` print the file paths and the Claude desktop app shows them in its file pane; `/mw-publish` publishes them as a claude.ai artifact. `/mw-watch` and `/mw-configure` are removed (use `mw configure` in a terminal). Hooks refresh the files quietly; they send no notifications. The `pane.*`, `alerts.*` and `chat bar` user keys stay readable but nothing in the plugin uses them.
+
 ## 0.3.7
 
 No schema change, no migration step. The finale Stop dialog removed in 0.3.6 is back, with its icon and the `stop_dialog` key (default true, no deprecation note). `mw fanfare stop`, the mw-jobs Stop button and the `playing` / `playing_finale` keys of `mw fanfare -j` stay.

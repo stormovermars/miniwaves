@@ -1,1 +1,13 @@
-{ "modules": ["./register.tsx"] }
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/refresh.sh\"", "timeout": 10 } ] }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [ { "type": "command", "if": "Bash(mw *)", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/refresh.sh\"", "timeout": 10 } ]
+      }
+    ]
+  }
+}
