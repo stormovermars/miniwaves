@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,12 +10,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
 // mw status --line: one short line for the Claude Code status bar, "mw:N2R1B1:12/40". It is read-only,
-// never fails (exit 0, silent on any problem) and prints nothing outside a board or when status.show is off.
+// never fails (exit 0, silent on any problem) and prints nothing outside a board (see statusBelow) or when status.show is off.
 
 // statusCwd picks the working folder: the cwd (or workspace.current_dir) of the status-line JSON on stdin,
 // else the process cwd.
@@ -65,18 +68,79 @@ func statusLine(cwd string, link bool) string {
 			return ""
 		}
 	}
-	path := statusFindBoard(cwd)
-	if path == "" {
-		return ""
+	if path := statusFindBoard(cwd); path != "" {
+		w, err := load(path)
+		if err != nil {
+			return ""
+		}
+		line := formatStatusLine(statusCounts(w))
+		if link {
+			line = statusLink(line, statusTarget(path, w, cwd))
+		}
+		return line
 	}
-	w, err := load(path)
+	return statusBelow(cwd, link)
+}
+
+func statusCounts(w *Workspace) newsCounts {
+	return buildNewsModel(w, newsPart{title: w.Name, tenants: newsJobTenants(w, "")}, nil, newsWindow{full: true}).Now.Counts
+}
+
+const (
+	statusFallbackDepth = 2
+	statusCacheTTL      = 30 * time.Second
+)
+
+// statusCacheDir is where the multi-board result is cached (a var so tests can point it elsewhere).
+var statusCacheDir = func() string {
+	d, err := os.UserCacheDir()
 	if err != nil {
 		return ""
 	}
-	m := buildNewsModel(w, newsPart{title: w.Name, tenants: newsJobTenants(w, "")}, nil, newsWindow{full: true})
-	line := formatStatusLine(m.Now.Counts)
-	if link {
-		line = statusLink(line, statusTarget(path, w, cwd))
+	return filepath.Join(d, "miniwaves")
+}
+
+// statusBelow is the line for cwd outside any board: the boards up to statusFallbackDepth levels below it, summed.
+// The link goes only to a single board. The result is cached for statusCacheTTL (write failures are ignored).
+func statusBelow(cwd string, link bool) string {
+	abs, err := filepath.Abs(cwd)
+	if err != nil {
+		return ""
+	}
+	var cache string
+	if d := statusCacheDir(); d != "" {
+		sum := sha256.Sum256([]byte(abs + "\x00" + strconv.FormatBool(link)))
+		cache = filepath.Join(d, "statusline-"+hex.EncodeToString(sum[:8])+".txt")
+		if fi, err := os.Stat(cache); err == nil && time.Since(fi.ModTime()) < statusCacheTTL {
+			if b, err := os.ReadFile(cache); err == nil {
+				return string(b)
+			}
+		}
+	}
+	var total newsCounts
+	n, one, oneW := 0, "", (*Workspace)(nil)
+	for _, b := range discoverBoards(abs, statusFallbackDepth, false).Boards {
+		if b.Error != "" {
+			continue
+		}
+		w, err := load(b.Path)
+		if err != nil {
+			continue
+		}
+		c := statusCounts(w)
+		total.Needs, total.Review, total.Blocked = total.Needs+c.Needs, total.Review+c.Review, total.Blocked+c.Blocked
+		total.Work, total.Done = total.Work+c.Work, total.Done+c.Done
+		n, one, oneW = n+1, b.Path, w
+	}
+	line := ""
+	if n > 0 {
+		line = formatStatusLine(total)
+		if link && n == 1 {
+			line = statusLink(line, statusTarget(one, oneW, cwd))
+		}
+	}
+	if cache != "" && os.MkdirAll(filepath.Dir(cache), 0755) == nil {
+		_ = os.WriteFile(cache, []byte(line), 0644)
 	}
 	return line
 }

@@ -335,7 +335,8 @@ One short line for the Claude Code status bar: "mw:N2R1B1:12/40" = N needs you (
 R awaiting review, B blocked on another item (each hidden at 0; an item counts once), then open/all items (inbox drafts
 are in neither). Settings: "statusLine":{"type":"command","command":"mw status --line --link"}. Counts the nearest board (walking up from the cwd; or from .workspace.current_dir / .cwd of status-line JSON
 on stdin); --link wraps the line in an OSC 8 hyperlink to the published page (jobs.artifact-url) or the file:// URL of jobs.md;
-prints nothing outside a board, when status.show is false, or on any error; never writes; always exits 0.`,
+outside a board it sums the boards up to 2 folder levels below the cwd (no link unless exactly one; cached 30 s in the user cache folder) and prints nothing when there are none;
+prints nothing when status.show is false or on any error; never writes a board; always exits 0.`,
 		"boards": `mw boards [DIR] [--depth N] [--up] [-j]
 Read-only discovery of mw boards: scans DIR (default .) down to --depth (1..6; default: your discover.depth, 4) for
 .miniwaves.json; --up also adds the nearest ancestor board, never looking inside macOS-protected

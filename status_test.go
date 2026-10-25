@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFormatStatusLine(t *testing.T) {
@@ -133,4 +134,81 @@ func TestStatusExplain(t *testing.T) {
 		t.Errorf("no board:\n%s", out)
 	}
 	wantErr(t, "unknown option", "status", "--explain", "--bogus")
+}
+
+// statusMkBoard makes a board with n ready tasks in dir and returns to the previous folder.
+func statusMkBoard(t *testing.T, dir string, n int) {
+	t.Helper()
+	old := mustGetwd()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(old)
+	runAll(t, []string{"init", "B"})
+	for i := 0; i < n; i++ {
+		runAll(t, []string{"add", "task", "t" + strconv.Itoa(i), "-S", "ready"})
+	}
+}
+
+func statusBelowSetup(t *testing.T) string {
+	userCfgPath(t)
+	cache := t.TempDir()
+	old := statusCacheDir
+	statusCacheDir = func() string { return cache }
+	t.Cleanup(func() { statusCacheDir = old })
+	return t.TempDir()
+}
+
+func TestStatusBelowSumsBoards(t *testing.T) {
+	root := statusBelowSetup(t)
+	if got := statusLine(root, false); got != "" {
+		t.Fatalf("no boards: %q", got)
+	}
+	files, _ := filepath.Glob(filepath.Join(statusCacheDir(), "statusline-*.txt"))
+	for _, f := range files {
+		os.Remove(f)
+	}
+	statusMkBoard(t, filepath.Join(root, "a"), 2)
+	statusMkBoard(t, filepath.Join(root, "b", "c"), 1)
+	statusMkBoard(t, filepath.Join(root, "x", "y", "z"), 5) // three levels down: beyond the depth
+	if got := statusLine(root, false); got != "mw:3/3" {
+		t.Fatalf("sum: %q", got)
+	}
+	if got := statusLine(root, true); strings.Contains(got, "\x1b") {
+		t.Fatalf("two boards must not link: %q", got)
+	}
+}
+
+func TestStatusBelowLinkOnlyForOneBoard(t *testing.T) {
+	root := statusBelowSetup(t)
+	statusMkBoard(t, filepath.Join(root, "only"), 1)
+	if got := statusLine(root, true); !strings.HasPrefix(got, "\x1b]8;;file://") || !strings.Contains(got, "mw:1/1") {
+		t.Fatalf("single board link: %q", got)
+	}
+}
+
+func TestStatusBelowCache(t *testing.T) {
+	root := statusBelowSetup(t)
+	statusMkBoard(t, filepath.Join(root, "a"), 1)
+	if got := statusLine(root, false); got != "mw:1/1" {
+		t.Fatalf("first: %q", got)
+	}
+	statusMkBoard(t, filepath.Join(root, "b"), 1)
+	if got := statusLine(root, false); got != "mw:1/1" {
+		t.Fatalf("cache hit must return the cached text: %q", got)
+	}
+	files, _ := filepath.Glob(filepath.Join(statusCacheDir(), "statusline-*.txt"))
+	if len(files) != 1 {
+		t.Fatalf("cache files: %v", files)
+	}
+	old := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(files[0], old, old); err != nil {
+		t.Fatal(err)
+	}
+	if got := statusLine(root, false); got != "mw:2/2" {
+		t.Fatalf("expired cache must recompute: %q", got)
+	}
 }
