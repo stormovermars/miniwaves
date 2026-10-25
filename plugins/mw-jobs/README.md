@@ -18,7 +18,7 @@ Files live next to the job's news draft (`<news.out>/jobs.md` and `status.md`; `
 
 ## Hooks
 
-SessionStart and PostToolUse on Bash commands that run `mw ` quietly refresh `jobs.md` and `status.md` (`hooks/refresh.sh`; silent, fast, failures ignored). No notifications, no toasts.
+One PostToolUse hook on Bash: after an `mw` verb that writes the board (add, ready, start, done, block, unblock, ask, answer, accept, reject, wave, note, edit) it quietly runs `mw board --md` in the hook's `cwd` (`hooks/refresh.sh`). Nothing runs at session start, the news file is left to `/mw-news`, and it never prints or fails. No notifications, no toasts.
 
 ## Status line
 
