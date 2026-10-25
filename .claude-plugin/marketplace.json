@@ -23,7 +23,7 @@
     {
       "name": "mw-jobs",
       "source": "./plugins/mw-jobs",
-      "description": "Opt-in live mw jobs and news panes, settings and alerts.",
+      "description": "mw jobs and news as Markdown files in the Claude file pane.",
       "version": "0.3.9",
       "author": {
         "name": "stormovermars"
