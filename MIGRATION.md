@@ -17,7 +17,7 @@ PATH defaults to the `.miniwaves.json` found upward from the current folder. `mw
 
 Schema 8 stores each tenant in its own file: `.miniwaves.json` is the index, items, counters, gate state and sessions are in `.miniwaves/<slug>.json`, the archive in `.miniwaves/<slug>.archive.json`. Commit `.miniwaves.json` and `.miniwaves/`, and add `.miniwaves/*.lock*` and `.miniwaves/*.tmp` to `.git/info/exclude` (`mw init` does it for new boards). An old mw cannot read schema 8.
 
-## 0.4: panes replaced by md files (mw-jobs)
+## 0.3.10: panes replaced by md files (mw-jobs)
 
 **Blocked and counts.** `mw block ID REASON --on OTHER` names the item a block waits for (a new optional `on` on the block event; an older mw drops it when it saves). In the status line and the news counts, N (needs you) is an open ask or a block with no `--on`, B is a block on another open item, and no item counts twice; open/all leaves out inbox drafts. The job keys `pane` and `pane.style` are gone: stored values are ignored and dropped on the next save, `mw jobs set` refuses them as unknown. `mw fanfare on|off` is short for `set enabled=true|false`.
 
