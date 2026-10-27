@@ -95,6 +95,9 @@ func TestMDWhen(t *testing.T) {
 }
 
 func TestBoardMDWaiting(t *testing.T) {
+	old := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = old })
 	gp, err := filepath.Abs(filepath.Join("testdata", "golden", "board-md-waiting.md"))
 	if err != nil {
 		t.Fatal(err)
