@@ -533,6 +533,9 @@ func moveCommand(path string, w *Workspace, command string, args []string) error
 		return err
 	}
 	fmt.Printf("[%s] %s  %-7s %s\n", t.Slug, it.ID, it.Status, compactText(it.Title, 72))
+	if command == "done" {
+		printClosedAsk(it)
+	}
 	return nil
 }
 

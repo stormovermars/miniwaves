@@ -240,3 +240,71 @@ func TestGoldenReviewNeeds(t *testing.T) {
 	got = rfcRe.ReplaceAllString(got, "<TS>")
 	checkGolden(t, "review-needs-j", got)
 }
+
+// BUG-018: a final transition (done, accept) closes an earlier open ask; an ask after it still counts.
+func TestFinalTransitionClosesAsk(t *testing.T) {
+	needsBoard(t)
+	runAll(t,
+		[]string{"start", "TSK-001"},
+		[]string{"ask", "TSK-001", "Merge?"},
+	)
+	if n := reviewNeeds(t); len(n) != 1 {
+		t.Fatalf("ask before done: %+v", n)
+	}
+	out := captureOutput(t, func() { runAll(t, []string{"done", "TSK-001", "merged"}) })
+	if !strings.Contains(out, "closed open ask") || !strings.Contains(out, "Merge?") {
+		t.Fatalf("done must say it closed the ask:\n%s", out)
+	}
+	if n := reviewNeeds(t); len(n) != 0 {
+		t.Fatalf("ask then done must not need you: %+v", n)
+	}
+	board := captureOutput(t, func() { runAll(t, []string{"board"}) })
+	if strings.Contains(board, "NEEDS YOU") {
+		t.Fatalf("board still shows needs:\n%s", board)
+	}
+	// ask after done counts
+	runAll(t, []string{"ask", "TSK-001", "Again?"})
+	if n := reviewNeeds(t); len(n) != 1 || n[0].Question != "Again?" {
+		t.Fatalf("ask after done: %+v", n)
+	}
+	runAll(t, []string{"answer", "TSK-001", "ok", "--by", "Sir"})
+	// ask, done, reopen: the old ask stays closed
+	runAll(t, []string{"reopen", "TSK-001"}, []string{"start", "TSK-001"}, []string{"ask", "TSK-001", "Third?"}, []string{"done", "TSK-001", "x"}, []string{"reopen", "TSK-001"})
+	if n := reviewNeeds(t); len(n) != 0 {
+		t.Fatalf("ask, done, reopen: %+v", n)
+	}
+	// plain answer still works
+	runAll(t, []string{"ask", "TSK-002", "Q"})
+	if n := reviewNeeds(t); len(n) != 1 {
+		t.Fatalf("ask: %+v", n)
+	}
+	runAll(t, []string{"answer", "TSK-002", "A", "--by", "Sir"})
+	if n := reviewNeeds(t); len(n) != 0 {
+		t.Fatalf("answer: %+v", n)
+	}
+}
+
+func TestOpenAskUnit(t *testing.T) {
+	ev := func(as ...string) Item {
+		var it Item
+		for _, a := range as {
+			it.Events = append(it.Events, Event{Action: a})
+		}
+		return it
+	}
+	for _, c := range []struct {
+		ev   []string
+		open bool
+	}{
+		{[]string{"start", "ask", "done"}, false},
+		{[]string{"ask", "done", "ask"}, true},
+		{[]string{"ask", "done", "reopen"}, false},
+		{[]string{"ask", "done", "accept"}, false},
+		{[]string{"ask", "answer"}, false},
+		{[]string{"ask"}, true},
+	} {
+		if _, ok := openAsk(ev(c.ev...)); ok != c.open {
+			t.Errorf("%v: open=%v want %v", c.ev, ok, c.open)
+		}
+	}
+}

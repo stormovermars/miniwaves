@@ -462,6 +462,7 @@ func acceptCommand(path string, w *Workspace, args []string) error {
 		return err
 	}
 	fmt.Printf("[%s] %s  accepted by %s\n", t.Slug, it.ID, by)
+	printClosedAsk(it)
 	return nil
 }
 

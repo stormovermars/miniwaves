@@ -20,19 +20,32 @@ type needRow struct {
 	At       string `json:"at" toon:"at"`
 }
 
-// openAsk returns the item's open ask: its last ask event when no answer follows it.
+// finalAction is true for the events that move an item to its final state (done; accept also finishes it).
+func finalAction(action string) bool { return action == "done" || action == "accept" }
+
+// openAsk returns the item's open ask: its last ask event when no answer and no later final event (done, accept) follows it.
+// A reopen does not revive an ask that a final event closed.
 func openAsk(it Item) (Event, bool) {
 	var ask Event
 	open := false
 	for _, e := range it.Events {
-		switch e.Action {
-		case "ask":
+		switch {
+		case e.Action == "ask":
 			ask, open = e, true
-		case "answer":
+		case e.Action == "answer", finalAction(e.Action):
 			open = false
 		}
 	}
 	return ask, open
+}
+
+// printClosedAsk tells that the final event just appended to it closed an open ask (call it after emit).
+func printClosedAsk(it *Item) {
+	if n := len(it.Events); n > 0 && finalAction(it.Events[n-1].Action) {
+		if e, ok := openAsk(Item{Events: it.Events[:n-1]}); ok {
+			fmt.Printf("  closed open ask from %s: %s\n", ago(e.At), compactText(e.Note, 60))
+		}
+	}
 }
 
 // needsOf lists the open asks of a tenant, in item order.

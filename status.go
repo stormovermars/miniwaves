@@ -313,6 +313,7 @@ func statusExplain(cwd, pluginsDir string) string {
 		fmt.Fprintf(&b, "- B = blocked: %d (blocked on another item, mw block --on ID).\n", c.Blocked)
 		fmt.Fprintf(&b, "- %d/%d = open items over all items (done included, inbox drafts left out).\n", c.Work-c.Done, c.Work)
 		fmt.Fprintln(&b, "An item is counted once. A letter that is missing means its count is zero.")
+		fmt.Fprintln(&b, "--link adds the board link only when exactly one board is found (otherwise the line prints without a link).")
 		fmt.Fprintln(&b, `To show it in the chat bar add to ~/.claude/settings.json: "statusLine":{"type":"command","command":"mw status --line --link"}`)
 		if len(m.Now.Needs) > 0 {
 			fmt.Fprintln(&b, "\nNeeds you")

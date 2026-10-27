@@ -293,7 +293,7 @@ block/done note.
 
 - `mw ask ID QUESTION... [-s NAME]` records a question for a human. Any session may ask.
 - `mw answer ID TEXT... --by NAME` is human only, like `accept`: it is refused under `MW_SESSION` or `-s`, and `--by` is required when stdin is not a terminal. It is refused when the item has no open ask.
-- An **open ask** is the last `ask` of an item with no later `answer` on that item (one answer closes every earlier ask).
+- An **open ask** is the last `ask` of an item with no later `answer` and no later final event (`done`, `accept`) on that item (one answer closes every earlier ask). `mw done` prints `closed open ask from AGO: QUESTION` when it closes one; a `reopen` does not revive it, an `ask` after the final event is open.
 - **N and B.** N (needs you) counts an item with an open ask, or a blocked item with no dependency; B counts a blocked item whose `mw block --on ID` names an open item. An item is counted once (ask, then review, then N/B), and a block on a done item counts as no dependency.
 - `mw review` shows open asks as `needs you`, `mw review -j` and `mw board -j` gain `needs` (`[{tenant, item, question, by, at}]`, always an array), and the text `mw board` prints a `NEEDS YOU` block.
 - `mw decide TEXT... [--by NAME] [-b WHY] [-p ID]` is open to humans and sessions. With `-s` (or `MW_SESSION`) the event is recorded by that session and a `--by NAME` becomes `(for NAME)` at the end of the note; without a session it is recorded by `--by NAME` (required when stdin is not a terminal), else the login name. It appends a `decide` event to `-p ID`, else to the tenant's `Decisions` chore, created on first use (already `done`, so it never holds the tenant open). `-b WHY` is stored as `(why: WHY)` at the end of the note.

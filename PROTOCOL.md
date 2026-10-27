@@ -27,7 +27,7 @@ them reads them as plain strings.
 | answer | `mw answer ID TEXT... --by NAME` (human only) | the human | the answer |
 | decide | `mw decide TEXT... --by NAME [-b WHY] [-p ID]` | the decider | the decision, then `(why: WHY)` |
 
-An open ask is the last `ask` of an item with no later `answer` on the same item.
+An open ask is the last `ask` of an item with no later `answer` and no later final event (`done`, `accept`) on the same item. A `reopen` does not revive an ask that a final event closed; an `ask` after the final event is open.
 `decide` goes to the item given with `-p`, else to the tenant's "Decisions" chore.
 
 # Steps only a human performs (prose, not steps)
