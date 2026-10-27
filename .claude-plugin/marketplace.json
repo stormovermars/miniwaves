@@ -9,13 +9,13 @@
       "name": "mw",
       "source": "./plugins/mw",
       "description": "Work from the miniwaves board: claim the next ready item, finish it with evidence, block with a reason.",
-      "version": "0.3.10"
+      "version": "0.3.12"
     },
     {
       "name": "mw-jobs",
       "source": "./plugins/mw-jobs",
       "description": "mw jobs and news as Markdown files in the Claude file pane.",
-      "version": "0.3.10",
+      "version": "0.3.12",
       "author": {
         "name": "stormovermars"
       }

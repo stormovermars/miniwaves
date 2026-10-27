@@ -4,7 +4,7 @@
 # On Windows Claude Code runs hooks in Git Bash: uname -s says MINGW*/MSYS*/CYGWIN*, the
 # asset is the .zip and the binary mw.exe.
 set -u
-want="0.3.10"
+want="0.3.12"
 exe=""
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) exe=".exe" ;; esac
 mwbin="$HOME/.local/bin/mw$exe"; [ -x "$mwbin" ] || mwbin=$(command -v mw 2>/dev/null || true)
