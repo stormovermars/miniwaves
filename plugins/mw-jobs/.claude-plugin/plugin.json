@@ -1,6 +1,6 @@
 {
   "name": "mw-jobs",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "description": "mw jobs and news as Markdown files in the Claude file pane, optional claude.ai artifact",
   "author": {
     "name": "stormovermars"

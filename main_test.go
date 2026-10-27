@@ -1088,7 +1088,7 @@ func TestBoardWithoutActiveTenantField(t *testing.T) { // F11
 }
 
 func TestVersion051(t *testing.T) {
-	if version != "0.3.13" || currentSchema != 9 {
+	if version != "0.3.14" || currentSchema != 9 {
 		t.Fatal(version, currentSchema)
 	}
 }
