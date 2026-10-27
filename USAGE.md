@@ -160,7 +160,7 @@ Short flags: `-t` tenant, `-s` session, `-a` agent, `-p` parent,
 supported. Use `--` before a title or note beginning with `-`.
 
 Kinds are `prompt`, `story`, `task`, `spike`, `bug`, and `chore`. States are
-`inbox`, `ready`, `doing`, `blocked`, and `done`. Blocking requires a reason (`--on ID` names the open item it waits for),
+`inbox`, `ready`, `doing`, `blocked`, and `done`. Blocking requires a reason (`--on ID` names the open item it waits for, and a done item is refused; when that item is final (done, and accepted when the judge gate is on; a wave: closed), the blocked one returns to `ready` with an event naming it),
 completion requires verification, and a parent cannot close with open children.
 
 Session liveness: a session's last activity is set by `session start` and by every

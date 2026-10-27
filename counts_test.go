@@ -20,10 +20,16 @@ func countsBoard(t *testing.T) *newsModel {
 		[]string{"block", "TSK-002", "waiting for Sir"},
 		[]string{"block", "TSK-003", "needs d", "--on", "TSK-004"},
 		[]string{"start", "TSK-006"}, []string{"done", "TSK-006", "ok", "--no-evidence", "x"},
-		[]string{"block", "TSK-005", "was waiting for f", "--on", "TSK-006"},
+		[]string{"block", "TSK-005", "was waiting for f", "--on", "TSK-004"},
 		[]string{"ask", "TSK-007", "q"}, []string{"block", "TSK-007", "stuck"})
 	w, err := load(path)
 	if err != nil {
+		t.Fatal(err)
+	}
+	// a stale block on a done item (mw now refuses to create one): TSK-005 waits on the done TSK-006
+	b5, _ := itemByID(&w.Tenants[0], "TSK-005")
+	b5.Events[len(b5.Events)-1].On = "TSK-006"
+	if err := save(path, w); err != nil {
 		t.Fatal(err)
 	}
 	return buildNewsModel(w, newsPart{title: w.Name, tenants: newsJobTenants(w, "")}, nil, newsWindow{full: true})

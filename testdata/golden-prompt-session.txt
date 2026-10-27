@@ -6,6 +6,7 @@ Setup:
 
 Loop: `mw next -j` (full brief incl. evidence_dir), then `mw start ID -a builder` (or `mw next --claim -j` = pick + claim in one call); work; `mw done ID CHECK --evidence FILE` (one path per flag; or `--no-evidence REASON`). If blocked: `mw block ID REASON`.
 Without -s, work is attributed to the implicit `local@golden-app` session; a named session (MW_SESSION above) owns one item at a time.
+Search for existing code and prior rejects (`mw show ID --full`); reproduce bugs. Block/ask: "Settled: … Open: …".
 
 Folders: code in the tenant repo (plans + ADRs + test fixtures inside); shared tooling <HOME>/tools, scaffolds <HOME>/templates (copy, never edit in place).
 Artefacts <HOME>/builds/golden-app/<ver>; proof (screenshots, logs, crash pulls, repro fixtures) <HOME>/evidence/golden-app/<item>; throwaway <HOME>/scratch/golden-app/golden2.

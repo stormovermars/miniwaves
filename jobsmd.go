@@ -259,7 +259,19 @@ func renderJobsMD(in jobsMDInput, now time.Time) string {
 			fmt.Fprintf(&b, "- ◐ **%s** %s\n  %s\n", mdText(it.ID), mdTitle(it.Title), mdMeta(it, now, mdText(compactText(it.Note, 80))))
 		}
 	}
-	if len(m.Now.Doing)+len(m.Now.Blocked) > 0 {
+	waits := func(it newsItem) string {
+		for _, t := range in.tenants {
+			if t.Slug == it.Tenant {
+				for _, o := range t.Items {
+					if o.ID == it.ID {
+						return waitsOn(t, o)
+					}
+				}
+			}
+		}
+		return ""
+	}
+	if len(m.Now.Doing) > 0 {
 		b.WriteString("\n### In progress\n\n")
 		n := 0
 		row := func(it newsItem, sym, tag string) {
@@ -283,8 +295,22 @@ func renderJobsMD(in jobsMDInput, now time.Time) string {
 				row(it, "●", "")
 			}
 		}
-		for _, it := range m.Now.Blocked {
-			row(it, "⏱", " · blocked")
+	}
+	if len(m.Now.Blocked) > 0 {
+		b.WriteString("\n### Waiting\n\n")
+		for i, it := range m.Now.Blocked {
+			if i == jobsMDCapList {
+				fmt.Fprintf(&b, "- … %d more\n", len(m.Now.Blocked)-i)
+				break
+			}
+			age := mdAge(it.Since, now)
+			fmt.Fprintf(&b, "- ⏱ **%s** %s · %s%s\n", mdText(it.ID), mdTitle(it.Title), mdText(it.Tenant), map[bool]string{true: " · " + age}[age != ""])
+			if w := waits(it); w != "" {
+				fmt.Fprintf(&b, "  - waits on %s\n", mdText(w))
+			}
+			if it.Note != "" {
+				fmt.Fprintf(&b, "  - %s\n", mdText(compactText(it.Note, 140)))
+			}
 		}
 	}
 	if n := len(m.Next.Ready); n > 0 {

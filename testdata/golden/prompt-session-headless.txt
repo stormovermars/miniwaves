@@ -1,5 +1,6 @@
 Role: builder session "fresh"; tenant "contract-app" (Contract app).
 Your item is already claimed; its brief follows.
+Search for existing code and prior rejects (`mw show ID --full`); reproduce bugs. Block/ask: "Settled: … Open: …".
 
 Folders: code in the tenant repo (plans + ADRs + test fixtures inside); shared tooling <HOME>/tools, scaffolds <HOME>/templates (copy, never edit in place).
 Artefacts <HOME>/bl/contract-app/<ver>; proof (screenshots, logs, crash pulls, repro fixtures) <HOME>/ev/contract-app/<item>; throwaway <HOME>/sc/contract-app/fresh.

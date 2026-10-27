@@ -526,7 +526,8 @@ registered on first use, with role ROLE when -a is given. Without -s/MW_SESSION 
 (it may own many items); done/block without -s are attributed to the item's owner.`,
 		"block": `mw block ID REASON... [--on ID] [-t SLUG] [-s NAME]
 Mark work blocked and record the required reason. Without --on the item waits for a human (the status line counts it
-as N, needs you); --on ID names the open item it waits for (counted as B, blocked). Done items count as no dependency.`,
+as N, needs you); --on ID names the open item it waits for (counted as B, blocked); a done item is refused. When that item is final
+(done, and accepted when the judge gate is on; a wave: closed) the blocked item returns to ready with an event naming it.`,
 		"done": `mw done ID VERIFICATION... [--evidence PATH]... [--no-evidence REASON] [-t SLUG] [-s NAME]
 Complete work with evidence. --evidence copies the files (or a folder's files) into
 <evidence>/<tenant>/<ID>/ before the gate check, so done is one command. One path per --evidence (also --evidence=PATH), repeat the flag for more; a word after the path is a note. Parents cannot close while children remain open.

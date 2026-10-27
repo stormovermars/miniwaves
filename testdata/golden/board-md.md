@@ -17,7 +17,11 @@
 ### In progress
 
 - ⏱ **TSK-001** Doc work · doc · stalled · 2d
-- ⏱ **TSK-003** Wait for keys · news-app · blocked · 2d
+
+### Waiting
+
+- ⏱ **TSK-003** Wait for keys · news-app · 2d
+  - waits on TSK-002 (Pipe \| in \`title\` \& more)
   - needs \<b\>keys\</b\> second line
 
 ### Ready

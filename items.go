@@ -679,6 +679,9 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 		if d.ID == it.ID {
 			return nil, nil, errors.New("--on: an item cannot wait for itself")
 		}
+		if d.Status == "done" {
+			return nil, nil, fmt.Errorf("--on: %s is already done; nothing to wait on", d.ID)
+		}
 		dep = d.ID
 	}
 	var evidence []string
@@ -752,12 +755,29 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 		it.Events[len(it.Events)-1].On = dep
 	}
 	if to == "done" {
+		if !judgeOn || !judgeable(t, *it) {
+			unblockDependents(t, it.ID, stamp, actor)
+		}
 		fanfareAfterChange(w, t, false, stamp)
 	}
 	if err := save(path, w); err != nil {
 		return nil, nil, err
 	}
 	return t, it, nil
+}
+
+// unblockDependents returns the items blocked --on id to ready; call it only when id is final (done and, with the judge gate on, accepted; or a closed wave).
+func unblockDependents(t *Tenant, id, stamp, actor string) {
+	for i := range t.Items {
+		b := &t.Items[i]
+		if b.Status != "blocked" {
+			continue
+		}
+		if e, ok := lastEvent(*b, "block"); ok && e.On == id {
+			b.Status, b.Updated, b.Note = "ready", stamp, ""
+			emit(b, stamp, "ready", actor, "unblocked: "+id+" done")
+		}
+	}
 }
 
 // recordGatesSeen stores the tenant's effective gates in gates_seen when they

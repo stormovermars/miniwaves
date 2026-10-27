@@ -134,15 +134,23 @@ func renderHTML(w *Workspace) string {
 		bd := burndownOf(t, byName(gateStates(w, t), "judge").Effective)
 		fmt.Fprintf(&b, "<section%s><h2>%s <span class=mut>[%s]</span>%s</h2>\n", map[bool]string{true: " class=archived"}[t.Hidden], esc(compactText(t.Name, 72)), esc(t.Slug), tagChips(t))
 		fmt.Fprintf(&b, "<div class=bar><i style=\"width:%d%%\"></i></div><div class=mut>%d%% (%d/%d) &middot; %s</div>\n", bd.Percent, bd.Percent, bd.Judged, bd.Total, esc(activityLine(t)))
-		for _, state := range []string{"doing", "blocked", "ready"} {
+		for _, state := range []string{"doing", "needs you", "waiting", "ready"} {
 			var rows []string
 			for _, it := range t.Items {
-				if it.Status == state && it.Kind != "wave" {
+				st, wo := it.Status, ""
+				if st == "blocked" {
+					if wo = waitsOn(t, it); wo != "" {
+						st = "waiting"
+					} else {
+						st = "needs you"
+					}
+				}
+				if st == state && it.Kind != "wave" {
 					owner := ""
 					if it.Assignee != "" {
 						owner = " @" + displayName(it.Assignee)
 					}
-					rows = append(rows, fmt.Sprintf("<li><code>%s</code> %s <span class=mut>%s%s</span></li>", esc(it.ID), esc(compactText(it.Title, 90)), esc(it.Kind), esc(owner)))
+					rows = append(rows, fmt.Sprintf("<li><code>%s</code> %s <span class=mut>%s%s</span>%s</li>", esc(it.ID), esc(compactText(it.Title, 90)), esc(it.Kind), esc(owner), map[bool]string{true: " <span class=mut>waits on " + esc(wo) + "</span>"}[wo != ""]))
 				}
 			}
 			if len(rows) == 0 {

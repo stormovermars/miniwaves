@@ -573,17 +573,20 @@ func lastEvent(it Item, actions ...string) (Event, bool) {
 }
 
 // blockedOnOpenItem reports a blocked item whose last block event names (--on) another item that is not done.
-func blockedOnOpenItem(t *Tenant, it Item) bool {
+func blockedOnOpenItem(t *Tenant, it Item) bool { return waitsOn(t, it) != "" }
+
+// waitsOn is "ID (title)" of the open item a blocked item waits on (its last block --on), or "".
+func waitsOn(t *Tenant, it Item) string {
 	e, ok := lastEvent(it, "block")
 	if !ok || e.On == "" {
-		return false
+		return ""
 	}
 	for _, o := range t.Items {
-		if o.ID == e.On {
-			return o.Status != "done"
+		if o.ID == e.On && o.Status != "done" {
+			return o.ID + " (" + newsCap(o.Title) + ")"
 		}
 	}
-	return false
+	return ""
 }
 
 func newsSortItems(l []newsItem, newestFirst bool) {

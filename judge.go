@@ -457,6 +457,7 @@ func acceptCommand(path string, w *Workspace, args []string) error {
 		it.Note = "" // the rejection is history (kept in Notes), not the current state
 	}
 	t.AcceptStreak++
+	unblockDependents(t, it.ID, now, by)
 	if err := save(path, w); err != nil {
 		return err
 	}

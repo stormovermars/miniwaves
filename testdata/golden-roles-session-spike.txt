@@ -6,6 +6,7 @@ Setup:
 
 Loop: `mw next -j` (full brief incl. evidence_dir), then `mw start ID -a spike` (or `mw next --claim -j` = pick + claim in one call); work; `mw done ID CHECK --evidence FILE` (one path per flag; or `--no-evidence REASON`). If blocked: `mw block ID REASON`.
 Without -s, work is attributed to the implicit `local@sheet` session; a named session (MW_SESSION above) owns one item at a time.
+Search for existing code and prior rejects (`mw show ID --full`); reproduce bugs. Block/ask: "Settled: … Open: …".
 Before `mw done`, write proof into <HOME>/evidence/sheet/<ID>/ (screenshot, log or test output a human can open); `done` lists it.
 
 Ceremony role spike: your item is a `spike` item. Work on a throwaway branch that is never merged; the STALE age is your time box. Write the question, what you tried, the evidence and a recommendation into <HOME>/evidence/sheet/SPK-NNN/ and repeat the recommendation in the `mw done` text. Screenshots only. At most one `mw ask`. Do not touch `doing` items.

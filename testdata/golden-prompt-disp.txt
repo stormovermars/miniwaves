@@ -20,7 +20,7 @@ Inputs <HOME>/datalake, generated outputs <HOME>/data, shared reference/specs/pl
 Before you idle: `mw done`, `mw block`, or `mw session stop NAME -t T --release`.
 
 Sessions you spawn (review loop; wr builders keep `mw done`/`block`):
-- One task per session, then it idles. Never bundle tasks; start a fresh session for the next one.
+- One task per session, then it idles; never bundle tasks. One item = one fresh session, an end-to-end vertical slice; a wide mechanical refactor goes expand → migrate in batches → contract.
 - A worker signals `mw note ID "ready for review"` and stays doing. You review the diff, merge, re-run the tests (again after every merge), then run `mw done ID "<verification>"`. Reject with concrete reasons instead.
 - Every brief ends: "ping the dispatcher when ready, need input, or idle; don't wait to be polled". Never poll workers.
 - Run at most 4 working sessions at once, and at most one writer per repo.

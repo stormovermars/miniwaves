@@ -319,7 +319,7 @@ func TestSessionBootstrapPrompt(t *testing.T) {
 	if n := len(strings.Split(prompt, "\n")); n > 20 {
 		t.Fatalf("session prompt has %d lines", n)
 	}
-	if n := len(strings.Fields(prompt)); n > 220 {
+	if n := len(strings.Fields(prompt)); n > 230 {
 		t.Fatalf("session prompt too long: %d words", n)
 	}
 	windows := sessionSetup("windows", `C:\work\app`, "api-builder", "workspace", "builder")
