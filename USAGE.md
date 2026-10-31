@@ -530,7 +530,7 @@ The set only grows; codes are never renamed.
 
 Git is the coding agent's job, not mw's. Commit `.miniwaves.json` and `.miniwaves/` (and the published page) together with your code changes and resolve board conflicts in git like any file; a board with merge markers is refused with "board has merge markers: resolve it in git". `mw init` adds `.miniwaves/*.lock*`, `.miniwaves/*.tmp` and `.miniwaves.json.tmp` to `.git/info/exclude` so commits never include them.
 
-## Git worktrees
+## Worktrees and clones
 
 In a linked git worktree (`git worktree add`) whose main checkout has the board, mw reads and writes the **main checkout's board**, under its lock, exactly as if it ran there: claims, sessions, IDs, the WIP limit, reap and the gates are shared with everyone, and the main board always shows who works on what and the full history. After every command (reads included) mw byte-copies the main board's index and every tenant file this worktree holds or the command wrote into the worktree's own board, so the branch carries the record of its own work. Tenant and folder-default selection read the cwd `WT/X` as `MAIN/X`; board paths are never rewritten.
 
@@ -538,17 +538,19 @@ In a linked git worktree (`git worktree add`) whose main checkout has the board,
 - No board in the worktree (an untracked board): the main board is used directly, with no copy. Main has no board: the worktree's board is used alone, as before.
 - A tenant only the worktree's board has: exit 2, `mw: tenant SLUG is not on the main board; run mw tenant add in the main checkout` (`mw tenant add` in a worktree writes through).
 - `mw: worktree board has N events not on main (TENANT); not synced`: the worktree's copy of that tenant changed since mw last copied it (written by an older mw, with `MW_WORKTREE=off`, before main had the board, or by a git checkout; N counts its events main lacks and may be 0, e.g. for a session start); mw never overwrites it. mw records each copy's hash in `.miniwaves/<slug>.lock.copied` (excluded from git like the locks). A failed copy prints `mw: worktree board not synced: ...` and keeps the command's exit code; the next command heals it.
-- `MW_WORKTREE=off` keeps the old behaviour (the nearest board, the worktree's own).
+- `MW_WORKTREE=off` keeps the old behaviour (the nearest board, the worktree's own); it also turns off `MW_MAIN`.
+
+**Separate clones.** A second `git clone` has its own `.git` folder and no commondir, so mw cannot find the main checkout by itself. Start a clone worker with `MW_MAIN=<the main checkout's root>` and the clone behaves exactly like a worktree of it (write-through, cwd mapping, copies, the guard and the hand-back below). MW_MAIN must be absolute, exist and hold the board; naming the current checkout itself is a no-op. Otherwise mw prints one `mw: MW_MAIN … ignored: …` warning and keeps the clone's own board; it never fails the command. In a real worktree its commondir wins: an MW_MAIN naming another checkout prints `mw: MW_MAIN ignored; worktree of DIR`. Without MW_MAIN nothing changes.
 
 **Hand-back, before merging the branch** (in the worktree; skip it when main has no board):
 
 1. `mw list`. It syncs and must print no "not synced" or "not on main" warning; if it does, stop: those events would be lost.
-2. `git add .miniwaves.json .miniwaves && git commit -m "board: worktree record"` — the branch's record of the subtask.
-3. `git checkout MAIN_BRANCH -- <the board files that exist on MAIN_BRANCH>`, then `git rm` the board files only the branch has, e.g.
+2. `git add .miniwaves.json '.miniwaves/*.json' && git commit -m "board: worktree record"` — the branch's record of the subtask (only the `.json` files: a clone has no exclude for the lock files).
+3. `git checkout MAIN_BRANCH -- <the board files that exist on MAIN_BRANCH>` (in a clone, the main branch as of the clone or its last fetch), then `git rm` the board files only the branch has, e.g.
    `on=$(git ls-tree -r --name-only MAIN_BRANCH -- .miniwaves.json .miniwaves); [ -n "$on" ] && git checkout MAIN_BRANCH -- $on; for f in $(git ls-files .miniwaves.json .miniwaves); do echo "$on" | grep -qxF "$f" || git rm -q "$f"; done`
 4. `git commit -m "board: hand back to main"`.
 
-After the hand-back, commit no board files in the worktree. Any mw command there can re-dirty them (it copies main's index again once main's index changed, and warns "not synced" for the tenant files the checkout replaced; main still gets every write), so if you ran one, redo steps 3–4 before merging.
+After the hand-back, commit no board files in the worktree. Any mw command there can re-dirty them (it copies main's index again once main's index changed, and warns "not synced" for the tenant files the checkout replaced; main still gets every write), so if you ran one, redo steps 3–4 before merging. A clone's branch reaches main with `git fetch CLONE BRANCH` and `git merge FETCH_HEAD` in the main checkout (or a push and merge); the hand-back keeps that merge off the board files too.
 
 The merge then changes no board file, so it never conflicts and never touches main's live (possibly uncommitted) board. If main's board commit moved in between, repeat steps 3–4. In the main checkout, commit the board with the merge or right after it: that commit is main's git history of the board. A squash merge drops step 2's commit from main's history; the board content is already on main.
 

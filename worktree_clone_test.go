@@ -109,3 +109,21 @@ func TestMWMainPrecedenceAndSymlink(t *testing.T) {
 		t.Fatalf("symlinked MW_MAIN from a clone: %d %q", code, errs)
 	}
 }
+
+// MW_MAIN docs: USAGE.md, TECHNICAL.md and the mw skill describe clones.
+func TestMWMainDocumented(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	dir := filepath.Dir(thisFile)
+	for f, wants := range map[string][]string{
+		"USAGE.md":                      {"## Worktrees and clones", "MW_MAIN", "mw: MW_MAIN ignored; worktree of DIR", "git fetch"},
+		"TECHNICAL.md":                  {"MW_MAIN", "cloneMain"},
+		"plugins/mw/skills/mw/SKILL.md": {"MW_MAIN=<its checkout>", `"Worktrees and clones"`},
+	} {
+		b, _ := os.ReadFile(filepath.Join(dir, f))
+		for _, w := range wants {
+			if !strings.Contains(string(b), w) {
+				t.Errorf("%s lacks %q", f, w)
+			}
+		}
+	}
+}
