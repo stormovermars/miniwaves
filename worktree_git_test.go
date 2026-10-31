@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -88,5 +89,32 @@ func TestWorktreeHandBackMerge(t *testing.T) {
 	}
 	if show := gitW(t, e.main, "show", "b1~1:.miniwaves/t2.json"); !strings.Contains(show, `"title":"y"`) {
 		t.Fatalf("worktree record lacks t2: %s", show)
+	}
+}
+
+// Review finding 4: after the hand-back an mw command in the worktree re-dirties the board files;
+// USAGE.md says not to commit them and to redo steps 3-4.
+func TestWorktreeAfterHandBack(t *testing.T) {
+	e := wtBoard(t, true)
+	chdirT(t, filepath.Join(e.wt, "api"))
+	runAll(t, []string{"add", "task", "branch work"})
+	handBack(t, e.wt)
+	if st := gitW(t, e.wt, "status", "--porcelain"); st != "" {
+		t.Fatalf("hand-back left changes: %q", st)
+	}
+	chdirT(t, e.main)
+	runAll(t, []string{"tenant", "add", "t3"}) // main's index moves on
+	chdirT(t, filepath.Join(e.wt, "api"))
+	errs := captureFile(t, &os.Stderr, func() { captureOutput(t, func() { runAll(t, []string{"list"}) }) })
+	if !strings.Contains(errs, "(api); not synced") {
+		t.Fatalf("the replaced tenant file must be left alone with a warning: %q", errs)
+	}
+	if st := gitW(t, e.wt, "status", "--porcelain", "--", dataFile, storeDir); st == "" {
+		t.Fatal("an mw command after the hand-back left the board files clean")
+	}
+	_, thisFile, _, _ := runtime.Caller(0)
+	usage, _ := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "USAGE.md"))
+	if !strings.Contains(string(usage), "After the hand-back, commit no board files in the worktree") || !strings.Contains(string(usage), "redo steps 3–4 before merging") {
+		t.Fatal("USAGE.md does not say what to do after the hand-back")
 	}
 }

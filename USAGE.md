@@ -548,6 +548,8 @@ In a linked git worktree (`git worktree add`) whose main checkout has the board,
    `on=$(git ls-tree -r --name-only MAIN_BRANCH -- .miniwaves.json .miniwaves); [ -n "$on" ] && git checkout MAIN_BRANCH -- $on; for f in $(git ls-files .miniwaves.json .miniwaves); do echo "$on" | grep -qxF "$f" || git rm -q "$f"; done`
 4. `git commit -m "board: hand back to main"`.
 
+After the hand-back, commit no board files in the worktree. Any mw command there can re-dirty them (it copies main's index again once main's index changed, and warns "not synced" for the tenant files the checkout replaced; main still gets every write), so if you ran one, redo steps 3–4 before merging.
+
 The merge then changes no board file, so it never conflicts and never touches main's live (possibly uncommitted) board. If main's board commit moved in between, repeat steps 3–4. In the main checkout, commit the board with the merge or right after it: that commit is main's git history of the board. A squash merge drops step 2's commit from main's history; the board content is already on main.
 
 ## Windows
