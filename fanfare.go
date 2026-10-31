@@ -84,10 +84,6 @@ func fanfareCfg(w *Workspace) FanfareConfig {
 		t := true
 		c.StopDialog = &t
 	}
-	if c.TaskBeep == nil {
-		t := true
-		c.TaskBeep = &t
-	}
 	return c
 }
 
@@ -496,10 +492,15 @@ func beepCommand(goos string, look func(string) (string, error), exists func(str
 	return "", nil, false
 }
 
-func beepTask() {
+// taskBeepOn: task_beep unset reads as on.
+func taskBeepOn(c FanfareConfig) bool { return c.TaskBeep == nil || *c.TaskBeep }
+
+func beepTask() bool {
 	if name, args, ok := beepCommand(runtime.GOOS, lookPath, fileExists); ok {
 		startDetached(name, args, nil)
+		return true
 	}
+	return false
 }
 
 func notifyMilestone(msg string) {
@@ -791,7 +792,7 @@ func fanfareAfterChange(w *Workspace, t *Tenant, it *Item, waveClosed bool, now 
 		return
 	}
 	// task level: a plain done (neither milestone nor finale) beeps and shows the banner
-	if !waveClosed && it != nil && fanfarePending == nil && *fanfareCfg(w).TaskBeep {
+	if !waveClosed && it != nil && fanfarePending == nil && taskBeepOn(fanfareCfg(w)) {
 		fanfarePending = &fanfareEvent{"task", milestoneReason(t, it)}
 	}
 }
@@ -1097,7 +1098,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 	switch sub {
 	case "":
 		if len(pos) != 0 {
-			return errors.New("usage: mw fanfare [on | off | set K=V... | sets | use NAME|all | test [milestone|finale] | fetch | list | stop]")
+			return errors.New("usage: mw fanfare [on | off | set K=V... | sets | use NAME|all | test [task|milestone|finale] | fetch | list | stop]")
 		}
 		pairs := scanPairs(dir)
 		ready, unplayable, incomplete, empty := 0, 0, 0, 0
@@ -1132,7 +1133,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		if src["enabled"] == "user" {
 			state += " (user; board: " + boardState + ")"
 		}
-		fmt.Printf("fanfare: %s\ndir: %s\nmilestone_seconds: %d\nfinale_seconds: %d\nvolume: %g\nstop_dialog: %v\ntask_beep: %v\n", state, c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume, *c.StopDialog, *c.TaskBeep)
+		fmt.Printf("fanfare: %s\ndir: %s\nmilestone_seconds: %d\nfinale_seconds: %d\nvolume: %g\nstop_dialog: %v\ntask_beep: %v\n", state, c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume, *c.StopDialog, taskBeepOn(c))
 		if src["use"] == "user" {
 			fmt.Printf("use: %s (user; board: %s)\n", activeSet(eff), activeSet(c))
 		} else {
@@ -1217,7 +1218,7 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 		if err := save(path, w); err != nil {
 			return err
 		}
-		fmt.Printf("fanfare saved: enabled=%v dir=%s milestone_seconds=%d finale_seconds=%d volume=%g stop_dialog=%v task_beep=%v\n", fanfareOn(c), c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume, *c.StopDialog, *c.TaskBeep)
+		fmt.Printf("fanfare saved: enabled=%v dir=%s milestone_seconds=%d finale_seconds=%d volume=%g stop_dialog=%v task_beep=%v\n", fanfareOn(c), c.Dir, c.MilestoneSeconds, c.FinaleSeconds, c.Volume, *c.StopDialog, taskBeepOn(c))
 		return nil
 	case "test":
 		kind := "milestone"
@@ -1228,7 +1229,10 @@ func fanfareCommand(path string, w *Workspace, args []string) error {
 			kind = pos[0]
 		}
 		if kind == "task" {
-			beepTask()
+			if !beepTask() {
+				fmt.Println("no task beep on this system")
+				return nil
+			}
 			fmt.Println("playing task beep")
 			return nil
 		}

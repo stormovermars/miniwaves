@@ -90,7 +90,7 @@ func TestFanfareConfigRoundTrip(t *testing.T) {
 	runAll(t, []string{"fanfare", "set", "enabled=true", "milestone_seconds=20", "finale_seconds=240", "dir=" + songs, "volume=0.5"})
 	b, _ := os.ReadFile(path)
 	sj, _ := json.Marshal(songs)
-	if !strings.Contains(string(b), `"fanfare":{"enabled":true,"dir":`+string(sj)+`,"milestone_seconds":20,"finale_seconds":240,"volume":0.5,"stop_dialog":true,"task_beep":true}`) {
+	if !strings.Contains(string(b), `"fanfare":{"enabled":true,"dir":`+string(sj)+`,"milestone_seconds":20,"finale_seconds":240,"volume":0.5,"stop_dialog":true}`) {
 		t.Fatalf("not stored: %s", b)
 	}
 	w, _ := load(path)
@@ -1073,6 +1073,8 @@ func beepStub(t *testing.T) string {
 }
 
 func TestBeepCommand(t *testing.T) {
+	t.Setenv("MW_FANFARE_BEEP", "")
+	t.Setenv("MW_FANFARE_PLAYER", "")
 	has := func(string) (string, error) { return "", nil }
 	none := func(string) (string, error) { return "", errors.New("no") }
 	yes := func(string) bool { return true }
@@ -1122,4 +1124,12 @@ func TestFanfareTaskBeepLevels(t *testing.T) {
 	}
 	plays(t, blog, 1)
 	plays(t, nlog, 2)
+}
+
+func TestFanfareSetDoesNotPersistTaskBeep(t *testing.T) {
+	path := inTempDir(t)
+	runAll(t, []string{"init", "Ws"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"}, []string{"fanfare", "on"}, []string{"fanfare", "set", "volume=2"})
+	if b, _ := os.ReadFile(path); strings.Contains(string(b), "task_beep") {
+		t.Fatalf("task_beep persisted unset: %s", b)
+	}
 }
