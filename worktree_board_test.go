@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -210,5 +211,37 @@ func TestWorktreeTenantCheckQuietForSessions(t *testing.T) {
 	se := captureFile(t, &os.Stderr, func() { captureOutput(t, func() { code = mainExit([]string{"list"}, os.Stderr) }) })
 	if code != 0 || se != "" {
 		t.Fatalf("list with MW_SESSION: %d %q", code, se)
+	}
+}
+
+// Review finding 1: the tenant check selects with the mapped cwd. A folder tenant only the worktree
+// has is refused; a branch-only tenant listed first never triggers it through the first-tenant fallback.
+func TestWorktreeTenantCheckByFolder(t *testing.T) {
+	e := wtBoard(t, true)
+	sub := filepath.Join(e.wt, "web", "sub")
+	os.MkdirAll(sub, 0o755)
+	chdirT(t, sub)
+	t.Setenv("MW_WORKTREE", "off")
+	runAll(t, []string{"tenant", "add", "web2", "-d", "."}, []string{"tenant", "add", "extra"}, []string{"add", "task", "e", "-t", "extra"})
+	// the worktree index (kept by the guard: extra has events main lacks) lists extra first
+	ix := filepath.Join(e.wt, dataFile)
+	var doc map[string]any
+	b, _ := os.ReadFile(ix)
+	json.Unmarshal(b, &doc)
+	ts := doc["tenants"].([]any)
+	doc["tenants"] = append([]any{ts[len(ts)-1]}, ts[:len(ts)-1]...)
+	b, _ = json.Marshal(doc)
+	os.WriteFile(ix, b, 0o600)
+	t.Setenv("MW_WORKTREE", "")
+	if code, _, se := mwRun(t, "list"); code != 2 || !strings.Contains(se, "tenant web2 is not on the main board") {
+		t.Fatalf("folder tenant missing on main: %d %q", code, se)
+	}
+	for _, d := range []string{e.wt, filepath.Join(e.wt, "api")} {
+		chdirT(t, d)
+		code := -1
+		captureFile(t, &os.Stderr, func() { captureOutput(t, func() { code = mainExit([]string{"list"}, os.Stderr) }) })
+		if code != 0 {
+			t.Fatalf("%s: the first-tenant fallback must not refuse: exit %d", d, code)
+		}
 	}
 }

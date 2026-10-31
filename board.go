@@ -426,27 +426,8 @@ func selectTenantAny(w *Workspace, o map[string]string) (*Tenant, error) {
 		}
 	}
 	cwd, _ := filepath.Abs(workDir())
-	best := -1
-	var match *Tenant
-	if folder, slug := folderDefault(w, cwd); slug != "" {
-		t, err := tenantBySlug(w, slug)
-		if err != nil {
-			return nil, fmt.Errorf("folder default for %s: %w", folder, err)
-		}
-		return t, nil
-	}
-	for i := range w.Tenants {
-		if w.Tenants[i].Path == "" {
-			continue
-		}
-		p, _ := filepath.Abs(w.Tenants[i].Path)
-		p = matchDir(p)
-		if (cwd == p || strings.HasPrefix(cwd, p+string(os.PathSeparator))) && len(p) > best {
-			match, best = &w.Tenants[i], len(p)
-		}
-	}
-	if match != nil {
-		return match, nil
+	if t, err := tenantByFolder(w, cwd); t != nil || err != nil {
+		return t, err
 	}
 	for i := range w.Tenants { // the first tenant that is not archived
 		if !w.Tenants[i].Hidden {
@@ -457,4 +438,29 @@ func selectTenantAny(w *Workspace, o map[string]string) (*Tenant, error) {
 		return nil, errors.New("no tenants")
 	}
 	return &w.Tenants[0], nil
+}
+
+// tenantByFolder is the tenant the folder cwd selects: the nearest folder default, else the nearest
+// tenant path; nil when none matches.
+func tenantByFolder(w *Workspace, cwd string) (*Tenant, error) {
+	if folder, slug := folderDefault(w, cwd); slug != "" {
+		t, err := tenantBySlug(w, slug)
+		if err != nil {
+			return nil, fmt.Errorf("folder default for %s: %w", folder, err)
+		}
+		return t, nil
+	}
+	best := -1
+	var match *Tenant
+	for i := range w.Tenants {
+		if w.Tenants[i].Path == "" {
+			continue
+		}
+		p, _ := filepath.Abs(w.Tenants[i].Path)
+		p = matchDir(p)
+		if (cwd == p || strings.HasPrefix(cwd, p+string(os.PathSeparator))) && len(p) > best {
+			match, best = &w.Tenants[i], len(p)
+		}
+	}
+	return match, nil
 }

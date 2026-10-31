@@ -192,17 +192,19 @@ var workLoc boardLoc
 // workDir is the cwd for tenant and folder-default selection: in a worktree, main's matching folder.
 func workDir() string { return workLoc.mapCwd(mustGetwd()) }
 
-// matchDir is a tenant or default folder as compared with workDir: resolved in a worktree, where
-// workDir is (a /tmp folder stored on the board still matches /private/tmp).
+// matchDir is a tenant or default folder as compared with workDir: in a worktree resolved, as workDir
+// is (a /tmp folder stored on the board still matches /private/tmp), and a folder inside the worktree
+// (stored by an older mw or with MW_WORKTREE=off) read as main's.
 func matchDir(p string) string {
 	if workLoc.wt == "" {
 		return p
 	}
-	return realDir(p)
+	return workLoc.mapCwd(realDir(p))
 }
 
-// worktreeTenant refuses (exit 2) a command whose tenant, as the worktree's own board selects it from
-// the real cwd (-t, MW_TENANT or the folder), is missing on the main board: its history would split.
+// worktreeTenant refuses (exit 2) a command whose tenant, as the worktree's own board selects it (-t,
+// MW_TENANT or the mapped cwd's folder; never the first-tenant fallback), is missing on the main board:
+// its history would split.
 func worktreeTenant(main *Workspace, args []string) error {
 	if workLoc.wtPath == "" {
 		return nil
@@ -215,15 +217,19 @@ func worktreeTenant(main *Workspace, args []string) error {
 	if err != nil || value(o, "tenant", os.Getenv("MW_TENANT")) == "" && value(o, "session", os.Getenv("MW_SESSION")) != "" {
 		return nil // a session's tenant is resolved on main, where sessions live
 	}
-	saved := workLoc
-	workLoc = boardLoc{}
-	t, err := selectTenantAny(w, o)
-	workLoc = saved
-	if err != nil {
-		return nil
+	slug := value(o, "tenant", os.Getenv("MW_TENANT"))
+	if slug == "" {
+		cwd, _ := filepath.Abs(workDir())
+		t, err := tenantByFolder(w, cwd)
+		if t == nil || err != nil {
+			return nil
+		}
+		slug = t.Slug
+	} else if _, err := tenantBySlug(w, slug); err != nil {
+		return nil // unknown here too: main reports it as before
 	}
-	if _, err := tenantBySlug(main, t.Slug); err != nil {
-		return &exitError{code: 2, msg: fmt.Sprintf("tenant %s is not on the main board; run mw tenant add in the main checkout", t.Slug)}
+	if _, err := tenantBySlug(main, slug); err != nil {
+		return &exitError{code: 2, msg: fmt.Sprintf("tenant %s is not on the main board; run mw tenant add in the main checkout", slug)}
 	}
 	return nil
 }
