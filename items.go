@@ -788,7 +788,7 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 		if !judgeOn || !judgeable(t, *it) {
 			unblockDependents(t, it.ID, stamp, actor)
 		}
-		fanfareAfterChange(w, t, false, stamp)
+		fanfareAfterChange(w, t, it, false, stamp)
 	}
 	if err := save(path, w); err != nil {
 		return nil, nil, err

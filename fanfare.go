@@ -372,7 +372,7 @@ func finaleMessage(reason, song string, secs int) string {
 }
 
 // finaleReason: why the finale plays for a finished tenant: slug (and name when different) and the done count.
-func finaleReason(t *Tenant) string {
+func finaleReason(t *Tenant, skip string) string {
 	done := 0
 	for _, it := range t.Items {
 		if it.Status == "done" {
@@ -387,7 +387,90 @@ func finaleReason(t *Tenant) string {
 	if done == 1 {
 		noun = "item"
 	}
-	return fmt.Sprintf("Tenant %s finished \u2014 %d %s done", who, done, noun)
+	r := fmt.Sprintf("Tenant %s finished \u2014 %d %s done", who, done, noun)
+	if last := lastDone(t, 3, skip); len(last) > 0 {
+		r += "; last: " + strings.Join(last, ", ")
+	}
+	return r
+}
+
+// itemLabel is "ID title" with the title cut to 60 characters.
+func itemLabel(it *Item) string {
+	if t := compactText(it.Title, 60); t != "" {
+		return it.ID + " " + t
+	}
+	return it.ID
+}
+
+// doneAt is the time of the item's last "done" event ("" when it has none).
+func doneAt(it *Item) string {
+	for i := len(it.Events) - 1; i >= 0; i-- {
+		if it.Events[i].Action == "done" {
+			return it.Events[i].At
+		}
+	}
+	return ""
+}
+
+// lastDone labels the n most recently finished items, newest first.
+func lastDone(t *Tenant, n int, skip string) []string {
+	var done []*Item
+	for i := range t.Items {
+		if t.Items[i].Status == "done" && t.Items[i].ID != "" && t.Items[i].ID != skip {
+			done = append(done, &t.Items[i])
+		}
+	}
+	sort.SliceStable(done, func(a, b int) bool { return doneAt(done[a]) > doneAt(done[b]) })
+	var out []string
+	for i := 0; i < len(done) && i < n; i++ {
+		out = append(out, itemLabel(done[i]))
+	}
+	return out
+}
+
+// milestoneReason is the text of the milestone notification.
+func milestoneReason(t *Tenant, it *Item) string {
+	return strings.ToUpper(t.Slug) + " " + itemLabel(it) + " \u2014 done"
+}
+
+// notifyCommand builds the non-blocking notification for goos; msg is data, passed only as an argument.
+// MW_FANFARE_NOTIFY (test stub) is called as STUB MSG; MW_FANFARE_PLAYER alone disables notifications.
+func notifyCommand(goos, msg string, look func(string) (string, error)) (string, []string, bool) {
+	if stub := os.Getenv("MW_FANFARE_NOTIFY"); stub != "" {
+		return stub, []string{msg}, true
+	}
+	if os.Getenv("MW_FANFARE_PLAYER") != "" {
+		return "", nil, false
+	}
+	switch goos {
+	case "darwin":
+		return "osascript", []string{"-e", "on run argv", "-e", `display notification (item 1 of argv) with title "miniwaves"`, "-e", "end run", msg}, true
+	case "windows":
+		return "", nil, false
+	}
+	if _, err := look("notify-send"); err == nil {
+		return "notify-send", []string{"--", "miniwaves", escapeMarkup(msg)}, true
+	}
+	return "", nil, false
+}
+
+// escapeMarkup: notify-send reads its body as markup, so & < > are escaped.
+func escapeMarkup(s string) string {
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
+}
+
+// finishedWave is the id of the wave whose close finished the tenant ("" otherwise): a wave is not a "last" item.
+func finishedWave(it *Item, waveClosed bool) string {
+	if it == nil || !waveClosed {
+		return ""
+	}
+	return it.ID
+}
+
+func notifyMilestone(msg string) {
+	if name, args, ok := notifyCommand(runtime.GOOS, msg, lookPath); ok {
+		startDetached(name, args, nil)
+	}
 }
 
 const finaleTestReason = "Test (mw fanfare test)"
@@ -655,17 +738,21 @@ func tenantFinished(t *Tenant) bool {
 // fanfareAfterChange runs inside a done / wave close, before the save: it stamps fanfare_finale_at
 // on the first finished transition and queues the clip to play once the command succeeded.
 // A close that also finishes the tenant plays the finale only.
-func fanfareAfterChange(w *Workspace, t *Tenant, waveClosed bool, now string) {
+func fanfareAfterChange(w *Workspace, t *Tenant, it *Item, waveClosed bool, now string) {
 	if !fanfareOn(fanfareEffective(w)) { // the per-user fanfare.enabled wins over the board
 		return
 	}
 	if tenantFinished(t) && t.FanfareFinaleAt == "" {
 		t.FanfareFinaleAt = now
-		fanfarePending = &fanfareEvent{"finale", finaleReason(t)}
+		fanfarePending = &fanfareEvent{"finale", finaleReason(t, finishedWave(it, waveClosed))}
 		return
 	}
 	if waveClosed && fanfarePending == nil {
-		fanfarePending = &fanfareEvent{"milestone", ""}
+		reason := ""
+		if it != nil {
+			reason = milestoneReason(t, it)
+		}
+		fanfarePending = &fanfareEvent{"milestone", reason}
 	}
 }
 
@@ -746,6 +833,9 @@ func playClip(w *Workspace, kind, reason string) error {
 	if kind == "finale" {
 		file, secs = p.Finale, c.FinaleSeconds
 		return playFinale(expandHome(c.Dir), file, secs, c.Volume, *c.StopDialog, reason)
+	}
+	if reason != "" { // a banner, never a blocking dialog; independent of stop_dialog (that is the finale's Stop dialog)
+		notifyMilestone(reason)
 	}
 	return playFile(expandHome(c.Dir), file, secs, c.Volume)
 }

@@ -701,11 +701,11 @@ func TestFinaleIcon(t *testing.T) {
 
 func TestFinaleReasonAndSong(t *testing.T) {
 	tn := &Tenant{Slug: "infotool", Name: "infotool", Items: []Item{{Status: "done"}, {Status: "done"}, {Status: "cut"}}}
-	if got := finaleReason(tn); got != "Tenant \"infotool\" finished \u2014 2 items done" {
+	if got := finaleReason(tn, ""); got != "Tenant \"infotool\" finished \u2014 2 items done" {
 		t.Fatal(got)
 	}
 	tn = &Tenant{Slug: "a", Name: "Alpha", Items: []Item{{Status: "done"}}}
-	if got := finaleReason(tn); got != "Tenant \"a\" (Alpha) finished \u2014 1 item done" {
+	if got := finaleReason(tn, ""); got != "Tenant \"a\" (Alpha) finished \u2014 1 item done" {
 		t.Fatal(got)
 	}
 	d := t.TempDir()
@@ -927,5 +927,138 @@ func TestBuiltinFanfareWhenNoPairs(t *testing.T) {
 	lookPath = func(string) (string, error) { return "", errors.New("none") }
 	if _, err := pickPairOrBuiltin(FanfareConfig{}, t.TempDir(), func(int) int { return 0 }); err == nil {
 		t.Fatal("want error with no player")
+	}
+}
+
+func TestFinaleReasonNamesLastDone(t *testing.T) {
+	long := strings.Repeat("x", 90)
+	tn := &Tenant{Slug: "a", Name: "a", Items: []Item{
+		{ID: "TSK-001", Title: "one", Status: "done", Updated: "2027-01-01T00:00:00Z", Events: []Event{{At: "2026-01-01T00:00:01Z", Action: "done"}}},
+		{ID: "TSK-002", Title: "two", Status: "done", Events: []Event{{At: "2026-01-01T00:00:02Z", Action: "done"}}},
+		{ID: "TSK-003", Title: long, Status: "done", Events: []Event{{At: "2026-01-01T00:00:03Z", Action: "done"}}},
+		{ID: "TSK-004", Title: "four", Status: "done", Events: []Event{{At: "2026-01-01T00:00:04Z", Action: "done"}}},
+		{ID: "TSK-005", Title: "cut", Status: "cut"},
+		{ID: "WAV-009", Title: "wave", Status: "done", Events: []Event{{At: "2026-01-01T00:00:09Z", Action: "done"}}},
+	}}
+	got := finaleReason(tn, "WAV-009")
+	want := "Tenant \"a\" finished — 5 items done; last: TSK-004 four, TSK-003 " + strings.Repeat("x", 59) + "…, TSK-002 two"
+	if got != want {
+		t.Fatalf("got %q\nwant %q", got, want)
+	}
+}
+
+func TestMilestoneReasonAndNotifyCommand(t *testing.T) {
+	evil := `He said "hi" 'x'; $(rm -rf /) \`
+	r := milestoneReason(&Tenant{Slug: "mw"}, &Item{ID: "WAV-002", Title: evil})
+	if r != "MW WAV-002 "+evil+" — done" {
+		t.Fatal(r)
+	}
+	t.Setenv("MW_FANFARE_PLAYER", "")
+	t.Setenv("MW_FANFARE_NOTIFY", "")
+	none := func(string) (string, error) { return "", errors.New("no") }
+	has := func(n string) (string, error) { return "/bin/" + n, nil }
+	n, a, ok := notifyCommand("darwin", evil, none)
+	if !ok || n != "osascript" || a[len(a)-1] != evil || a[len(a)-2] != "end run" {
+		t.Fatalf("%s %q", n, a)
+	}
+	for _, x := range a[:len(a)-1] {
+		if strings.Contains(x, "rm -rf") || strings.Contains(x, "He said") {
+			t.Fatalf("message inside script text: %q", x)
+		}
+	}
+	if n, a, ok = notifyCommand("linux", evil, has); !ok || n != "notify-send" || a[len(a)-1] != evil {
+		t.Fatalf("%s %q", n, a)
+	}
+	if _, _, ok = notifyCommand("linux", "m", none); ok {
+		t.Fatal("notify without notify-send")
+	}
+	if _, _, ok = notifyCommand("windows", "m", has); ok {
+		t.Fatal("windows notifies")
+	}
+	t.Setenv("MW_FANFARE_PLAYER", "/stub")
+	if _, _, ok = notifyCommand("darwin", "m", has); ok {
+		t.Fatal("player stub must silence the real notification")
+	}
+}
+
+func notifyStub(t *testing.T) string {
+	d := t.TempDir()
+	out := filepath.Join(d, "notes.txt")
+	stub := filepath.Join(d, "notify.sh")
+	os.WriteFile(stub, []byte("#!/bin/sh\nprintf '%s\\n' \"$1\" >> "+out+"\n"), 0o755)
+	t.Setenv("MW_FANFARE_NOTIFY", stub)
+	return out
+}
+
+func readNotes(out string, want int) []string {
+	var lines []string
+	for i := 0; i < 60; i++ {
+		b, _ := os.ReadFile(out)
+		lines = nil
+		for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+			if l != "" {
+				lines = append(lines, l)
+			}
+		}
+		if len(lines) >= want {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return lines
+}
+
+func TestMilestoneNotifiesWhatFinished(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh stub")
+	}
+	log := stubPlayer(t)
+	notes := notifyStub(t)
+	inTempDir(t)
+	dir := fakeCollection(t)
+	runAll(t, []string{"init", "Ws"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"})
+	runAll(t, []string{"add", "task", "One", "--status", "ready"}, []string{"add", "task", "Two", "--status", "ready"})
+	runAll(t, []string{"wave", "create", "Big wave \"x\""}, []string{"wave", "add", "WAV-001", "TSK-001"})
+	runAll(t, []string{"done", "TSK-001", "ok"})
+	closeWave := []string{"wave", "close", "WAV-001", "--no-evidence", "t"}
+	step := []string{"wave", "step", "WAV-001", "--na-rest", "test"}
+	// fanfare off: no clip, no notification
+	runAll(t, step, closeWave)
+	plays(t, log, 0)
+	if l := readNotes(notes, 0); len(l) != 0 {
+		t.Fatalf("notified while off: %v", l)
+	}
+	runAll(t, []string{"reopen", "WAV-001"}, []string{"reopen", "TSK-001"}, []string{"fanfare", "set", "enabled=true", "stop_dialog=false", "dir=" + dir})
+	runAll(t, []string{"done", "TSK-001", "ok"}, step, closeWave)
+	plays(t, log, 1)
+	if l := readNotes(notes, 1); len(l) != 1 { // stop_dialog=false still notifies
+		t.Fatalf("stop_dialog=false must still notify: %v", l)
+	}
+	runAll(t, []string{"reopen", "WAV-001"}, []string{"reopen", "TSK-001"}, []string{"fanfare", "set", "stop_dialog=true"})
+	runAll(t, []string{"done", "TSK-001", "ok"}, step, closeWave)
+	plays(t, log, 2)
+	l := readNotes(notes, 2)
+	if len(l) != 2 {
+		t.Fatalf("notes: %q", l)
+	}
+	l = l[1:]
+	if len(l) != 1 || !strings.HasPrefix(l[0], "WS WAV-001 Big wave") || !strings.HasSuffix(l[0], "— done") {
+		t.Fatalf("notes: %q", l)
+	}
+}
+
+func TestNotifyMarkupAndEmptyTitle(t *testing.T) {
+	t.Setenv("MW_FANFARE_PLAYER", "")
+	t.Setenv("MW_FANFARE_NOTIFY", "")
+	has := func(n string) (string, error) { return "/bin/" + n, nil }
+	_, a, ok := notifyCommand("linux", "A & <b>x</b> --flag", has)
+	if !ok || len(a) != 3 || a[0] != "--" || a[2] != "A &amp; &lt;b&gt;x&lt;/b&gt; --flag" {
+		t.Fatalf("%q", a)
+	}
+	if got := itemLabel(&Item{ID: "TSK-001"}); got != "TSK-001" {
+		t.Fatalf("%q", got)
+	}
+	if got := milestoneReason(&Tenant{Slug: "a"}, &Item{ID: "WAV-001"}); got != "A WAV-001 \u2014 done" {
+		t.Fatalf("%q", got)
 	}
 }
