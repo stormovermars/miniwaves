@@ -190,11 +190,11 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 		}
 		return printData(out, o)
 	case "start":
-		if err := allowOptions(o, "tenant", "agent", "claude-session"); err != nil {
+		if err := allowOptions(o, "tenant", "agent", "claude-session", "answerer"); err != nil {
 			return err
 		}
 		if len(pos) != 1 {
-			return errors.New("usage: mw session start NAME [--tenant SLUG] [--claude-session ID]")
+			return errors.New("usage: mw session start NAME [--tenant SLUG] [--claude-session ID] [--answerer PARENT]")
 		}
 		cs := o["claude-session"]
 		if cs != "" && !claudeSessionRe.MatchString(cs) {
@@ -211,6 +211,15 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 		if !validID(role) {
 			return errors.New("agent role must be at most 64 lowercase letters, numbers, and single dashes")
 		}
+		ans := o["answerer"]
+		if ans != "" {
+			if !validID(ans) || ans == localName {
+				return errors.New("--answerer must be a session name")
+			}
+			if err := answererCycle(w, id, ans); err != nil {
+				return err
+			}
+		}
 		os.Unsetenv("MW_SESSION") // start never resolves the current session
 		t, err := selectTenant(w, map[string]string{"tenant": o["tenant"]})
 		if err != nil {
@@ -222,7 +231,7 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 				return fmt.Errorf("session %s already exists", id)
 			}
 			existing.Tenant, existing.Agent, existing.State, existing.Updated = t.Slug, role, "idle", now
-			existing.ClaudeSession = cs
+			existing.ClaudeSession, existing.Answerer = cs, ans
 			if err := save(path, w); err != nil {
 				return err
 			}
@@ -232,7 +241,7 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 		if err := sessionElsewhere(path, w, id, t.Slug); err != nil {
 			return err
 		}
-		w.Sessions = append(w.Sessions, Session{ID: id, Tenant: t.Slug, Agent: role, State: "idle", Updated: now, ClaudeSession: cs})
+		w.Sessions = append(w.Sessions, Session{ID: id, Tenant: t.Slug, Agent: role, State: "idle", Updated: now, ClaudeSession: cs, Answerer: ans})
 		if err := save(path, w); err != nil {
 			return err
 		}

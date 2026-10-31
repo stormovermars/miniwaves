@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "accept": true, "action": true, "grep": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "accept": true, "action": true, "grep": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -450,7 +450,7 @@ stores a path (relative = under home, ~/ expanded) in the board.
 Example: mw dirs set data D:\out`,
 		"note": `mw note ID TEXT... [-t SLUG] [-s NAME]
 Append a timestamped note to any item or wave; shown by mw show.`,
-		"session": `mw session start NAME [-t SLUG] [-a ROLE] [--claude-session ID]
+		"session": `mw session start NAME [-t SLUG] [-a ROLE] [--claude-session ID] [--answerer PARENT]
 mw session list [-t SLUG] [-j] [-v]
 mw session stop NAME [-t SLUG] [--release]   (-t limits the command to one tenant file)
 mw session reap [-t SLUG | -A] [--older-than DUR] [--except NAME,NAME] [-n|--dry-run] [-j]
@@ -464,6 +464,7 @@ cleared, a note appended) and then stops it. reap releases and stops every sessi
 --older-than (default 2h; 90m, 2h, 1d) in -t TENANT or all tenants (-A); --except NAME,NAME skips those sessions; -n/--dry-run only prints. A
 session's last activity is set by session start and by every start/ready/block/done/reopen, note and
 edit it runs. The implicit local session is never reaped.
+--answerer PARENT names the session that may answer this session's asks (mw answer -s PARENT); refused for itself or a cycle.
 Job roles: when the session's tenant belongs to a job that exists (mw jobs), reap also skips sessions whose role (-a) is dispatcher or newsdesk,
 with no extra flag; --except still skips any named session.`,
 		"get-prompt": `mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]

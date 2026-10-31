@@ -145,6 +145,9 @@ type Session struct {
 	// field (omitempty; older binaries ignore it), not an item field: the schema is unchanged.
 	// An older mw (<0.3.15) drops it when it rewrites the board: re-run mw session start NAME --claude-session ID.
 	ClaudeSession string `json:"claude_session,omitempty"`
+	// Answerer is the session that may answer this session's asks (mw session start NAME --answerer PARENT).
+	// Also a session-record field (omitempty): an older mw drops it when it rewrites the board.
+	Answerer string `json:"answerer,omitempty"`
 }
 
 type Workspace struct {

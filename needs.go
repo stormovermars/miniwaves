@@ -214,3 +214,18 @@ func decideCommand(path string, w *Workspace, args []string) error {
 	fmt.Printf("[%s] %s  decided by %s\n", t.Slug, it.ID, by)
 	return nil
 }
+
+// answererCycle refuses an answerer that is the session itself or whose own answerer chain leads back to it.
+func answererCycle(w *Workspace, id, answerer string) error {
+	for seen, p := 0, answerer; p != "" && seen <= len(w.Sessions); seen++ {
+		if p == id {
+			return fmt.Errorf("--answerer %s would make a cycle (answerer chain leads back to %s)", answerer, id)
+		}
+		s, err := sessionByID(w, p)
+		if err != nil {
+			break
+		}
+		p = s.Answerer
+	}
+	return nil
+}
