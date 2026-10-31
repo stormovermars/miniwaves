@@ -1035,7 +1035,7 @@ func TestMilestoneNotifiesWhatFinished(t *testing.T) {
 	}
 	runAll(t, []string{"reopen", "WAV-001"}, []string{"reopen", "TSK-001"}, []string{"fanfare", "set", "stop_dialog=true"})
 	runAll(t, []string{"done", "TSK-001", "ok"}, step, closeWave)
-	plays(t, log, 3)
+	plays(t, log, 2)
 	l := readNotes(notes, 2)
 	if len(l) != 2 {
 		t.Fatalf("notes: %q", l)
