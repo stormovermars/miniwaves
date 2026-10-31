@@ -30,6 +30,7 @@ func wtBoard(t *testing.T, commitBoard bool) wtEnv {
 	t.Helper()
 	gateEnv(t) // HOME, user config and env isolation; its own board is left behind in another temp dir
 	t.Setenv("MW_WORKTREE", "")
+	unsetEnvT(t, "MW_MAIN")
 	e := wtEnv{root: tmpReal(t)}
 	e.main = gitRepo(t, e.root, "main")
 	e.alias = filepath.Join(t.TempDir(), "alias")
@@ -244,4 +245,11 @@ func TestWorktreeTenantCheckByFolder(t *testing.T) {
 			t.Fatalf("%s: the first-tenant fallback must not refuse: exit %d", d, code)
 		}
 	}
+}
+
+// unsetEnvT unsets k for the test (restored afterwards).
+func unsetEnvT(t *testing.T, k string) {
+	t.Helper()
+	t.Setenv(k, "")
+	os.Unsetenv(k)
 }

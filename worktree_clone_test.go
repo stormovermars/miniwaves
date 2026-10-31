@@ -127,3 +127,69 @@ func TestMWMainDocumented(t *testing.T) {
 		}
 	}
 }
+
+// mw link tests: link, show, -j, idempotence and removal in a clone; refused in a worktree.
+func TestLinkCommand(t *testing.T) {
+	e := wtBoard(t, true)
+	c := cloneOf(t, e, "c1")
+	chdirT(t, filepath.Join(c, "api"))
+	file := filepath.Join(c, ".git", "mw-main")
+	if out := captureOutput(t, func() { runAll(t, []string{"link"}) }); out != "not linked\n" {
+		t.Fatalf("show unlinked: %q", out)
+	}
+	for i := 0; i < 2; i++ { // idempotent
+		runAll(t, []string{"link", e.main})
+		if b, _ := os.ReadFile(file); string(b) != e.main+"\n" {
+			t.Fatalf("link file: %q", b)
+		}
+	}
+	if out := captureOutput(t, func() { runAll(t, []string{"link"}) }); out != e.main+"\n" {
+		t.Fatalf("show: %q", out)
+	}
+	if out := captureOutput(t, func() { runAll(t, []string{"link", "-j"}) }); strings.TrimSpace(out) != `{"main":`+jsonString(e.main)+`}` {
+		t.Fatalf("show -j: %q", out)
+	}
+	for _, bad := range []string{filepath.Join(e.root, "missing"), t.TempDir(), c} {
+		if code, _, se := mwRun(t, "link", bad); code != 1 || !strings.HasPrefix(se, "mw: ") {
+			t.Fatalf("link %s: %d %q", bad, code, se)
+		}
+	}
+	runAll(t, []string{"link", "-"}, []string{"link", "-"})
+	if existsT(file) {
+		t.Fatal("link - left the file")
+	}
+	chdirT(t, filepath.Join(e.wt, "api"))
+	if code, _, se := mwRun(t, "link", e.main); code != 2 || se != "mw: worktree already shares the main board\n" {
+		t.Fatalf("link in a worktree: %d %q", code, se)
+	}
+}
+
+// mw link tests: a linked clone writes through; MW_MAIN overrides the link, MW_MAIN= ignores it, and a
+// stale link warns once and keeps the clone's own board.
+func TestLinkedCloneResolution(t *testing.T) {
+	e := wtBoard(t, true)
+	c := cloneOf(t, e, "c1")
+	c2 := cloneOf(t, e, "c2")
+	chdirT(t, filepath.Join(c, "api"))
+	runAll(t, []string{"link", e.main}, []string{"add", "task", "linked"})
+	if !hasTitle(itemsOf(t, e.board(), "api"), "linked") {
+		t.Fatal("a linked clone must write through")
+	}
+	sameBoardFiles(t, e.main, c, "api")
+	t.Setenv("MW_MAIN", c2)
+	if code, errs := mwErr(t, "add", "task", "override", "-t", "api"); code != 0 || strings.Contains(errs, "MW_MAIN") ||
+		!hasTitle(itemsOf(t, filepath.Join(c2, dataFile), "api"), "override") || hasTitle(itemsOf(t, e.board(), "api"), "override") {
+		t.Fatalf("MW_MAIN must override the link: %d %q", code, errs)
+	}
+	t.Setenv("MW_MAIN", "")
+	if code, errs := mwErr(t, "add", "task", "own", "-t", "api"); code != 0 || errs != "" || hasTitle(itemsOf(t, e.board(), "api"), "own") {
+		t.Fatalf("MW_MAIN= must ignore the link: %d %q", code, errs)
+	}
+	unsetEnvT(t, "MW_MAIN")
+	os.WriteFile(filepath.Join(c, ".git", "mw-main"), []byte(filepath.Join(e.root, "moved")+"\n"), 0o644)
+	code, errs := mwErr(t, "add", "task", "stale", "-t", "api")
+	if code != 0 || strings.Count(errs, "mw: ") != 1 || !strings.Contains(errs, "mw-main") || hasTitle(itemsOf(t, e.board(), "api"), "stale") ||
+		!hasTitle(itemsOf(t, filepath.Join(c, dataFile), "api"), "stale") {
+		t.Fatalf("stale link: %d %q", code, errs)
+	}
+}

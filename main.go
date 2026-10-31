@@ -208,6 +208,9 @@ func run(args []string) error {
 		}
 		return err
 	}
+	if args[0] == "link" {
+		return linkCommand(args[1:])
+	}
 	if args[0] == "boards" {
 		return boardsCommand(args[1:])
 	}

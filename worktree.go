@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -132,12 +133,16 @@ func boardPath(dir string) boardLoc {
 	}
 	wt, main, ok := worktreeOf(dir)
 	warn := ""
-	if env := os.Getenv("MW_MAIN"); env != "" {
-		if !ok {
-			wt, main, ok, warn = cloneMain(dir, env)
-		} else if m, err := filepath.EvalSymlinks(env); err != nil || !pathEqual(m, main, runtime.GOOS) {
-			warn = "MW_MAIN ignored; worktree of " + main
+	if env, set := os.LookupEnv("MW_MAIN"); set { // MW_MAIN overrides the link; set but empty ignores it
+		if env != "" && !ok {
+			wt, main, ok, warn = cloneMain(dir, env, "MW_MAIN "+env)
+		} else if env != "" {
+			if m, err := filepath.EvalSymlinks(env); err != nil || !pathEqual(m, main, runtime.GOOS) {
+				warn = "MW_MAIN ignored; worktree of " + main
+			}
 		}
+	} else if link := linkOf(dir); link != "" && !ok {
+		wt, main, ok, warn = cloneMain(dir, link, ".git/mw-main "+link)
 	}
 	loc := boardLoc{path: local}
 	if ok {
@@ -147,20 +152,21 @@ func boardPath(dir string) boardLoc {
 	return loc
 }
 
-// cloneMain is MW_MAIN for a separate clone (or any other checkout): the checkout holding dir plays
-// the worktree and env the main checkout. env must be absolute, exist, hold a board for dir and not
-// be the checkout itself (that is main: silent); otherwise warn names why it is ignored.
-func cloneMain(dir, env string) (wt, main string, ok bool, warn string) {
+// cloneMain is MW_MAIN (or the mw link) for a separate clone or any other checkout: the checkout
+// holding dir plays the worktree and env the main checkout. env must be absolute, exist, hold a board
+// for dir and not be the checkout itself (that is main: silent); otherwise warn, which starts with
+// label, names why it is ignored.
+func cloneMain(dir, env, label string) (wt, main string, ok bool, warn string) {
 	root, found := checkoutRoot(dir)
 	if !found {
 		return "", "", false, ""
 	}
 	if !filepath.IsAbs(env) {
-		return "", "", false, "MW_MAIN " + env + " ignored: not an absolute path"
+		return "", "", false, label + " ignored: not an absolute path"
 	}
 	m, err := filepath.EvalSymlinks(env)
 	if fi, serr := os.Stat(m); err != nil || serr != nil || !fi.IsDir() {
-		return "", "", false, "MW_MAIN " + env + " ignored: not found"
+		return "", "", false, label + " ignored: not found"
 	}
 	if pathEqual(m, root, runtime.GOOS) {
 		return "", "", false, ""
@@ -171,9 +177,92 @@ func cloneMain(dir, env string) (wt, main string, ok bool, warn string) {
 			return root, m, true, ""
 		}
 		if r == "." {
-			return "", "", false, "MW_MAIN " + env + " ignored: no board there"
+			return "", "", false, label + " ignored: no board there"
 		}
 	}
+}
+
+// linkFile is where mw link keeps the main checkout of a clone: one line, inside its .git folder.
+func linkFile(root string) string { return filepath.Join(root, ".git", "mw-main") }
+
+// linkOf is the main checkout mw link recorded for the clone holding dir, or "" (none, or a worktree).
+func linkOf(dir string) string {
+	root, ok := checkoutRoot(dir)
+	if !ok {
+		return ""
+	}
+	b, err := os.ReadFile(linkFile(root))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// linkCommand is mw link [MAIN_DIR|-] [-j]: show, set or remove the clone's main checkout. Local only:
+// it validates like MW_MAIN, writes .git/mw-main and never touches a board or runs git.
+func linkCommand(args []string) error {
+	asJSON, arg := false, ""
+	for _, a := range args {
+		switch {
+		case a == "-j" || a == "--json":
+			asJSON = true
+		case a == "-" && arg == "":
+			arg = a
+		case strings.HasPrefix(a, "-"):
+			return fmt.Errorf("unknown option %s", a)
+		case arg == "":
+			arg = a
+		default:
+			return errors.New("usage: mw link [MAIN_DIR|-] [-j]")
+		}
+	}
+	cwd := mustGetwd()
+	root, ok := checkoutRoot(cwd)
+	if !ok {
+		return errors.New("not inside a git checkout")
+	}
+	if fi, err := os.Lstat(filepath.Join(root, ".git")); err == nil && !fi.IsDir() {
+		return &exitError{code: 2, msg: "worktree already shares the main board"}
+	}
+	switch arg {
+	case "":
+		m := linkOf(cwd)
+		if asJSON {
+			b, _ := json.Marshal(map[string]string{"main": m})
+			fmt.Println(string(b))
+		} else if m == "" {
+			fmt.Println("not linked")
+		} else {
+			fmt.Println(m)
+		}
+		return nil
+	case "-":
+		if err := os.Remove(linkFile(root)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	abs, err := filepath.Abs(arg)
+	if err != nil {
+		return err
+	}
+	_, m, ok, warn := cloneMain(cwd, abs, abs)
+	if !ok {
+		if warn == "" {
+			warn = abs + " is this checkout"
+		}
+		return errors.New(strings.Replace(warn, " ignored: ", ": ", 1))
+	}
+	if err := os.WriteFile(linkFile(root), []byte(m+"\n"), 0o644); err != nil {
+		return err
+	}
+	if asJSON {
+		b, _ := json.Marshal(map[string]string{"main": m})
+		fmt.Println(string(b))
+	} else {
+		fmt.Println("linked to " + m)
+	}
+	return nil
 }
 
 // checkoutRoot is the folder of the first .git (folder or file) walking up from dir, symlinks resolved.
