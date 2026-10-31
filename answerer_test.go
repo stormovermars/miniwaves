@@ -155,3 +155,43 @@ func TestAnswererNeedsRouting(t *testing.T) {
 		t.Fatalf("status N after the answerer stopped: %+v", c)
 	}
 }
+
+// (b) the answerer escalates with its own ask on the same item: it counts for the human.
+func TestAnswererEscalates(t *testing.T) {
+	answererBoard(t)
+	runAll(t, []string{"ask", "TSK-001", "push the release?", "-s", "worker"})
+	if n := reviewNeeds(t); len(n) != 0 {
+		t.Fatalf("before escalation: %+v", n)
+	}
+	runAll(t, []string{"ask", "TSK-001", "escalated: push the release?", "-s", "parent"})
+	n := reviewNeeds(t)
+	if len(n) != 1 || n[0].By != "parent" || n[0].Question != "escalated: push the release?" {
+		t.Fatalf("the escalation is the open ask and counts for the human: %+v", n)
+	}
+	// the answerer cannot answer its own escalation, nor can the worker
+	for _, s := range []string{"parent", "worker"} {
+		if err := run([]string{"answer", "TSK-001", "yes", "-s", s}); err == nil {
+			t.Fatalf("%s must not answer the escalation", s)
+		}
+	}
+	runAll(t, []string{"answer", "TSK-001", "no", "--by", "Sir"})
+	if n := reviewNeeds(t); len(n) != 0 {
+		t.Fatalf("the human closed it: %+v", n)
+	}
+}
+
+// (e) the answerer answers asks only: accept, reject, edit -c and gates stay human.
+func TestAnswererScope(t *testing.T) {
+	answererBoard(t)
+	runAll(t, []string{"edit", "TSK-001", "-c", "set by a human"}) // a session may only draft an empty acceptance
+	for _, args := range [][]string{
+		{"accept", "TSK-001", "-s", "parent"},
+		{"reject", "TSK-001", "why", "-s", "parent"},
+		{"edit", "TSK-001", "-c", "some acceptance", "-s", "parent"},
+		{"gate", "level", "proof", "-s", "parent"},
+	} {
+		if err := run(args); err == nil {
+			t.Fatalf("%v must stay human-only", args)
+		}
+	}
+}
