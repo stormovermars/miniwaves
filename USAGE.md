@@ -537,7 +537,7 @@ In a linked git worktree (`git worktree add`) whose main checkout has the board,
 - The worktree is found from the `.git` file, its `gitdir` and `commondir` (mw runs no git). A plain checkout, a submodule, a bare repo and a `--separate-git-dir` repo are not worktrees and behave as before.
 - No board in the worktree (an untracked board): the main board is used directly, with no copy. Main has no board: the worktree's board is used alone, as before.
 - A tenant only the worktree's board has: exit 2, `mw: tenant SLUG is not on the main board; run mw tenant add in the main checkout` (`mw tenant add` in a worktree writes through).
-- `mw: worktree board has N events not on main (TENANT); not synced`: the worktree's copy of that tenant holds events main lacks (written by an older mw, with `MW_WORKTREE=off`, or before main had the board); mw never overwrites it. A failed copy prints `mw: worktree board not synced: ...` and keeps the command's exit code; the next command heals it.
+- `mw: worktree board has N events not on main (TENANT); not synced`: the worktree's copy of that tenant changed since mw last copied it (written by an older mw, with `MW_WORKTREE=off`, before main had the board, or by a git checkout; N counts its events main lacks and may be 0, e.g. for a session start); mw never overwrites it. mw records each copy's hash in `.miniwaves/<slug>.lock.copied` (excluded from git like the locks). A failed copy prints `mw: worktree board not synced: ...` and keeps the command's exit code; the next command heals it.
 - `MW_WORKTREE=off` keeps the old behaviour (the nearest board, the worktree's own).
 
 **Hand-back, before merging the branch** (in the worktree; skip it when main has no board):

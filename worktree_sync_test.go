@@ -229,3 +229,25 @@ func TestWorktreeConcurrentSync(t *testing.T) {
 	}
 	sameBoardFiles(t, e.main, e.wt, "api")
 }
+
+// Review finding 2: a worktree write without events (a session start under MW_WORKTREE=off or an older
+// mw) is not overwritten either, and the hand-back's mw list warns about it.
+func TestWorktreeLocalChangeWithoutEvents(t *testing.T) {
+	e := wtBoard(t, true)
+	chdirT(t, filepath.Join(e.wt, "api"))
+	runAll(t, []string{"add", "task", "shared"}) // the first sync records the copy
+	t.Setenv("MW_WORKTREE", "off")
+	runAll(t, []string{"session", "start", "solo", "-t", "api"})
+	t.Setenv("MW_WORKTREE", "")
+	wtf := tenantPath(filepath.Join(e.wt, dataFile), "api")
+	before, _ := os.ReadFile(wtf)
+	for _, args := range [][]string{{"add", "task", "after"}, {"list"}} {
+		errs := captureFile(t, &os.Stderr, func() { captureOutput(t, func() { runAll(t, args) }) })
+		if !strings.Contains(errs, "(api); not synced\n") {
+			t.Fatalf("%v: stderr %q", args, errs)
+		}
+	}
+	if after, _ := os.ReadFile(wtf); !bytes.Equal(before, after) || !bytes.Contains(after, []byte(`"id":"solo"`)) {
+		t.Fatal("the worktree's session start was overwritten")
+	}
+}

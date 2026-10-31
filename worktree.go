@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -248,8 +249,8 @@ func syncWorktree(loc boardLoc) {
 // syncBoard byte-copies main's index and every tenant file the worktree holds or this run wrote into
 // the worktree board. It runs after main's locks are released, under the worktree's own locks, and
 // re-reads main's files (never the command's in-memory board): the last process to sync writes the
-// newest state. A worktree tenant file with events main lacks (from an older mw, MW_WORKTREE=off or
-// before main had the board) is never overwritten; it is reported on errw instead.
+// newest state. A worktree tenant file that changed since the last copy (an older mw, MW_WORKTREE=off,
+// a git checkout) is never overwritten; it is reported on errw instead.
 func syncBoard(main, wt string, errw io.Writer) error {
 	want := map[string]bool{}
 	for s := range wroteTenants {
@@ -296,14 +297,12 @@ func syncBoard(main, wt string, errw io.Writer) error {
 		wb, err := readFileShared(tenantPath(wt, slug))
 		if err == nil {
 			if bytes.Equal(mb, wb) {
+				recordCopy(wt, slug, wb)
 				continue
 			}
-			ab, _ := readFileShared(archivePath(main, slug))
-			n, err := unsharedEvents(wb, mb, ab)
-			if err != nil {
-				return fmt.Errorf("read %s: %w", tenantPath(wt, slug), err)
-			}
-			if n > 0 {
+			if !lastCopy(main, wt, slug, mb, wb) {
+				ab, _ := readFileShared(archivePath(main, slug))
+				n, _ := unsharedEvents(wb, mb, ab)
 				fmt.Fprintf(errw, "mw: worktree board has %d events not on main (%s); not synced\n", n, slug)
 				keepIndex = keepIndex || !onMain[slug]
 				continue
@@ -317,6 +316,7 @@ func syncBoard(main, wt string, errw io.Writer) error {
 		if err := writeFileAtomic(tenantPath(wt, slug), mb); err != nil {
 			return err
 		}
+		recordCopy(wt, slug, mb)
 	}
 	if keepIndex { // main's index would drop a tenant whose events are only here
 		return nil
@@ -325,6 +325,34 @@ func syncBoard(main, wt string, errw io.Writer) error {
 		return nil
 	}
 	return writeFileAtomic(wt, ib)
+}
+
+// copyPath holds the sha256 of the bytes last copied into a worktree tenant file. It sits beside the
+// locks (the .git/info/exclude pattern .miniwaves/*.lock* keeps it out of commits).
+func copyPath(wt, slug string) string { return storePath(wt, slug+".lock.copied") }
+
+func hexSum(b []byte) string { return fmt.Sprintf("%x", sha256.Sum256(b)) }
+
+// recordCopy remembers b as the last copy of the tenant file (best effort: a missing record only
+// means the next sync falls back to the event check).
+func recordCopy(wt, slug string, b []byte) {
+	h := hexSum(b)
+	if old, err := readFileShared(copyPath(wt, slug)); err == nil && string(old) == h {
+		return
+	}
+	_ = writeFileAtomic(copyPath(wt, slug), []byte(h))
+}
+
+// lastCopy reports whether the worktree tenant file wb is still the copy this worktree last made, so
+// overwriting it loses nothing. Without a record (the first sync of a worktree, or a board from an
+// older mw) a file whose events main all has counts as a copy.
+func lastCopy(main, wt, slug string, mb, wb []byte) bool {
+	if h, err := readFileShared(copyPath(wt, slug)); err == nil {
+		return string(h) == hexSum(wb)
+	}
+	ab, _ := readFileShared(archivePath(main, slug))
+	n, err := unsharedEvents(wb, mb, ab)
+	return err == nil && n == 0
 }
 
 // unsharedEvents counts the events of a worktree tenant file that main's tenant and archive files lack
