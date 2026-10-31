@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -63,5 +64,20 @@ func TestLogGrepArchived(t *testing.T) {
 	runAll(t, []string{"tenant", "archive", "needs-app", "--force"})
 	if r := logRows(t, "-A", "--grep", "old format"); len(r) != 1 {
 		t.Fatalf("-A --grep reaches an archived tenant: %+v", r)
+	}
+}
+
+func TestLogGrepBadArchiveWarns(t *testing.T) {
+	path := needsBoard(t)
+	w, _ := load(path)
+	if err := os.WriteFile(archivePath(path, w.Tenants[0].Slug), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out string
+	errText := captureFile(t, &os.Stderr, func() {
+		out = captureOutput(t, func() { runAll(t, []string{"log", "--grep", "x"}) })
+	})
+	if !strings.Contains(errText, "archive") || strings.Count(strings.TrimSpace(errText), "\n") != 0 {
+		t.Fatalf("want a one-line archive warning on stderr, got %q (stdout %q)", errText, out)
 	}
 }

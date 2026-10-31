@@ -143,7 +143,9 @@ func logCommand(path string, w *Workspace, args []string) error {
 	rowsOf := func(t *Tenant) []logRow { // a grep also reads the archive: decisions stay findable after mw archive
 		r := tenantRows(t)
 		if grepped {
-			if a, err := loadArchive(path, t.Slug); err == nil {
+			if a, err := loadArchive(path, t.Slug); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: archive of %s not searched: %v\n", t.Slug, err)
+			} else {
 				r = append(r, tenantRows(&Tenant{Slug: t.Slug, Items: a.Items})...)
 			}
 		}
