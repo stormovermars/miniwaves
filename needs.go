@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -54,7 +55,7 @@ func printClosedAsk(it *Item) {
 func needsOf(sessions []Session, t *Tenant) []needRow {
 	rows := []needRow{}
 	for _, it := range t.Items {
-		if e, ok := openAsk(it); ok && liveAnswerer(sessions, e.By) == "" {
+		if e, ok := openAsk(it); ok && liveAnswerer(sessions, t.Slug, e) == "" {
 			rows = append(rows, needRow{t.Slug, it.ID, e.Note, e.By, e.At, ""})
 		}
 	}
@@ -66,7 +67,7 @@ func answererNeeds(sessions []Session, t *Tenant) []needRow {
 	var rows []needRow
 	for _, it := range t.Items {
 		if e, ok := openAsk(it); ok {
-			if a := liveAnswerer(sessions, e.By); a != "" {
+			if a := liveAnswerer(sessions, t.Slug, e); a != "" {
 				rows = append(rows, needRow{t.Slug, it.ID, e.Note, e.By, e.At, a})
 			}
 		}
@@ -174,9 +175,6 @@ func answerCommand(path string, w *Workspace, args []string) error {
 		text = "accepted"
 	}
 	emit(it, now, "answer", by, mark+text)
-	if ai {
-		touchSession(w, by, now)
-	}
 	it.Updated = now
 	if err := save(path, w); err != nil {
 		return err
@@ -249,59 +247,104 @@ func decideCommand(path string, w *Workspace, args []string) error {
 	return nil
 }
 
-// answererCycle refuses an answerer that is the session itself or whose own answerer chain leads back to it.
-func answererCycle(w *Workspace, id, answerer string) error {
-	for seen, p := 0, answerer; p != "" && seen <= len(w.Sessions); seen++ {
-		if p == id {
-			return fmt.Errorf("--answerer %s would make a cycle (answerer chain leads back to %s)", answerer, id)
+// allSessions is every session of the board: those of the loaded tenants plus, read once and only when asked,
+// those of the tenants this command did not load (a coordinator on one tenant answers workers on another).
+func (w *Workspace) allSessions() []Session {
+	if !w.otherDone {
+		w.otherDone = true
+		for _, t := range w.Tenants {
+			if t.loaded || w.path == "" {
+				continue
+			}
+			if b, err := readFileShared(tenantPath(w.path, t.Slug)); err == nil {
+				var td tenantDoc
+				if json.Unmarshal(b, &td) == nil {
+					w.otherSess = append(w.otherSess, td.Sessions...)
+				}
+			}
 		}
-		s, err := sessionByID(w, p)
-		if err != nil {
-			break
-		}
-		p = s.Answerer
 	}
-	return nil
+	return append(append([]Session{}, w.Sessions...), w.otherSess...)
 }
 
-// liveAnswerer is the answerer of session by (in sessions) when that answerer is a registered session that is not stopped ("" otherwise).
-func liveAnswerer(sessions []Session, by string) string {
-	var ans string
-	for _, s := range sessions {
-		if s.ID == by {
-			ans = s.Answerer
+// liveAnswerer is the answerer of the session that made ask e in tenant (an id may sit in two tenant files: the
+// asker is matched by tenant). It is "" unless the answerer was set at or before the ask and is a registered
+// session, in any tenant, that is not stopped.
+func liveAnswerer(sessions []Session, tenant string, e Event) string {
+	var asker *Session
+	for i := range sessions {
+		s := &sessions[i]
+		if e.By != "" && s.ID == e.By && s.Tenant == tenant && (asker == nil || asker.State == "stopped" && s.State != "stopped") {
+			asker = s
 		}
 	}
-	if by == "" || ans == "" {
+	if asker == nil || asker.Answerer == "" || asker.AnswererAt == "" || parseTS(e.At).Before(parseTS(asker.AnswererAt)) {
 		return ""
 	}
 	for _, s := range sessions {
-		if s.ID == ans && s.State != "stopped" {
-			return ans
+		if s.ID == asker.Answerer && s.State != "stopped" {
+			return s.ID
 		}
 	}
 	return ""
 }
 
 // answerTarget finds the item for a session that is the registered answerer of the session that made its open ask.
-// ai is false in every other case (no -s/MW_SESSION, --by given, no open ask, not the answerer, a stopped answerer,
-// its own ask), so the caller takes the human path and its refusals.
+// The tenant is -t, else the one (any tenant) whose item ID has such an ask; two matches are ambiguous. ai is false
+// in every other case (no -s/MW_SESSION, --by given, no open ask, not the answerer, a stopped answerer, its own ask),
+// so the caller takes the human path and its refusals. It prints nothing.
 func answerTarget(w *Workspace, o map[string]string, id string) (*Tenant, *Item, string, bool) {
 	caller := value(o, "session", os.Getenv("MW_SESSION"))
 	if caller == "" || strings.TrimSpace(o["by"]) != "" {
 		return nil, nil, "", false
 	}
-	t, err := selectTenant(w, o)
-	if err != nil {
+	sessions := w.allSessions()
+	var ft *Tenant
+	var fi *Item
+	for i := range w.Tenants {
+		t := &w.Tenants[i]
+		if slug := value(o, "tenant", os.Getenv("MW_TENANT")); slug != "" && slug != t.Slug || t.Hidden || !t.loaded {
+			continue
+		}
+		it, err := itemByID(t, id)
+		if err != nil {
+			continue
+		}
+		if ask, ok := openAsk(*it); ok && ask.By != caller && liveAnswerer(sessions, t.Slug, ask) == caller {
+			if fi != nil {
+				return nil, nil, "", false
+			}
+			ft, fi = t, it
+		}
+	}
+	if fi == nil {
 		return nil, nil, "", false
 	}
-	it, err := itemByID(t, id)
-	if err != nil {
-		return nil, nil, "", false
+	return ft, fi, caller, true
+}
+
+// answererStamp is the time an answerer is set ("" without one).
+func answererStamp(answerer, now string) string {
+	if answerer == "" {
+		return ""
 	}
-	ask, ok := openAsk(*it)
-	if !ok || ask.By == caller || liveAnswerer(w.Sessions, ask.By) != caller {
-		return nil, nil, "", false
+	return now
+}
+
+// answererCycle refuses an answerer that is the session itself or whose own answerer chain (any tenant) leads back to it.
+func answererCycle(w *Workspace, id, answerer string) error {
+	sessions := w.allSessions()
+	for seen, p := 0, answerer; p != "" && seen <= len(sessions); seen++ {
+		if p == id {
+			return fmt.Errorf("--answerer %s would make a cycle (answerer chain leads back to %s)", answerer, id)
+		}
+		next := ""
+		for _, s := range sessions {
+			if s.ID == p && s.Answerer != "" && s.State != "stopped" {
+				next = s.Answerer
+			}
+		}
+		p = next
 	}
-	return t, it, caller, true
+	return nil
 }

@@ -701,6 +701,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 	events := 0
 	c := &m.Now.Counts
 	var trows []newsTenant
+	allSess := w.allSessions()
 	for _, t := range p.tenants {
 		tr := newsTenant{Slug: compactText(t.Slug, 40), Name: compactText(t.Name, 40)}
 		before := *c
@@ -763,7 +764,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 			if e, ok := openAsk(it); ok {
 				x := base
 				x.Note, x.Since, x.By = newsCap(e.Note), e.At, displayName(e.By)
-				if a := liveAnswerer(w.Sessions, e.By); a != "" {
+				if a := liveAnswerer(allSess, t.Slug, e); a != "" {
 					x.Note = "for " + a + ": " + x.Note
 					answering = append(answering, x)
 				} else {
@@ -1014,7 +1015,9 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 			}
 			x := newsSprintItem{newsItem: newsItem{Tenant: ow.t.Slug, ID: it.ID, Title: newsCap(it.Title), Since: itemStamp(it)}}
 			tick(&x.newsItem, it)
-			_, x.Needs = openAsk(it)
+			if e, ok := openAsk(it); ok { // an ask that waits for an answerer session does not need the human
+				x.Needs = liveAnswerer(allSess, ow.t.Slug, e) == ""
+			}
 			switch {
 			case it.Status == "done" && ow.judgeOn && awaitingJudgement(ow.t, it):
 				x.State = "review"

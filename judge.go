@@ -162,7 +162,7 @@ func reviewOf(w *Workspace, t *Tenant) (reviewDoc, bool) {
 	gs := gateStates(w, t)
 	judgeOn, accOn := byName(gs, "judge").Effective, byName(gs, "acceptance").Effective
 	evOn := byName(gs, "evidence").Effective
-	d := reviewDoc{Judge: []reviewItem{}, Review: []reviewItem{}, Blocked: []reviewItem{}, Acceptance: []reviewItem{}, Waves: []reviewWave{}, Stale: []reviewItem{}, Needs: needsOf(w.Sessions, t), ForAnswerers: answererNeeds(w.Sessions, t)}
+	d := reviewDoc{Judge: []reviewItem{}, Review: []reviewItem{}, Blocked: []reviewItem{}, Acceptance: []reviewItem{}, Waves: []reviewWave{}, Stale: []reviewItem{}, Needs: needsOf(w.allSessions(), t), ForAnswerers: answererNeeds(w.allSessions(), t)}
 	mk := func(it Item) reviewItem {
 		return reviewItem{ID: it.ID, Type: it.Kind, State: it.Status, Title: compactText(it.Title, 72), Attempts: it.Attempts}
 	}

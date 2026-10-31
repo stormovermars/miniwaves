@@ -231,7 +231,7 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 				return fmt.Errorf("session %s already exists", id)
 			}
 			existing.Tenant, existing.Agent, existing.State, existing.Updated = t.Slug, role, "idle", now
-			existing.ClaudeSession, existing.Answerer = cs, ans
+			existing.ClaudeSession, existing.Answerer, existing.AnswererAt = cs, ans, answererStamp(ans, now)
 			if err := save(path, w); err != nil {
 				return err
 			}
@@ -241,7 +241,7 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 		if err := sessionElsewhere(path, w, id, t.Slug); err != nil {
 			return err
 		}
-		w.Sessions = append(w.Sessions, Session{ID: id, Tenant: t.Slug, Agent: role, State: "idle", Updated: now, ClaudeSession: cs, Answerer: ans})
+		w.Sessions = append(w.Sessions, Session{ID: id, Tenant: t.Slug, Agent: role, State: "idle", Updated: now, ClaudeSession: cs, Answerer: ans, AnswererAt: answererStamp(ans, now)})
 		if err := save(path, w); err != nil {
 			return err
 		}
@@ -1095,10 +1095,10 @@ func boardCommand(path string, w *Workspace, args []string) error {
 			announceTenant(w, t)
 			gs := gateStates(w, t)
 			if o["json"] == "true" {
-				docs = append(docs, boardData(t, w.Sessions, full, gs))
+				docs = append(docs, boardData(t, w.allSessions(), full, gs))
 				continue
 			}
-			printBoardJ(t, w.Sessions, full, gatesLine(t, gs), byName(gs, "judge").Effective)
+			printBoardJ(t, w.allSessions(), full, gatesLine(t, gs), byName(gs, "judge").Effective)
 			if i < len(order)-1 {
 				fmt.Println(strings.Repeat("─", 64))
 			}
@@ -1114,9 +1114,9 @@ func boardCommand(path string, w *Workspace, args []string) error {
 	}
 	gs := gateStates(w, t)
 	if o["json"] == "true" {
-		return printJSON(boardData(t, w.Sessions, o["verbose"] == "true", gs))
+		return printJSON(boardData(t, w.allSessions(), o["verbose"] == "true", gs))
 	}
-	printBoardJ(t, w.Sessions, o["verbose"] == "true", gatesLine(t, gs), byName(gs, "judge").Effective)
+	printBoardJ(t, w.allSessions(), o["verbose"] == "true", gatesLine(t, gs), byName(gs, "judge").Effective)
 	return nil
 }
 
@@ -1325,7 +1325,7 @@ func contextCommand(w *Workspace, args []string) error {
 			Board   boardDoc        `json:"board"`
 		}{t.Slug, t.Name, value(o, "session", os.Getenv("MW_SESSION")), contextGuide,
 			folderSentence(workspaceFolders(w), t.Slug, value(o, "session", os.Getenv("MW_SESSION"))),
-			levelOf(gs), effectiveMap(gs), next, boardData(t, w.Sessions, true, gs)})
+			levelOf(gs), effectiveMap(gs), next, boardData(t, w.allSessions(), true, gs)})
 	}
 	fmt.Printf("# miniwaves context: %s [%s]\n\n", compactText(t.Name, 72), t.Slug)
 	if s := value(o, "session", os.Getenv("MW_SESSION")); s != "" {
@@ -1339,7 +1339,7 @@ func contextCommand(w *Workspace, args []string) error {
 		fmt.Println("Next: nothing ready; refine an inbox item or ask the user.")
 	}
 	fmt.Println("\nCurrent board:")
-	printBoardJ(t, w.Sessions, true, gatesLine(t, gs), byName(gs, "judge").Effective)
+	printBoardJ(t, w.allSessions(), true, gatesLine(t, gs), byName(gs, "judge").Effective)
 	return nil
 }
 
