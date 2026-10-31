@@ -1,0 +1,9 @@
+miniwaves: session w1 holds 1 claimed item(s) on tenant gate-app (source: compact). Continue it; finish with mw done ID NOTE or mw block ID REASON.
+gates: proof; evidence is checked at done
+
+TSK-001  task  Wire the hook
+  acceptance: Prints JSON when claimed. Silent otherwise.
+  note: [w1] first note
+  note: [w1] second note
+  answer by sir: Bash only
+  decide by sir: Use stdin JSON (why: hook gives it)

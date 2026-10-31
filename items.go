@@ -190,11 +190,15 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 		}
 		return printData(out, o)
 	case "start":
-		if err := allowOptions(o, "tenant", "agent"); err != nil {
+		if err := allowOptions(o, "tenant", "agent", "claude-session"); err != nil {
 			return err
 		}
 		if len(pos) != 1 {
-			return errors.New("usage: mw session start NAME [--tenant SLUG]")
+			return errors.New("usage: mw session start NAME [--tenant SLUG] [--claude-session ID]")
+		}
+		cs := o["claude-session"]
+		if cs != "" && !claudeSessionRe.MatchString(cs) {
+			return errors.New("--claude-session must be 1 to 128 letters, numbers, dots, dashes and underscores")
 		}
 		id := pos[0]
 		if id == localName {
@@ -218,6 +222,7 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 				return fmt.Errorf("session %s already exists", id)
 			}
 			existing.Tenant, existing.Agent, existing.State, existing.Updated = t.Slug, role, "idle", now
+			existing.ClaudeSession = cs
 			if err := save(path, w); err != nil {
 				return err
 			}
@@ -227,7 +232,7 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 		if err := sessionElsewhere(path, w, id, t.Slug); err != nil {
 			return err
 		}
-		w.Sessions = append(w.Sessions, Session{ID: id, Tenant: t.Slug, Agent: role, State: "idle", Updated: now})
+		w.Sessions = append(w.Sessions, Session{ID: id, Tenant: t.Slug, Agent: role, State: "idle", Updated: now, ClaudeSession: cs})
 		if err := save(path, w); err != nil {
 			return err
 		}

@@ -106,7 +106,7 @@ mw boards [DIR] [--depth N] [--up] [-j]   # discover boards below DIR (read-only
 mw migrate [--dry-run] [PATH]   # upgrade a schema 5/6 workspace file to 7 (MIGRATION.md)
 mw dirs [init] [-j] | set NAME PATH   # NAME: datalake docs data tools templates builds evidence scratch (all eight shown by mw dirs)
 mw note ID TEXT... [-t SLUG] [-s NAME]
-mw session start NAME [-t SLUG] [-a ROLE]   # optional: `start` registers an unknown -s name; with none it uses the tenant's implicit "local" session (id `local@SLUG`, may own many items; the name `local` is reserved)
+mw session start NAME [-t SLUG] [-a ROLE] [--claude-session ID]   # `--claude-session` records the Claude Code session id on the session record (for `mw context --hook-json`); optional: `start` registers an unknown -s name; with none it uses the tenant's implicit "local" session (id `local@SLUG`, may own many items; the name `local` is reserved)
 mw session list [-t SLUG] [-j] [-v] | stop NAME [--release]
 mw session reap [-t SLUG | -A] [--older-than DUR] [--except NAME,NAME] [-n|--dry-run] [-j]
 mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]   # exit 3 if NAME exists
@@ -152,7 +152,10 @@ mw log [-t SLUG | -A] --follow [--since CURSOR|start] [--poll SEC] [--exec] [-j]
 mw board [-t SLUG | -A] [-v] [-j]   # last: <ago> <item> <action>, today: N done; -A sorted by last activity
 mw board --md [--job ID] [-o PATH|-]   # Markdown jobs view (see "Jobs view")
 mw context [-t SLUG] [-s NAME] [-j]
+mw context --hook-json     # Claude Code SessionStart hook (below)
 ```
+
+`mw context --hook-json` is what the mw plugin's SessionStart hook (`plugins/mw/scripts/ensure-mw.sh`, after it has ensured mw 0.3.15 or later) runs on startup, resume, clear and compact, with the hook JSON (`session_id`, `transcript_path`, `cwd`, `source`) on stdin; empty or broken stdin is tolerated. It prints `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"..."}}`: the items the session has claimed (doing), each with id, title, acceptance, the last 3 notes and every answer/decide since the claim, plus the gate level. The session is `MW_SESSION`, else the session whose record holds the hook's `session_id` (`mw session start NAME --claude-session ID`; the id is stored on the session record only, not on items). It prints nothing and exits 0 when there is no board above `cwd`, no matching or live session, or no claimed item, and on any error: it never fails the hook. `additionalContext` is cut at 2000 characters with a `… (mw show ID --full)` tail. A new conversation after `/clear` has a new `session_id`, so use `MW_SESSION` for it.
 
 Short flags: `-t` tenant, `-s` session, `-a` agent, `-p` parent,
 `-d` path, `-w` wave, `-b` body, `-c` acceptance (`--acceptance`, alias `--accept`), `-k` kind, `-S` status,

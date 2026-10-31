@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -206,6 +206,9 @@ func run(args []string) error {
 	}
 	if args[0] == "boards" {
 		return boardsCommand(args[1:])
+	}
+	if args[0] == "context" && hasFlag(args[1:], "--hook-json") { // SessionStart hook: silent on any problem, always exit 0
+		return hookContextCommand(os.Stdin, os.Stdout)
 	}
 	if args[0] == "status" { // read-only, silent on any problem, always exit 0
 		return statusCommand(args[1:])
@@ -447,7 +450,7 @@ stores a path (relative = under home, ~/ expanded) in the board.
 Example: mw dirs set data D:\out`,
 		"note": `mw note ID TEXT... [-t SLUG] [-s NAME]
 Append a timestamped note to any item or wave; shown by mw show.`,
-		"session": `mw session start NAME [-t SLUG] [-a ROLE]
+		"session": `mw session start NAME [-t SLUG] [-a ROLE] [--claude-session ID]
 mw session list [-t SLUG] [-j] [-v]
 mw session stop NAME [-t SLUG] [--release]   (-t limits the command to one tenant file)
 mw session reap [-t SLUG | -A] [--older-than DUR] [--except NAME,NAME] [-n|--dry-run] [-j]
@@ -661,7 +664,13 @@ with no job), rewritten only when the content changed (hash in jobs.md.hash), pr
 Show a small progress bar, a "last: <ago> <item> <action>  today: N done" line and active work.
 -A shows every tenant, most recently active first; -v includes history. A gates line appears when any gate is on.`,
 		"context": `mw context [-t SLUG] [-s NAME] [-j]
-Show a compact startup brief for one coding-assistant session.`,
+Show a compact startup brief for one coding-assistant session.
+mw context --hook-json
+For Claude Code's SessionStart hook (startup, resume, clear, compact): reads the hook JSON on stdin and prints
+{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":...}} with the session's claimed
+(doing) items: id, title, acceptance, last notes, every answer/decide since the claim and the gates. The session is
+MW_SESSION, else the one started with mw session start NAME --claude-session ID. Prints nothing (exit 0) with no
+board, no matching session or no claimed item, never fails, and cuts the text at 2000 characters.`,
 	}
 	if topic != "" {
 		text, ok := help[topic]

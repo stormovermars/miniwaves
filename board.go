@@ -140,6 +140,10 @@ type Session struct {
 	State   string `json:"state"`
 	Item    string `json:"item,omitempty"`
 	Updated string `json:"updated"`
+	// ClaudeSession is the Claude Code session id recorded by mw session start --claude-session, so that
+	// mw context --hook-json can find this session from the SessionStart hook's stdin. A session-record
+	// field (omitempty; older binaries ignore it), not an item field: the schema is unchanged.
+	ClaudeSession string `json:"claude_session,omitempty"`
 }
 
 type Workspace struct {
