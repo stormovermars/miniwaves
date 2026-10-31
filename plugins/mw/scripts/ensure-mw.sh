@@ -41,5 +41,5 @@ if [ "$os" = Windows ]; then
 else
   tar -xzf "$tmp/$name" -C "$tmp" mw || exit 0
 fi
-mkdir -p "$HOME/.local/bin" && cp "$tmp/mw$exe" "$HOME/.local/bin/mw$exe" && chmod 755 "$HOME/.local/bin/mw$exe" && echo "mw ${want} installed to ~/.local/bin/mw$exe (add it to PATH if needed)"
+mkdir -p "$HOME/.local/bin" && cp "$tmp/mw$exe" "$HOME/.local/bin/mw$exe" && chmod 755 "$HOME/.local/bin/mw$exe" && echo "mw ${want} installed to ~/.local/bin/mw$exe (add it to PATH if needed)" >&2
 ctx; exit 0

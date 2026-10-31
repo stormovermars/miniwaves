@@ -218,3 +218,41 @@ func TestHookContextSkipsStopped(t *testing.T) {
 		t.Fatalf("stopped MW_SESSION must fall back: %q", out)
 	}
 }
+
+// Review 3: on the install run the "installed" note goes to stderr; stdout is only the hook JSON.
+func TestEnsureMwInstallKeepsStdoutJSON(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bash script; Windows runs it in Git Bash")
+	}
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash")
+	}
+	script, _ := filepath.Abs(filepath.Join("plugins", "mw", "scripts", "ensure-mw.sh"))
+	home, work, fake := t.TempDir(), t.TempDir(), t.TempDir()
+	stub := "#!/bin/sh\ncase \"$1\" in version) echo 'mw 0.3.99 (stub)';; context) cat >/dev/null; echo '{\"hookSpecificOutput\":{}}';; esac\n"
+	os.WriteFile(filepath.Join(work, "mw"), []byte(stub), 0o755)
+	tarball := filepath.Join(work, "pkg.tar.gz")
+	if out, err := exec.Command("tar", "-czf", tarball, "-C", work, "mw").CombinedOutput(); err != nil {
+		t.Skipf("tar: %v %s", err, out)
+	}
+	// fake curl: serves the tarball (remembering the asset name asked for), then a matching checksums.txt
+	curl := "#!/bin/sh\nout=''; url=''\nwhile [ $# -gt 0 ]; do if [ \"$1\" = -o ]; then out=$2; shift; else case \"$1\" in -*) ;; *) url=$1;; esac; fi; shift; done\n" +
+		"case \"$url\" in\n*checksums.txt) printf '%s  %s\\n' \"$(shasum -a 256 '" + tarball + "' | awk '{print $1}')\" \"$(cat '" + fake + "/name')\" > \"$out\";;\n*) basename \"$url\" > '" + fake + "/name'; cp '" + tarball + "' \"$out\";;\nesac\n"
+	os.WriteFile(filepath.Join(fake, "curl"), []byte(curl), 0o755)
+	cmd := exec.Command(bash, script)
+	cmd.Env = []string{"HOME=" + home, "PATH=" + fake + ":/usr/bin:/bin"}
+	cmd.Stdin = strings.NewReader(`{"session_id":"s1"}`)
+	var so, se bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &so, &se
+	cmd.Run()
+	if _, err := os.Stat(filepath.Join(home, ".local", "bin", "mw")); err != nil {
+		t.Skipf("install path not exercised: %v (stderr %q)", err, se.String())
+	}
+	if out := strings.TrimSpace(so.String()); out != "" && !json.Valid([]byte(out)) {
+		t.Fatalf("stdout must be pure JSON or empty, got %q", so.String())
+	}
+	if !strings.Contains(se.String(), "installed") {
+		t.Fatalf("install note belongs on stderr: %q", se.String())
+	}
+}
