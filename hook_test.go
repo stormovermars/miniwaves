@@ -192,3 +192,29 @@ func TestEnsureMwChainsContext(t *testing.T) { // TSK-079
 		t.Fatalf("current mw: %q", got)
 	}
 }
+
+// Review 1: the Claude-session lookup skips stopped sessions and prefers the newest live match.
+func TestHookContextSkipsStopped(t *testing.T) {
+	hookBoard(t)
+	path := statusFindBoard(mustGetwd())
+	w := loadT(t, path)
+	w1, _ := sessionByID(w, "w1")
+	tenant := w1.Tenant
+	old := Session{ID: "w0", Tenant: tenant, State: "stopped", ClaudeSession: "cc-123", Updated: "2099-01-01T00:00:00Z"}
+	older := Session{ID: "w2", Tenant: tenant, State: "idle", ClaudeSession: "cc-123", Updated: "2000-01-01T00:00:00Z"}
+	w.Sessions = append([]Session{old, older}, w.Sessions...)
+	w1, _ = sessionByID(w, "w1")
+	w1.Updated = "2020-01-01T00:00:00Z"
+	if err := save(path, w); err != nil {
+		t.Fatal(err)
+	}
+	in := `{"session_id":"cc-123","cwd":` + jsonString(mustGetwd()) + `}`
+	t.Setenv("MW_SESSION", "")
+	if out := hookRun(t, in); out == "" || !strings.Contains(hookCtx(t, out), "TSK-001") {
+		t.Fatalf("stopped/older match shadowed the live newest one: %q", out)
+	}
+	t.Setenv("MW_SESSION", "w0") // names a stopped session: fall back to the Claude-session lookup
+	if out := hookRun(t, in); out == "" || !strings.Contains(hookCtx(t, out), "TSK-001") {
+		t.Fatalf("stopped MW_SESSION must fall back: %q", out)
+	}
+}

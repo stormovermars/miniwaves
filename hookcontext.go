@@ -80,17 +80,23 @@ func hookContextText(in hookInput) string {
 	}
 	var s *Session
 	if name := os.Getenv("MW_SESSION"); name != "" {
-		s, _ = sessionByID(w, name)
+		if c, _ := sessionByID(w, name); c != nil && c.State != "stopped" && c.State != "reaped" {
+			s = c
+		}
 	}
 	if s == nil && in.SessionID != "" {
+		// stopped and reaped sessions stay on the board: skip them, and among live matches take the newest.
 		for i := range w.Sessions {
-			if w.Sessions[i].ClaudeSession == in.SessionID {
-				s = &w.Sessions[i]
-				break
+			c := &w.Sessions[i]
+			if c.ClaudeSession != in.SessionID || c.State == "stopped" || c.State == "reaped" {
+				continue
+			}
+			if s == nil || c.Updated > s.Updated {
+				s = c
 			}
 		}
 	}
-	if s == nil || s.State == "stopped" {
+	if s == nil {
 		return ""
 	}
 	t, err := tenantBySlug(w, s.Tenant)
