@@ -148,20 +148,21 @@ type reviewItem struct {
 }
 
 type reviewDoc struct {
-	Judge      []reviewItem `json:"judge"`
-	Review     []reviewItem `json:"review"` // blocked items that wait for a reviewer (same rule as mw news); they stay in blocked too
-	Blocked    []reviewItem `json:"blocked"`
-	Acceptance []reviewItem `json:"acceptance"`
-	Waves      []reviewWave `json:"waves"`
-	Stale      []reviewItem `json:"stale"`
-	Needs      []needRow    `json:"needs"`
+	Judge        []reviewItem `json:"judge"`
+	Review       []reviewItem `json:"review"` // blocked items that wait for a reviewer (same rule as mw news); they stay in blocked too
+	Blocked      []reviewItem `json:"blocked"`
+	Acceptance   []reviewItem `json:"acceptance"`
+	Waves        []reviewWave `json:"waves"`
+	Stale        []reviewItem `json:"stale"`
+	Needs        []needRow    `json:"needs"`
+	ForAnswerers []needRow    `json:"for_answerers,omitempty"` // open asks that wait for the asker's answerer session
 }
 
 func reviewOf(w *Workspace, t *Tenant) (reviewDoc, bool) {
 	gs := gateStates(w, t)
 	judgeOn, accOn := byName(gs, "judge").Effective, byName(gs, "acceptance").Effective
 	evOn := byName(gs, "evidence").Effective
-	d := reviewDoc{Judge: []reviewItem{}, Review: []reviewItem{}, Blocked: []reviewItem{}, Acceptance: []reviewItem{}, Waves: []reviewWave{}, Stale: []reviewItem{}, Needs: needsOf(t)}
+	d := reviewDoc{Judge: []reviewItem{}, Review: []reviewItem{}, Blocked: []reviewItem{}, Acceptance: []reviewItem{}, Waves: []reviewWave{}, Stale: []reviewItem{}, Needs: needsOf(w.allSessions(), t), ForAnswerers: answererNeeds(w.allSessions(), t)}
 	mk := func(it Item) reviewItem {
 		return reviewItem{ID: it.ID, Type: it.Kind, State: it.Status, Title: compactText(it.Title, 72), Attempts: it.Attempts}
 	}
@@ -306,6 +307,7 @@ func reviewCommand(w *Workspace, args []string) error {
 		fmt.Printf("needs you (%d)\n", len(d.Needs))
 		printNeeds(d.Needs)
 	}
+	printAnswererNeeds("for answerers", d.ForAnswerers)
 	section("judge", len(d.Judge), items(d.Judge))
 	if len(d.Review) > 0 {
 		section("review", len(d.Review), items(d.Review))

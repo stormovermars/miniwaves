@@ -192,11 +192,11 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 		}
 		return printData(out, o)
 	case "start":
-		if err := allowOptions(o, "tenant", "agent", "claude-session"); err != nil {
+		if err := allowOptions(o, "tenant", "agent", "claude-session", "answerer"); err != nil {
 			return err
 		}
 		if len(pos) != 1 {
-			return errors.New("usage: mw session start NAME [--tenant SLUG] [--claude-session ID]")
+			return errors.New("usage: mw session start NAME [--tenant SLUG] [--claude-session ID] [--answerer PARENT]")
 		}
 		cs := o["claude-session"]
 		if cs != "" && !claudeSessionRe.MatchString(cs) {
@@ -213,6 +213,15 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 		if !validID(role) {
 			return errors.New("agent role must be at most 64 lowercase letters, numbers, and single dashes")
 		}
+		ans := o["answerer"]
+		if ans != "" {
+			if !validID(ans) || ans == localName {
+				return errors.New("--answerer must be a session name")
+			}
+			if err := answererCycle(w, id, ans); err != nil {
+				return err
+			}
+		}
 		os.Unsetenv("MW_SESSION") // start never resolves the current session
 		t, err := selectTenant(w, map[string]string{"tenant": o["tenant"]})
 		if err != nil {
@@ -224,7 +233,7 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 				return fmt.Errorf("session %s already exists", id)
 			}
 			existing.Tenant, existing.Agent, existing.State, existing.Updated = t.Slug, role, "idle", now
-			existing.ClaudeSession = cs
+			existing.ClaudeSession, existing.Answerer, existing.AnswererAt = cs, ans, answererStamp(ans, now)
 			if err := save(path, w); err != nil {
 				return err
 			}
@@ -234,7 +243,7 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 		if err := sessionElsewhere(path, w, id, t.Slug); err != nil {
 			return err
 		}
-		w.Sessions = append(w.Sessions, Session{ID: id, Tenant: t.Slug, Agent: role, State: "idle", Updated: now, ClaudeSession: cs})
+		w.Sessions = append(w.Sessions, Session{ID: id, Tenant: t.Slug, Agent: role, State: "idle", Updated: now, ClaudeSession: cs, Answerer: ans, AnswererAt: answererStamp(ans, now)})
 		if err := save(path, w); err != nil {
 			return err
 		}
@@ -1088,10 +1097,10 @@ func boardCommand(path string, w *Workspace, args []string) error {
 			announceTenant(w, t)
 			gs := gateStates(w, t)
 			if o["json"] == "true" {
-				docs = append(docs, boardData(t, w.Sessions, full, gs))
+				docs = append(docs, boardData(t, w.allSessions(), full, gs))
 				continue
 			}
-			printBoardJ(t, w.Sessions, full, gatesLine(t, gs), byName(gs, "judge").Effective)
+			printBoardJ(t, w.allSessions(), full, gatesLine(t, gs), byName(gs, "judge").Effective)
 			if i < len(order)-1 {
 				fmt.Println(strings.Repeat("─", 64))
 			}
@@ -1107,9 +1116,9 @@ func boardCommand(path string, w *Workspace, args []string) error {
 	}
 	gs := gateStates(w, t)
 	if o["json"] == "true" {
-		return printJSON(boardData(t, w.Sessions, o["verbose"] == "true", gs))
+		return printJSON(boardData(t, w.allSessions(), o["verbose"] == "true", gs))
 	}
-	printBoardJ(t, w.Sessions, o["verbose"] == "true", gatesLine(t, gs), byName(gs, "judge").Effective)
+	printBoardJ(t, w.allSessions(), o["verbose"] == "true", gatesLine(t, gs), byName(gs, "judge").Effective)
 	return nil
 }
 
@@ -1125,28 +1134,29 @@ func activityLine(t *Tenant) string {
 
 // boardDoc is the -j form of the board.
 type boardDoc struct {
-	Last     string                 `json:"last"`
-	LastAt   string                 `json:"last_at,omitempty"`
-	Today    int                    `json:"today_done"`
-	Tenant   string                 `json:"tenant"`
-	Name     string                 `json:"name"`
-	Done     int                    `json:"done"`
-	Total    int                    `json:"total"`
-	Archived int                    `json:"archived,omitempty"`
-	Tags     []string               `json:"tags,omitempty"`
-	Percent  int                    `json:"percent"`
-	Level    string                 `json:"level"`
-	Gates    map[string]bool        `json:"gates"`
-	Sessions []string               `json:"sessions"`
-	Waves    []waveRow              `json:"waves"`
-	States   map[string][]itemBrief `json:"states"`
-	Needs    []needRow              `json:"needs"`
+	Last         string                 `json:"last"`
+	LastAt       string                 `json:"last_at,omitempty"`
+	Today        int                    `json:"today_done"`
+	Tenant       string                 `json:"tenant"`
+	Name         string                 `json:"name"`
+	Done         int                    `json:"done"`
+	Total        int                    `json:"total"`
+	Archived     int                    `json:"archived,omitempty"`
+	Tags         []string               `json:"tags,omitempty"`
+	Percent      int                    `json:"percent"`
+	Level        string                 `json:"level"`
+	Gates        map[string]bool        `json:"gates"`
+	Sessions     []string               `json:"sessions"`
+	Waves        []waveRow              `json:"waves"`
+	States       map[string][]itemBrief `json:"states"`
+	Needs        []needRow              `json:"needs"`
+	ForAnswerers []needRow              `json:"for_answerers,omitempty"`
 }
 
 func boardData(t *Tenant, sessions []Session, full bool, gs []gateInfo) boardDoc {
 	judgeOn := byName(gs, "judge").Effective
 	at, id, act := lastActivity(t)
-	d := boardDoc{LastAt: at, Today: doneToday(t), Tenant: t.Slug, Name: t.Name, Tags: t.Tags, Level: levelOf(gs), Gates: effectiveMap(gs), Sessions: []string{}, Waves: []waveRow{}, States: map[string][]itemBrief{}, Needs: needsOf(t)}
+	d := boardDoc{LastAt: at, Today: doneToday(t), Tenant: t.Slug, Name: t.Name, Tags: t.Tags, Level: levelOf(gs), Gates: effectiveMap(gs), Sessions: []string{}, Waves: []waveRow{}, States: map[string][]itemBrief{}, Needs: needsOf(sessions, t), ForAnswerers: answererNeeds(sessions, t)}
 	for _, it := range t.Items {
 		if it.Kind == "wave" {
 			if full || it.Status != "done" {
@@ -1210,10 +1220,15 @@ func printBoardJ(t *Tenant, sessions []Session, full bool, gates string, judgeOn
 		fmt.Println(gates)
 	}
 	fmt.Println()
-	needs := needsOf(t)
+	needs := needsOf(sessions, t)
+	forAnswerers := answererNeeds(sessions, t)
 	if len(needs) > 0 {
 		fmt.Printf("NEEDS YOU (%d)\n", len(needs))
 		printNeeds(needs)
+		fmt.Println()
+	}
+	if len(forAnswerers) > 0 {
+		printAnswererNeeds("FOR ANSWERERS", forAnswerers)
 		fmt.Println()
 	}
 	shownWaves := false
@@ -1273,7 +1288,7 @@ func printBoardJ(t *Tenant, sessions []Session, full bool, gates string, judgeOn
 		}
 		fmt.Println()
 	}
-	if !full && !shownAny && !shownWaves && len(needs) == 0 {
+	if !full && !shownAny && !shownWaves && len(needs) == 0 && len(forAnswerers) == 0 {
 		fmt.Println("quiet")
 	}
 }
@@ -1312,7 +1327,7 @@ func contextCommand(w *Workspace, args []string) error {
 			Board   boardDoc        `json:"board"`
 		}{t.Slug, t.Name, value(o, "session", os.Getenv("MW_SESSION")), contextGuide,
 			folderSentence(workspaceFolders(w), t.Slug, value(o, "session", os.Getenv("MW_SESSION"))),
-			levelOf(gs), effectiveMap(gs), next, boardData(t, w.Sessions, true, gs)})
+			levelOf(gs), effectiveMap(gs), next, boardData(t, w.allSessions(), true, gs)})
 	}
 	fmt.Printf("# miniwaves context: %s [%s]\n\n", compactText(t.Name, 72), t.Slug)
 	if s := value(o, "session", os.Getenv("MW_SESSION")); s != "" {
@@ -1326,7 +1341,7 @@ func contextCommand(w *Workspace, args []string) error {
 		fmt.Println("Next: nothing ready; refine an inbox item or ask the user.")
 	}
 	fmt.Println("\nCurrent board:")
-	printBoardJ(t, w.Sessions, true, gatesLine(t, gs), byName(gs, "judge").Effective)
+	printBoardJ(t, w.allSessions(), true, gatesLine(t, gs), byName(gs, "judge").Effective)
 	return nil
 }
 

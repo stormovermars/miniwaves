@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -183,6 +185,9 @@ func reapCommand(path string, w *Workspace, o map[string]string, pos []string) e
 			continue
 		}
 		last := parseTS(s.Updated)
+		if e := lastAnswerAt(w, s.ID); e.After(last) { // answering and deciding is activity too: it touches no session record
+			last = e
+		}
 		if last.IsZero() || now.Sub(last) <= age {
 			continue
 		}
@@ -240,4 +245,35 @@ func reapCommand(path string, w *Workspace, o map[string]string, pos []string) e
 		}
 	}
 	return nil
+}
+
+// lastAnswerAt is the newest answer or decide event recorded by session id, in any tenant (read-only: the tenants
+// this command did not load are read raw, and only when their file mentions the session as an event author).
+func lastAnswerAt(w *Workspace, id string) time.Time {
+	var best time.Time
+	scan := func(items []Item) {
+		for _, it := range items {
+			for _, e := range it.Events {
+				if e.By == id && (e.Action == "answer" || e.Action == "decide") {
+					if at := parseTS(e.At); at.After(best) {
+						best = at
+					}
+				}
+			}
+		}
+	}
+	needle := []byte(`"by":"` + id + `"`)
+	for _, t := range w.Tenants {
+		if t.loaded {
+			scan(t.Items)
+		} else if w.path != "" {
+			if b, err := readFileShared(tenantPath(w.path, t.Slug)); err == nil && bytes.Contains(b, needle) {
+				var td tenantDoc
+				if json.Unmarshal(b, &td) == nil {
+					scan(td.Items)
+				}
+			}
+		}
+	}
+	return best
 }

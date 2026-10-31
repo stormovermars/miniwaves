@@ -146,6 +146,7 @@ type newsNow struct {
 	RecentDone []newsItem     `json:"recent_done"`
 	Sprint     *newsSprint    `json:"sprint"`
 	Needs      []newsItem     `json:"needs"`
+	Answering  []newsItem     `json:"answering,omitempty"` // open asks that wait for the asker's answerer session
 	Review     []newsItem     `json:"review"`
 	Blocked    []newsItem     `json:"blocked"`
 	Doing      []newsItem     `json:"doing"`
@@ -686,7 +687,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 	tick := func(x *newsItem, it Item) {
 		x.Ticket, x.TicketLabel, x.TicketURL = ticketShown(cfg, it.Ticket)
 	}
-	var needs, review, blocked, doing, ready []newsItem
+	var needs, answering, review, blocked, doing, ready []newsItem
 	var open, openAll []newsMilestone
 	var closedMs, done, accepted, sentBack, answers, decisions, newItems []newsItem
 	var drafts, recent, movedReview, movedDoing []newsItem
@@ -700,6 +701,7 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 	events := 0
 	c := &m.Now.Counts
 	var trows []newsTenant
+	allSess := w.allSessions()
 	for _, t := range p.tenants {
 		tr := newsTenant{Slug: compactText(t.Slug, 40), Name: compactText(t.Name, 40)}
 		before := *c
@@ -762,7 +764,12 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 			if e, ok := openAsk(it); ok {
 				x := base
 				x.Note, x.Since, x.By = newsCap(e.Note), e.At, displayName(e.By)
-				needs = append(needs, x)
+				if a := liveAnswerer(allSess, t.Slug, e); a != "" {
+					x.Note = "for " + a + ": " + x.Note
+					answering = append(answering, x)
+				} else {
+					needs = append(needs, x)
+				}
 				asked = true
 			}
 			if judgeOn && awaitingJudgement(t, it) && !asked {
@@ -928,6 +935,8 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 		recent[i].MilestoneTitle = waveTitle[recent[i].Tenant+"/"+recent[i].Milestone]
 	}
 	m.Now.RecentDone = append([]newsItem{}, recent...)
+	newsSortItems(answering, false)
+	m.Now.Answering = answering
 	m.Now.Caps = map[string]int{"backlog": shown(newsCapBacklog), "recent_done": shown(newsCapRecent), "sprint": shown(newsCapSprint), "tenants": shown(newsCapTenants), "needs": shown(newsCapNow), "review": shown(newsCapNow), "blocked": shown(newsCapNow), "doing": shown(newsCapNow), "milestones": shown(newsCapMilesOpen)}
 	m.Now.More = map[string]int{"tenants": tmore, "backlog": backlogMore}
 	for _, l := range []struct {
@@ -1006,7 +1015,9 @@ func buildNewsModel(w *Workspace, p newsPart, metrics *newsMetrics, win newsWind
 			}
 			x := newsSprintItem{newsItem: newsItem{Tenant: ow.t.Slug, ID: it.ID, Title: newsCap(it.Title), Since: itemStamp(it)}}
 			tick(&x.newsItem, it)
-			_, x.Needs = openAsk(it)
+			if e, ok := openAsk(it); ok { // an ask that waits for an answerer session does not need the human
+				x.Needs = liveAnswerer(allSess, ow.t.Slug, e) == ""
+			}
 			switch {
 			case it.Status == "done" && ow.judgeOn && awaitingJudgement(ow.t, it):
 				x.State = "review"

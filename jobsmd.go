@@ -249,6 +249,16 @@ func renderJobsMD(in jobsMDInput, now time.Time) string {
 			}
 		}
 	}
+	if len(m.Now.Answering) > 0 {
+		b.WriteString("\n### For answerers\n\n")
+		for i, it := range m.Now.Answering {
+			if i == jobsMDCapList {
+				fmt.Fprintf(&b, "- … %d more\n", len(m.Now.Answering)-i)
+				break
+			}
+			fmt.Fprintf(&b, "- **%s**\n  %s\n  - %s\n", mdTitle(it.Title), mdMeta(it, now), mdText(compactText(it.Note, 140)))
+		}
+	}
 	if len(m.Now.Review) > 0 {
 		b.WriteString("\n### Review\n\n")
 		for i, it := range m.Now.Review {

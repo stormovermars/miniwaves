@@ -120,7 +120,7 @@ func loadScopedFrom(path string, minSchema int, all bool, slugs ...string) (*Wor
 		return nil, err
 	}
 	w := &Workspace{Version: ix.Version, Name: ix.Name, Defaults: ix.Defaults, Protocol: ix.Protocol, Folders: ix.Folders,
-		Gates: ix.Gates, GateBy: ix.GateBy, Publish: ix.Publish, Fanfare: ix.Fanfare, Jobs: ix.Jobs, Sessions: []Session{}, base: map[string]string{}}
+		Gates: ix.Gates, GateBy: ix.GateBy, Publish: ix.Publish, Fanfare: ix.Fanfare, Jobs: ix.Jobs, Sessions: []Session{}, base: map[string]string{}, path: path}
 	if w.Defaults == nil {
 		w.Defaults = map[string]string{}
 	}

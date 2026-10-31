@@ -106,7 +106,7 @@ mw boards [DIR] [--depth N] [--up] [-j]   # discover boards below DIR (read-only
 mw migrate [--dry-run] [PATH]   # upgrade a schema 5/6 workspace file to 7 (MIGRATION.md)
 mw dirs [init] [-j] | set NAME PATH   # NAME: datalake docs data tools templates builds evidence scratch (all eight shown by mw dirs)
 mw note ID TEXT... [-t SLUG] [-s NAME]
-mw session start NAME [-t SLUG] [-a ROLE] [--claude-session ID]   # `--claude-session` records the Claude Code session id on the session record (for `mw context --hook-json`); optional: `start` registers an unknown -s name; with none it uses the tenant's implicit "local" session (id `local@SLUG`, may own many items; the name `local` is reserved)
+mw session start NAME [-t SLUG] [-a ROLE] [--claude-session ID] [--answerer PARENT]   # `--answerer` names the session that may answer this session's asks (see "Needs you and decisions"); refused for itself or a cycle; `--claude-session` records the Claude Code session id on the session record (for `mw context --hook-json`); optional: `start` registers an unknown -s name; with none it uses the tenant's implicit "local" session (id `local@SLUG`, may own many items; the name `local` is reserved)
 mw session list [-t SLUG] [-j] [-v] | stop NAME [--release]
 mw session reap [-t SLUG | -A] [--older-than DUR] [--except NAME,NAME] [-n|--dry-run] [-j]
 mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]   # exit 3 if NAME exists
@@ -117,6 +117,7 @@ mw gate [-t SLUG] [-j] | mw gate level trust|proof|spec|judged [-t SLUG] [--work
 mw version [-j]   # {version, schema, board_schema, board}: nearest workspace and its schema (null if none)
 mw ask ID QUESTION... [-t SLUG] [-s NAME]   # a question for a human, as an event (see "Needs you and decisions")
 mw answer ID TEXT... --by NAME [-t SLUG]   # human only; closes the item's open ask
+mw answer ID --accept --by NAME [-t SLUG]   # human only; takes the open ask as asked: a decide "accepted: ASK", then the answer "accepted"
 mw decide TEXT... [--by NAME] [-s SESSION] [-b WHY] [-p ID] [-t SLUG]   # a decision event on ID, else on the tenant's "Decisions" chore
 mw user show [-j] | get [KEY] [-j] | set KEY=VALUE...   # per-user config (see "Per-user config")
 mw status --explain [--plugins DIR]    # explain the line, settings, versions, commands (/mw-status)
@@ -146,7 +147,7 @@ mw wave close WAVE [--no-evidence REASON] [-t SLUG]
 mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v]   # the same full brief as show; -j: null (exit 0) when nothing, "skipped: N (...)" on stderr
 mw next --claim [-s NAME] [-a ROLE] [-t SLUG] [-k KIND] [-j]   # pick + start in one locked step; -j adds "claimed": true
 mw archive [--days N] [-t SLUG] [--dry-run]   # done items older than N days (30) -> .miniwaves/<slug>.archive.json
-mw log [-t SLUG | -A] [-n N] [-j]   # activity feed, newest first
+mw log [-t SLUG | -A] [--action ACTION] [--grep TEXT] [-n N] [-j]   # activity feed, newest first; --action keeps one action, --grep keeps notes containing TEXT (case-insensitive) and also reads the archive (and, with -A, archived tenants); not with --since/--follow
 mw log [-t SLUG | -A] --since CURSOR|start [-n N] [-j]   # resumable feed, oldest first, plus a next cursor
 mw log [-t SLUG | -A] --follow [--since CURSOR|start] [--poll SEC] [--exec] [-j]   # live feed; --exec runs alerts.exec per alerts.on event
 mw board [-t SLUG | -A] [-v] [-j]   # last: <ago> <item> <action>, today: N done; -A sorted by last activity
@@ -295,7 +296,8 @@ block/done note.
 `ask`, `answer` and `decide` append item events (`ask`, `answer`, `decide`; see PROTOCOL.md). They work on any board: there is no gate and no job is needed, and they never change an item's status.
 
 - `mw ask ID QUESTION... [-s NAME]` records a question for a human. Any session may ask.
-- `mw answer ID TEXT... --by NAME` is human only, like `accept`: it is refused under `MW_SESSION` or `-s`, and `--by` is required when stdin is not a terminal. It is refused when the item has no open ask.
+- `mw answer ID TEXT... --by NAME` is human only, like `accept`: it is refused under `MW_SESSION` or `-s`, and `--by` is required when stdin is not a terminal. It is refused when the item has no open ask. `--accept` (no text) records a `decide` event "accepted: <the open ask>" on the item and then the `answer` "accepted": one command settles a digest ask whose recommendations Sir takes as they are.
+- **Answerer session.** `mw session start NAME --answerer PARENT` lets PARENT answer NAME's asks: `mw answer ID TEXT -s PARENT` or `mw answer ID --accept -s PARENT` (`MW_SESSION` works too, `--by` does not). It is allowed only when the open ask was made by NAME, NAME's answerer is PARENT, and PARENT is a registered session, in any tenant, that is not stopped (a coordinator on the job tenant answers workers on app tenants; the item is looked up in every tenant, `-t SLUG` narrows it, and an id that matches in two tenants is refused as ambiguous). The answerer counts only for asks made at or after it was set (`answerer_at` on the session record). A session never answers its own ask and the rule is not transitive; any other case is refused exactly as a session is today. The answer records `by: PARENT` and a note starting `ai: ` (an accept: `ai: accepted: <ask>` as the decide, `ai: accepted` as the answer), so log, show and needs say a session answered. An open ask from a session with a live answerer does not count in N (status line, review, board, jobs.md); it is listed as `for PARENT` (`for_answerers` in `review -j` and `board -j`, "For answerers" in jobs.md). If the answerer is stopped or unregistered the ask counts for the human again. An item behind an answerer-routed open ask is also kept out of the news "review" and "blocked" lists, as an item behind any open ask is. The answerer escalates with its own `mw ask ID ... -s PARENT` on the same item: that is the new open ask, by PARENT, and counts for the human. `accept`, `reject`, `edit -c` on a set acceptance and the gates stay human only.
 - An **open ask** is the last `ask` of an item with no later `answer` and no later final event (`done`, `accept`) on that item (one answer closes every earlier ask). `mw done` prints `closed open ask from AGO: QUESTION` when it closes one; a `reopen` does not revive it, an `ask` after the final event is open.
 - **N and B.** N (needs you) counts an item with an open ask, or a blocked item with no dependency; B counts a blocked item whose `mw block --on ID` names an open item. An item is counted once (ask, then review, then N/B), and a block on a done item counts as no dependency.
 - `mw review` shows open asks as `needs you`, `mw review -j` and `mw board -j` gain `needs` (`[{tenant, item, question, by, at}]`, always an array), and the text `mw board` prints a `NEEDS YOU` block.

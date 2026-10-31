@@ -50,3 +50,12 @@ func TestFanfareOnOff(t *testing.T) {
 	}
 	wantErr(t, "usage: mw fanfare on", "fanfare", "on", "extra")
 }
+
+// mw show keeps the last 10 reject, answer and decide events (brief.go), not every one.
+func TestHelpShowKeepsLast10(t *testing.T) {
+	inTempDir(t)
+	out := helpOf(t, "show")
+	if strings.Contains(out, "plus every reject") || !strings.Contains(out, "last 10 reject, answer and decide") {
+		t.Errorf("help show misdescribes the kept events:\n%s", out)
+	}
+}

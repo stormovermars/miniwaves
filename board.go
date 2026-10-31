@@ -145,6 +145,11 @@ type Session struct {
 	// field (omitempty; older binaries ignore it), not an item field: the schema is unchanged.
 	// An older mw (<0.3.15) drops it when it rewrites the board: re-run mw session start NAME --claude-session ID.
 	ClaudeSession string `json:"claude_session,omitempty"`
+	// Answerer is the session that may answer this session's asks (mw session start NAME --answerer PARENT).
+	// Also a session-record field (omitempty): an older mw drops it when it rewrites the board.
+	Answerer string `json:"answerer,omitempty"`
+	// AnswererAt is when the answerer was set: it answers only asks made at or after it (no retroactive routing).
+	AnswererAt string `json:"answerer_at,omitempty"`
 }
 
 type Workspace struct {
@@ -162,8 +167,12 @@ type Workspace struct {
 	Fanfare      *FanfareConfig       `json:"fanfare,omitempty"`
 	Jobs         map[string]JobConfig `json:"jobs,omitempty"` // coordinated jobs: config by job id (mw jobs)
 
-	base      map[string]string // sha of each loaded tenant file as read (save writes only what changed)
-	indexBase string
+	path       string    // the index file, to read the sessions of tenants this command did not load
+	otherSess  []Session // those sessions, read once (allSessions)
+	otherDone  bool
+	wantOthers bool              // read the unloaded tenants even when no loaded session has an answerer (the cycle check)
+	base       map[string]string // sha of each loaded tenant file as read (save writes only what changed)
+	indexBase  string
 }
 
 type itemBrief struct {
@@ -368,12 +377,16 @@ func tenantBySlug(w *Workspace, slug string) (*Tenant, error) {
 }
 
 func sessionByID(w *Workspace, id string) (*Session, error) {
+	found := -1
 	for i := range w.Sessions {
-		if w.Sessions[i].ID == id {
-			return &w.Sessions[i], nil
+		if w.Sessions[i].ID == id && (found < 0 || w.Sessions[found].State == "stopped" && w.Sessions[i].State != "stopped") {
+			found = i // an id may sit in two tenant files: the record that is not stopped wins
 		}
 	}
-	return nil, fmt.Errorf("session %s not found", id)
+	if found < 0 {
+		return nil, fmt.Errorf("session %s not found", id)
+	}
+	return &w.Sessions[found], nil
 }
 
 func folderDefault(w *Workspace, cwd string) (string, string) {

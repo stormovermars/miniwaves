@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "accept": true, "action": true, "grep": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -314,7 +314,7 @@ func dispatch(path string, w *Workspace, args []string) error {
 	case "ready", "start", "block", "done", "reopen":
 		return moveCommand(path, w, args[0], args[1:])
 	case "log":
-		return logCommand(w, args[1:])
+		return logCommand(path, w, args[1:])
 	case "wave":
 		return waveCommand(path, w, args[1:])
 	case "fanfare":
@@ -470,7 +470,7 @@ stores a path (relative = under home, ~/ expanded) in the board.
 Example: mw dirs set data D:\out`,
 		"note": `mw note ID TEXT... [-t SLUG] [-s NAME]
 Append a timestamped note to any item or wave; shown by mw show.`,
-		"session": `mw session start NAME [-t SLUG] [-a ROLE] [--claude-session ID]
+		"session": `mw session start NAME [-t SLUG] [-a ROLE] [--claude-session ID] [--answerer PARENT]
 mw session list [-t SLUG] [-j] [-v]
 mw session stop NAME [-t SLUG] [--release]   (-t limits the command to one tenant file)
 mw session reap [-t SLUG | -A] [--older-than DUR] [--except NAME,NAME] [-n|--dry-run] [-j]
@@ -484,6 +484,7 @@ cleared, a note appended) and then stops it. reap releases and stops every sessi
 --older-than (default 2h; 90m, 2h, 1d) in -t TENANT or all tenants (-A); --except NAME,NAME skips those sessions; -n/--dry-run only prints. A
 session's last activity is set by session start and by every start/ready/block/done/reopen, note and
 edit it runs. The implicit local session is never reaped.
+--answerer PARENT names the session that may answer this session's asks (mw answer -s PARENT); refused for itself or a cycle.
 Job roles: when the session's tenant belongs to a job that exists (mw jobs), reap also skips sessions whose role (-a) is dispatcher or newsdesk,
 with no extra flag; --except still skips any named session.`,
 		"get-prompt": `mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]
@@ -541,8 +542,10 @@ Job ids match ^[a-z0-9][a-z0-9-]{0,31}$. Example: mw jobs enable tiny -t sheet,d
 Record a question that needs a human, as an "ask" event on the item (any board, no gate; the status is unchanged).
 It stays open until an answer follows it on the same item. mw review shows it as "needs you" (-j: needs), and so does mw board.`,
 		"answer": `mw answer ID TEXT... --by NAME [-t SLUG]
+mw answer ID --accept --by NAME [-t SLUG]
 Human only (refused under MW_SESSION or -s; --by NAME when stdin is not a terminal). Appends an "answer" event that
-closes the item's open ask; refused when the item has none.`,
+closes the item's open ask; refused when the item has none. --accept takes the ask as asked: it first records a
+"decide" event "accepted: <the ask>" on the item, then the answer "accepted".`,
 		"decide": `mw decide TEXT... [--by NAME] [-s SESSION] [-b WHY] [-p ID] [-t SLUG]
 Open to humans and sessions: with -s (or MW_SESSION) the event is recorded by that session and --by NAME is kept in the
 note as "(for NAME)"; else by --by NAME (required when stdin is not a terminal), else the login name. Record a decision as a "decide" event on item ID (-p), else on the tenant's "Decisions" chore, which is created
@@ -608,7 +611,7 @@ Waves are listed apart: text gains a waves section when any match; -j always pri
 items that session owns.`,
 		"show": `mw show ID [-t SLUG] [-j] [-v] [--full]
 One call, everything: title, parent/wave/session, body, effective acceptance and where it comes
-from, evidence folder (path + file count), children with status, notes (always in full), the last 5 events plus every reject/answer/decide event
+from, evidence folder (path + file count), children with status, notes (always in full), the last 5 events plus the last 10 reject, answer and decide events
 (each event note cut to 90 characters). --full shows every event with its note in full (also with -j).
 -v adds raw timestamps (ignored with -j). Falls back to the archive (mw archive) for archived items.
 Example: mw show TSK-001`,
@@ -631,10 +634,12 @@ With the evidence gate on, <evidence>/<tenant>/<ID>/ must hold a non-empty file
 		"reopen": `mw reopen ID [-t SLUG] [-s NAME] [-m REASON]
 Return an item to inbox and release its session owner. -m REASON (optional) is stored on the reopen
 event: mw show lists it in events and -j carries it as the event note, so a reviewer can tell rework from a review loop.`,
-		"log": `mw log [-t SLUG | -A] [-n N] [-j]
+		"log": `mw log [-t SLUG | -A] [--action ACTION] [--grep TEXT] [-n N] [-j]
 mw log [-t SLUG | -A] --since CURSOR|start | --since-file PATH [-n N] [-j]
 Activity feed, newest first (default 20): time, tenant, item, action, session, note. Actions: created,
 ready, start, block, done, reopen, accept, reject, note, ask, answer, decide, edit, step, unstep. -A spans all tenants.
+--action ACTION keeps one action; --grep TEXT keeps the events whose note contains TEXT (case-insensitive) and also reads the archive (mw archive) and, with -A, archived tenants:
+mw log -A --action decide --grep csv finds a decision after it left the board. Neither works with --follow or --since.
 --since turns it into a resumable feed, oldest first: it prints the events the cursor has not delivered and a next cursor
 (-j: {events, next}; text: a last "next: CURSOR" line). The cursor is opaque and bounded (the newest time plus 8-byte hashes of the events
 of the 24h before it, so an event that reaches the board late with an older stamp is still delivered once); --since "" or start returns everything.
@@ -1004,7 +1009,7 @@ func options(args []string) (map[string]string, []string, error) {
 		if key == "" || !validOptions[key] {
 			return nil, nil, fmt.Errorf("unknown option %s", a)
 		}
-		if key == "json" || key == "explain" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "md" || key == "archived" || key == "follow" || key == "exec" {
+		if key == "json" || key == "explain" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "md" || key == "archived" || key == "follow" || key == "exec" || key == "accept" {
 			o[key] = "true"
 			continue
 		}

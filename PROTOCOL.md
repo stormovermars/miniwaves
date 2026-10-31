@@ -24,7 +24,7 @@ them reads them as plain strings.
 | action | written by | by | note |
 |---|---|---|---|
 | ask | `mw ask ID QUESTION... [-s NAME]` | the session, if any | the question |
-| answer | `mw answer ID TEXT... --by NAME` (human only) | the human | the answer |
+| answer | `mw answer ID TEXT... --by NAME` or `--accept` (human; or `-s PARENT` for the registered answerer of the asking session, see USAGE.md) | the human, or PARENT with the note prefixed `ai: ` | the answer; `--accept`: "accepted", after a `decide` of "accepted: <the ask>" |
 | decide | `mw decide TEXT... --by NAME [-b WHY] [-p ID]` | the decider | the decision, then `(why: WHY)` |
 
 An open ask is the last `ask` of an item with no later `answer` and no later final event (`done`, `accept`) on the same item. A `reopen` does not revive an ask that a final event closed; an `ask` after the final event is open.
