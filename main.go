@@ -301,7 +301,7 @@ func dispatch(path string, w *Workspace, args []string) error {
 	case "ready", "start", "block", "done", "reopen":
 		return moveCommand(path, w, args[0], args[1:])
 	case "log":
-		return logCommand(w, args[1:])
+		return logCommand(path, w, args[1:])
 	case "wave":
 		return waveCommand(path, w, args[1:])
 	case "fanfare":
@@ -613,10 +613,12 @@ With the evidence gate on, <evidence>/<tenant>/<ID>/ must hold a non-empty file
 		"reopen": `mw reopen ID [-t SLUG] [-s NAME] [-m REASON]
 Return an item to inbox and release its session owner. -m REASON (optional) is stored on the reopen
 event: mw show lists it in events and -j carries it as the event note, so a reviewer can tell rework from a review loop.`,
-		"log": `mw log [-t SLUG | -A] [-n N] [-j]
+		"log": `mw log [-t SLUG | -A] [--action ACTION] [--grep TEXT] [-n N] [-j]
 mw log [-t SLUG | -A] --since CURSOR|start | --since-file PATH [-n N] [-j]
 Activity feed, newest first (default 20): time, tenant, item, action, session, note. Actions: created,
 ready, start, block, done, reopen, accept, reject, note, ask, answer, decide, edit, step, unstep. -A spans all tenants.
+--action ACTION keeps one action; --grep TEXT keeps the events whose note contains TEXT (case-insensitive) and also reads the archive (mw archive) and, with -A, archived tenants:
+mw log -A --action decide --grep csv finds a decision after it left the board. Neither works with --follow or --since.
 --since turns it into a resumable feed, oldest first: it prints the events the cursor has not delivered and a next cursor
 (-j: {events, next}; text: a last "next: CURSOR" line). The cursor is opaque and bounded (the newest time plus 8-byte hashes of the events
 of the 24h before it, so an event that reaches the board late with an older stamp is still delivered once); --since "" or start returns everything.

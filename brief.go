@@ -104,7 +104,7 @@ func doneToday(t *Tenant) int {
 	return n
 }
 
-func logCommand(w *Workspace, args []string) error {
+func logCommand(path string, w *Workspace, args []string) error {
 	o, pos, err := options(args)
 	if err != nil {
 		return err
@@ -112,8 +112,15 @@ func logCommand(w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "tenant", "session", "all", "limit", "json", "tag", "since", "since-file", "follow", "exec", "poll"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "all", "limit", "json", "tag", "since", "since-file", "follow", "exec", "poll", "action", "grep"); err != nil {
 		return err
+	}
+	_, filtered := o["action"]
+	_, grepped := o["grep"]
+	_, sinceSet := o["since"]
+	_, sinceFileSet := o["since-file"]
+	if (filtered || grepped) && (o["follow"] == "true" || sinceSet || sinceFileSet) {
+		return errors.New("--action and --grep are not valid with --follow, --since or --since-file")
 	}
 	if o["follow"] == "true" {
 		return logFollowCommand(o)
@@ -133,20 +140,42 @@ func logCommand(w *Workspace, args []string) error {
 		}
 	}
 	var rows []logRow
+	rowsOf := func(t *Tenant) []logRow { // a grep also reads the archive: decisions stay findable after mw archive
+		r := tenantRows(t)
+		if grepped {
+			if a, err := loadArchive(path, t.Slug); err == nil {
+				r = append(r, tenantRows(&Tenant{Slug: t.Slug, Items: a.Items})...)
+			}
+		}
+		return r
+	}
 	if o["all"] == "true" {
 		if o["tenant"] != "" {
 			return errors.New("mw log -A cannot be combined with -t")
 		}
+		if grepped { // archived tenants too
+			o["archived"] = "true"
+		}
 		for _, t := range shown(w, o) {
 			announceTenant(w, t)
-			rows = append(rows, tenantRows(t)...)
+			rows = append(rows, rowsOf(t)...)
 		}
 	} else {
 		t, err := selectTenant(w, o)
 		if err != nil {
 			return err
 		}
-		rows = tenantRows(t)
+		rows = rowsOf(t)
+	}
+	if filtered || grepped {
+		action, grep := strings.ToLower(strings.TrimSpace(o["action"])), strings.ToLower(o["grep"])
+		kept := rows[:0]
+		for _, r := range rows {
+			if (!filtered || r.Action == action) && strings.Contains(strings.ToLower(r.Note), grep) {
+				kept = append(kept, r)
+			}
+		}
+		rows = kept
 	}
 	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 { // same-second ties: later events first
 		rows[i], rows[j] = rows[j], rows[i]

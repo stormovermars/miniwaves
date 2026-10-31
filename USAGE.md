@@ -147,7 +147,7 @@ mw wave close WAVE [--no-evidence REASON] [-t SLUG]
 mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v]   # the same full brief as show; -j: null (exit 0) when nothing, "skipped: N (...)" on stderr
 mw next --claim [-s NAME] [-a ROLE] [-t SLUG] [-k KIND] [-j]   # pick + start in one locked step; -j adds "claimed": true
 mw archive [--days N] [-t SLUG] [--dry-run]   # done items older than N days (30) -> .miniwaves/<slug>.archive.json
-mw log [-t SLUG | -A] [-n N] [-j]   # activity feed, newest first
+mw log [-t SLUG | -A] [--action ACTION] [--grep TEXT] [-n N] [-j]   # activity feed, newest first; --action keeps one action, --grep keeps notes containing TEXT (case-insensitive) and also reads the archive (and, with -A, archived tenants); not with --since/--follow
 mw log [-t SLUG | -A] --since CURSOR|start [-n N] [-j]   # resumable feed, oldest first, plus a next cursor
 mw log [-t SLUG | -A] --follow [--since CURSOR|start] [--poll SEC] [--exec] [-j]   # live feed; --exec runs alerts.exec per alerts.on event
 mw board [-t SLUG | -A] [-v] [-j]   # last: <ago> <item> <action>, today: N done; -A sorted by last activity
