@@ -277,6 +277,9 @@ func initWorkspace(name string) error {
 // remembers where it was found for the cwd mapping (workDir) and the worktree sync.
 func findWorkspace() (string, error) {
 	workLoc = boardPath(mustGetwd())
+	if workLoc.warn != "" {
+		fmt.Fprintln(os.Stderr, "mw: "+workLoc.warn)
+	}
 	if workLoc.path == "" {
 		return "", errors.New("no .miniwaves.json found; run `mw init`")
 	}

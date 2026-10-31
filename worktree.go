@@ -114,25 +114,85 @@ type boardLoc struct {
 	path     string // the board every read and write goes to ("" = none found)
 	wtPath   string // write-through: the worktree's own board, synced after each command
 	wt, main string // set when path is the main checkout's board: the cwd wt/X reads as main/X
+	warn     string // one MW_MAIN note for stderr (findWorkspace prints it; the status line and hook stay quiet)
 }
 
 // worktreeOff is MW_WORKTREE=off: the nearest board, worktree or not (the behaviour before 0.3.16).
 func worktreeOff() bool { return strings.EqualFold(strings.TrimSpace(os.Getenv("MW_WORKTREE")), "off") }
 
-// boardPath is the one resolver every board lookup goes through. Outside a linked worktree it is
-// the nearest board walking up from dir. In one, with R the nearest board folder from dir up to the
-// worktree root: main/R's board when both wt/R and main/R have one (write-through), wt/R's board
-// alone when main/R has none, and with no board in the worktree (an untracked board) the board
-// nearest to main/X for dir wt/X.
+// boardPath is the one resolver every board lookup goes through. Outside a linked worktree (or a
+// clone run with MW_MAIN) it is the nearest board walking up from dir. In one, with R the nearest
+// board folder from dir up to the worktree root: main/R's board when both wt/R and main/R have one
+// (write-through), wt/R's board alone when main/R has none, and with no board in the worktree (an
+// untracked board) the board nearest to main/X for dir wt/X.
 func boardPath(dir string) boardLoc {
 	local := nearestBoard(dir)
 	if worktreeOff() {
 		return boardLoc{path: local}
 	}
 	wt, main, ok := worktreeOf(dir)
-	if !ok {
-		return boardLoc{path: local}
+	warn := ""
+	if env := os.Getenv("MW_MAIN"); env != "" {
+		if !ok {
+			wt, main, ok, warn = cloneMain(dir, env)
+		} else if m, err := filepath.EvalSymlinks(env); err != nil || !pathEqual(m, main, runtime.GOOS) {
+			warn = "MW_MAIN ignored; worktree of " + main
+		}
 	}
+	loc := boardLoc{path: local}
+	if ok {
+		loc = boardIn(dir, local, wt, main)
+	}
+	loc.warn = warn
+	return loc
+}
+
+// cloneMain is MW_MAIN for a separate clone (or any other checkout): the checkout holding dir plays
+// the worktree and env the main checkout. env must be absolute, exist, hold a board for dir and not
+// be the checkout itself (that is main: silent); otherwise warn names why it is ignored.
+func cloneMain(dir, env string) (wt, main string, ok bool, warn string) {
+	root, found := checkoutRoot(dir)
+	if !found {
+		return "", "", false, ""
+	}
+	if !filepath.IsAbs(env) {
+		return "", "", false, "MW_MAIN " + env + " ignored: not an absolute path"
+	}
+	m, err := filepath.EvalSymlinks(env)
+	if fi, serr := os.Stat(m); err != nil || serr != nil || !fi.IsDir() {
+		return "", "", false, "MW_MAIN " + env + " ignored: not found"
+	}
+	if pathEqual(m, root, runtime.GOOS) {
+		return "", "", false, ""
+	}
+	rel, _ := relWithin(realDir(dir), root, runtime.GOOS)
+	for r := rel; ; r = filepath.Dir(r) {
+		if fileExists(filepath.Join(m, r, dataFile)) {
+			return root, m, true, ""
+		}
+		if r == "." {
+			return "", "", false, "MW_MAIN " + env + " ignored: no board there"
+		}
+	}
+}
+
+// checkoutRoot is the folder of the first .git (folder or file) walking up from dir, symlinks resolved.
+func checkoutRoot(dir string) (string, bool) {
+	d := realDir(dir)
+	for {
+		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil {
+			return d, true
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return "", false
+		}
+		d = parent
+	}
+}
+
+// boardIn is boardPath's choice for dir inside the worktree (or clone) wt of the main checkout main.
+func boardIn(dir, local, wt, main string) boardLoc {
 	rel, ok := relWithin(realDir(dir), wt, runtime.GOOS)
 	if !ok {
 		return boardLoc{path: local}

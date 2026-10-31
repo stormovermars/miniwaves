@@ -16,7 +16,7 @@ func handBack(t *testing.T, wt string) {
 	if strings.Contains(errs, "not synced") || strings.Contains(errs, "not on main") {
 		t.Fatalf("hand-back step 1 warns: %q", errs)
 	}
-	gitW(t, wt, "add", "-A", dataFile, storeDir)
+	gitW(t, wt, "add", dataFile, storeDir+"/*.json") // never the lock files: a clone has no exclude for them
 	gitW(t, wt, "commit", "-qm", "board: worktree record")
 	on := strings.Fields(gitW(t, wt, "ls-tree", "-r", "--name-only", "main", "--", dataFile, storeDir))
 	if len(on) > 0 {
