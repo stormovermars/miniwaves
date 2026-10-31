@@ -4,7 +4,7 @@
 # On Windows Claude Code runs hooks in Git Bash: uname -s says MINGW*/MSYS*/CYGWIN*, the
 # asset is the .zip and the binary mw.exe.
 set -u
-want="0.3.15"
+want="0.3.16"
 # SessionStart passes its JSON on stdin; keep it for `mw context --hook-json` (not when run by hand in a terminal).
 input=""; [ -t 0 ] || input=$(cat 2>/dev/null || true)
 # After mw is ensured: print the session's claimed items for the conversation (mw 0.3.15+; silent when none).
