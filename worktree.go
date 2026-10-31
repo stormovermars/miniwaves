@@ -136,6 +136,9 @@ func boardPath(dir string) boardLoc {
 	if env, set := os.LookupEnv("MW_MAIN"); set { // MW_MAIN overrides the link; set but empty ignores it
 		if env != "" && !ok {
 			wt, main, ok, warn = cloneMain(dir, env, "MW_MAIN "+env)
+			if ok && !sameBoardAs(dir, local, wt, main) {
+				ok, warn = false, "MW_MAIN ignored; "+wt+" is not a clone of it"
+			}
 		} else if env != "" {
 			if m, err := filepath.EvalSymlinks(env); err != nil || !pathEqual(m, main, runtime.GOOS) {
 				warn = "MW_MAIN ignored; worktree of " + main
@@ -182,13 +185,81 @@ func cloneMain(dir, env, label string) (wt, main string, ok bool, warn string) {
 	}
 }
 
-// linkFile is where mw link keeps the main checkout of a clone: one line, inside its .git folder.
-func linkFile(root string) string { return filepath.Join(root, ".git", "mw-main") }
+// sameBoardAs reports whether the checkout wt is a copy of main for MW_MAIN: its board (local, the nearest
+// one from dir) is inside wt and has the name of main's board in the same folder, or mw link already
+// links wt to main. An unrelated repo that happens to run with MW_MAIN set keeps its own board.
+func sameBoardAs(dir, local, wt, main string) bool {
+	if l, err := filepath.EvalSymlinks(linkOf(dir)); err == nil && pathEqual(l, main, runtime.GOOS) {
+		return true
+	}
+	rel, ok := relWithin(filepath.Dir(local), wt, runtime.GOOS)
+	if !ok || local == "" {
+		return false
+	}
+	name := func(p string) string {
+		var ix indexDoc
+		if b, err := readIndexBytes(p); err != nil || json.Unmarshal(b, &ix) != nil {
+			return "\x00" + p // unreadable: never equal
+		}
+		return ix.Name
+	}
+	return name(local) == name(filepath.Join(main, rel, dataFile))
+}
+
+// gitDirs reads the checkout at root without running git: its git dir (root/.git, or the gitdir of a
+// .git file: a worktree, a submodule, a --separate-git-dir clone) and the common dir that holds
+// info/exclude. linked is a linked worktree (its git dir has a commondir file).
+func gitDirs(root string) (gd, common string, linked, ok bool) {
+	g := filepath.Join(root, ".git")
+	fi, err := os.Lstat(g)
+	if err != nil {
+		return "", "", false, false
+	}
+	if fi.IsDir() {
+		return g, g, false, true
+	}
+	b, err := readFileShared(g)
+	if err != nil {
+		return "", "", false, false
+	}
+	ref, found := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir:")
+	if !found {
+		return "", "", false, false
+	}
+	gd = gitPath(root, strings.TrimSpace(ref), runtime.GOOS)
+	if c, err := readFileShared(filepath.Join(gd, "commondir")); err == nil {
+		return gd, gitPath(gd, strings.TrimSpace(string(c)), runtime.GOOS), true, true
+	}
+	return gd, gd, false, true
+}
+
+// excludeLocks adds the lock artifacts, unanchored, to the info/exclude of the checkout at root (its
+// common dir), so a clone or a worktree with a board below the repo root never commits a lock or a
+// .lock.copied record. A plain idempotent file write; mw init's anchored patterns stay.
+func excludeLocks(root string) {
+	if _, common, _, ok := gitDirs(root); ok {
+		lines := make([]string, len(lockArtifacts))
+		for i, l := range lockArtifacts {
+			lines[i] = "**/" + l
+		}
+		appendExclude(filepath.Join(common, "info", "exclude"), lines)
+	}
+}
+
+// linkFile is where mw link keeps the main checkout of a clone: one line, mw-main in its git dir
+// (.git/mw-main in a plain clone); "" in a linked worktree or outside a checkout.
+func linkFile(root string) string {
+	gd, _, linked, ok := gitDirs(root)
+	if !ok || linked {
+		return ""
+	}
+	return filepath.Join(gd, "mw-main")
+}
 
 // linkOf is the main checkout mw link recorded for the clone holding dir, or "" (none, or a worktree).
 func linkOf(dir string) string {
 	root, ok := checkoutRoot(dir)
-	if !ok {
+	if !ok || linkFile(root) == "" {
 		return ""
 	}
 	b, err := os.ReadFile(linkFile(root))
@@ -221,8 +292,11 @@ func linkCommand(args []string) error {
 	if !ok {
 		return errors.New("not inside a git checkout")
 	}
-	if fi, err := os.Lstat(filepath.Join(root, ".git")); err == nil && !fi.IsDir() {
+	file := linkFile(root)
+	if _, _, linked, _ := gitDirs(root); linked {
 		return &exitError{code: 2, msg: "worktree already shares the main board"}
+	} else if file == "" {
+		return errors.New("cannot read " + filepath.Join(root, ".git"))
 	}
 	switch arg {
 	case "":
@@ -237,7 +311,7 @@ func linkCommand(args []string) error {
 		}
 		return nil
 	case "-":
-		if err := os.Remove(linkFile(root)); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		return nil
@@ -253,9 +327,10 @@ func linkCommand(args []string) error {
 		}
 		return errors.New(strings.Replace(warn, " ignored: ", ": ", 1))
 	}
-	if err := os.WriteFile(linkFile(root), []byte(m+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte(m+"\n"), 0o644); err != nil {
 		return err
 	}
+	excludeLocks(root)
 	if asJSON {
 		b, _ := json.Marshal(map[string]string{"main": m})
 		fmt.Println(string(b))
@@ -390,6 +465,7 @@ var wroteTenants = map[string]bool{}
 // syncWorktree copies main's board into the worktree's after a command, reads included. A failure is a
 // warning only: the command's exit code stands and the next command heals the copy.
 func syncWorktree(loc boardLoc) {
+	excludeLocks(loc.wt)
 	if err := syncBoard(loc.path, loc.wtPath, os.Stderr); err != nil {
 		fmt.Fprintf(os.Stderr, "mw: worktree board not synced: %v\n", err)
 	}
@@ -451,10 +527,13 @@ func syncBoard(main, wt string, errw io.Writer) error {
 			}
 			if !lastCopy(main, wt, slug, mb, wb) {
 				ab, _ := readFileShared(archivePath(main, slug))
-				n, _ := unsharedEvents(wb, mb, ab)
-				fmt.Fprintf(errw, "mw: worktree board has %d events not on main (%s); not synced\n", n, slug)
-				keepIndex = keepIndex || !onMain[slug]
-				continue
+				// Changed since the last copy, but nothing of its own (a git checkout, pull, stash or
+				// branch switch brought an older copy back): overwrite. Otherwise keep it and warn.
+				if n, err := unsharedEvents(wb, mb, ab); err != nil || n > 0 || !sessionsKnown(wb, mb) {
+					fmt.Fprintf(errw, "mw: worktree board has %d events not on main (%s); not synced (check, then delete %s/%s.lock.copied to resync)\n", n, slug, storeDir, slug)
+					keepIndex = keepIndex || !onMain[slug]
+					continue
+				}
 			}
 		} else if !os.IsNotExist(err) {
 			return err
@@ -477,7 +556,7 @@ func syncBoard(main, wt string, errw io.Writer) error {
 }
 
 // copyPath holds the sha256 of the bytes last copied into a worktree tenant file. It sits beside the
-// locks (the .git/info/exclude pattern .miniwaves/*.lock* keeps it out of commits).
+// locks (the info/exclude patterns excludeLocks adds keep it out of commits).
 func copyPath(wt, slug string) string { return storePath(wt, slug+".lock.copied") }
 
 func hexSum(b []byte) string { return fmt.Sprintf("%x", sha256.Sum256(b)) }
@@ -502,6 +581,26 @@ func lastCopy(main, wt, slug string, mb, wb []byte) bool {
 	ab, _ := readFileShared(archivePath(main, slug))
 	n, err := unsharedEvents(wb, mb, ab)
 	return err == nil && n == 0
+}
+
+// sessionsKnown reports whether every session of the worktree tenant file wtb is on main (same id and
+// tenant) and equal there or older (main's record was updated later).
+func sessionsKnown(wtb, mainb []byte) bool {
+	var w, m tenantDoc
+	if json.Unmarshal(wtb, &w) != nil || (len(mainb) > 0 && json.Unmarshal(mainb, &m) != nil) {
+		return false
+	}
+	on := map[string]Session{}
+	for _, s := range m.Sessions {
+		on[s.ID+"\x00"+s.Tenant] = s
+	}
+	for _, s := range w.Sessions {
+		ms, found := on[s.ID+"\x00"+s.Tenant]
+		if !found || (s != ms && s.Updated >= ms.Updated) {
+			return false
+		}
+	}
+	return true
 }
 
 // unsharedEvents counts the events of a worktree tenant file that main's tenant and archive files lack

@@ -115,8 +115,8 @@ func TestMWMainDocumented(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	dir := filepath.Dir(thisFile)
 	for f, wants := range map[string][]string{
-		"USAGE.md":                      {"## Worktrees and clones", "MW_MAIN", "mw: MW_MAIN ignored; worktree of DIR", "git fetch", "mw link MAIN_DIR", ".git/mw-main", "`MW_MAIN=`"},
-		"TECHNICAL.md":                  {"MW_MAIN", "cloneMain", "linkCommand", ".git/mw-main"},
+		"USAGE.md":                      {"## Worktrees and clones", "MW_MAIN", "mw: MW_MAIN ignored; worktree of DIR", "git fetch", "mw link MAIN_DIR", ".git/mw-main", "`MW_MAIN=`", "is not a clone of it", "to resync)", "**/.miniwaves/*.lock*"},
+		"TECHNICAL.md":                  {"MW_MAIN", "cloneMain", "linkCommand", ".git/mw-main", "sameBoardAs", "sessionsKnown", "excludeLocks"},
 		"plugins/mw/skills/mw/SKILL.md": {"MW_MAIN=<its checkout>", `"Worktrees and clones"`, "mw link <its checkout>"},
 		"main.go":                       {"mw link [MAIN_DIR|-] [-j]", `"link": `},
 	} {

@@ -158,7 +158,7 @@ func TestWorktreeUnsharedEventsGuard(t *testing.T) {
 	before, _ := os.ReadFile(tenantPath(filepath.Join(e.wt, dataFile), "api"))
 	for _, args := range [][]string{{"add", "task", "after"}, {"list"}} {
 		errs := captureFile(t, &os.Stderr, func() { captureOutput(t, func() { runAll(t, args) }) })
-		if !strings.Contains(errs, "mw: worktree board has 1 events not on main (api); not synced\n") {
+		if !strings.Contains(errs, "mw: worktree board has 1 events not on main (api); not synced (check, then delete .miniwaves/api.lock.copied to resync)\n") {
 			t.Fatalf("%v: stderr %q", args, errs)
 		}
 	}
@@ -243,7 +243,7 @@ func TestWorktreeLocalChangeWithoutEvents(t *testing.T) {
 	before, _ := os.ReadFile(wtf)
 	for _, args := range [][]string{{"add", "task", "after"}, {"list"}} {
 		errs := captureFile(t, &os.Stderr, func() { captureOutput(t, func() { runAll(t, args) }) })
-		if !strings.Contains(errs, "(api); not synced\n") {
+		if !strings.Contains(errs, "(api); not synced (check, then delete .miniwaves/api.lock.copied to resync)\n") {
 			t.Fatalf("%v: stderr %q", args, errs)
 		}
 	}

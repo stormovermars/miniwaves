@@ -92,7 +92,8 @@ func TestWorktreeHandBackMerge(t *testing.T) {
 	}
 }
 
-// Review finding 4: after the hand-back an mw command in the worktree re-dirties the board files;
+// Review finding 4: after the hand-back an mw command in the worktree re-dirties the board files (and
+// heals the tenant file step 3 replaced, round-2 fix 2);
 // USAGE.md says not to commit them and to redo steps 3-4.
 func TestWorktreeAfterHandBack(t *testing.T) {
 	e := wtBoard(t, true)
@@ -106,8 +107,8 @@ func TestWorktreeAfterHandBack(t *testing.T) {
 	runAll(t, []string{"tenant", "add", "t3"}) // main's index moves on
 	chdirT(t, filepath.Join(e.wt, "api"))
 	errs := captureFile(t, &os.Stderr, func() { captureOutput(t, func() { runAll(t, []string{"list"}) }) })
-	if !strings.Contains(errs, "(api); not synced") {
-		t.Fatalf("the replaced tenant file must be left alone with a warning: %q", errs)
+	if strings.Contains(errs, "not synced") { // the main copy step 3 put back holds nothing of its own
+		t.Fatalf("the replaced tenant file must heal: %q", errs)
 	}
 	if st := gitW(t, e.wt, "status", "--porcelain", "--", dataFile, storeDir); st == "" {
 		t.Fatal("an mw command after the hand-back left the board files clean")
