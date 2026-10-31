@@ -206,13 +206,28 @@ type briefDoc struct {
 
 const eventsTail = 5
 
-// briefEvents is the event list a brief shows. TSK-080: every reject, answer and decide event is kept
-// (a send-back reason or a decision must not fall out of the brief); the rest stay capped at the last
-// eventsTail. Chronological order is preserved.
+// decisionEventsKept caps each of reject, answer and decide in a brief.
+const decisionEventsKept = 10
+
+// briefEvents is the event list a brief shows. TSK-080: reject, answer and decide events are kept (a
+// send-back reason or a decision must not fall out of the brief), the last decisionEventsKept of each
+// kind; the rest stay capped at the last eventsTail. Chronological order is preserved.
 func briefEvents(evs []Event) []Event {
+	isDecision := func(a string) bool { return a == "reject" || a == "answer" || a == "decide" }
+	seen := map[string]int{} // newer events of each kind, counted from the end
+	keep := make([]bool, len(evs))
+	for i := len(evs) - 1; i >= 0; i-- {
+		a := evs[i].Action
+		if isDecision(a) {
+			seen[a]++
+			keep[i] = seen[a] <= decisionEventsKept || i >= len(evs)-eventsTail
+		} else {
+			keep[i] = i >= len(evs)-eventsTail
+		}
+	}
 	out := []Event{}
 	for i, e := range evs {
-		if i >= len(evs)-eventsTail || e.Action == "reject" || e.Action == "answer" || e.Action == "decide" {
+		if keep[i] {
 			out = append(out, e)
 		}
 	}

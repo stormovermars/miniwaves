@@ -35,3 +35,24 @@ func TestBriefKeepsDecisionEvents(t *testing.T) {
 		t.Fatal("short or empty lists")
 	}
 }
+
+// Review 5: reject/answer/decide events are capped at the last 10 of each kind.
+func TestBriefDecisionEventsCapped(t *testing.T) {
+	var evs []Event
+	for i := 0; i < 15; i++ {
+		for _, a := range []string{"reject", "answer", "decide"} {
+			evs = append(evs, Event{At: "2026-01-01T00:00:00Z", Action: a, Note: a + string(rune('a'+i))})
+		}
+	}
+	counts := map[string]int{}
+	got := briefEvents(evs)
+	for _, e := range got {
+		counts[e.Action]++
+	}
+	if counts["reject"] != 10 || counts["answer"] != 10 || counts["decide"] != 10 {
+		t.Fatalf("want last 10 of each kind: %v", counts)
+	}
+	if got[0].Note != "rejectf" || got[len(got)-1].Note != "decideo" {
+		t.Fatalf("keeps the newest, in order: first %q last %q", got[0].Note, got[len(got)-1].Note)
+	}
+}
