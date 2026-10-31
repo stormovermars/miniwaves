@@ -117,18 +117,29 @@ func logFollowCommand(o map[string]string) error {
 // logFollow polls the board (a read, no lock) every poll until stop closes. It starts from now unless --since
 // names a cursor ("start" replays everything).
 func logFollow(o map[string]string, out, errw io.Writer, poll time.Duration, stop <-chan struct{}) error {
+	loop, err := startFollow(o, out, errw, poll, stop)
+	if err != nil || loop == nil {
+		return err
+	}
+	return loop()
+}
+
+// startFollow does everything that reads run state (board location, tenant selection, the first cursors) and returns
+// the polling loop, which touches none of it: a caller may run the loop on its own goroutine while later commands
+// reset that state. A nil loop with a nil error means stop closed during start.
+func startFollow(o map[string]string, out, errw io.Writer, poll time.Duration, stop <-chan struct{}) (func() error, error) {
 	if o["limit"] != "" || o["since-file"] != "" {
-		return errors.New("--follow cannot be combined with -n or --since-file")
+		return nil, errors.New("--follow cannot be combined with -n or --since-file")
 	}
 	var argv []string
 	var on map[string]bool
 	if o["exec"] == "true" {
 		var err error
 		if argv, err = alertArgv(); err != nil {
-			return err
+			return nil, err
 		}
 		if on, err = alertOn(); err != nil {
-			return err
+			return nil, err
 		}
 		if len(on) == 0 {
 			fmt.Fprintln(errw, "mw: alerts.on is empty: --exec runs for no event (mw user set alerts.on=block,ask)")
@@ -136,7 +147,7 @@ func logFollow(o map[string]string, out, errw io.Writer, poll time.Duration, sto
 	}
 	path, err := findWorkspace()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// The tenant list is fixed at start (-A included): a tenant added later is not followed. Each tenant keeps its
 	// own cursor, so a tenant that disappears (archive) and reappears (restore) does not replay its history.
@@ -203,6 +214,15 @@ func logFollow(o map[string]string, out, errw io.Writer, poll time.Duration, sto
 		})
 		return all, nil
 	}
+	if hasSince { // tenant selection reads run state: do it now, not on the loop's goroutine
+		w, err := load(path)
+		if err == nil {
+			err = pick(w)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 	if !hasSince { // from now: take the cursors, deliver nothing; a board mid-write is retried a few times
 		var err error
 		for i := 0; i < followStartAttempts; i++ {
@@ -211,48 +231,50 @@ func logFollow(o map[string]string, out, errw io.Writer, poll time.Duration, sto
 			}
 			var fe *fatalFollowError
 			if errors.As(err, &fe) {
-				return fe.err
+				return nil, fe.err
 			}
 			if i < followStartAttempts-1 {
 				select {
 				case <-stop:
-					return nil
+					return nil, nil
 				case <-time.After(time.Duration(i+1) * followStartBackoff):
 				}
 			}
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
-	for {
-		rows, err := step()
-		if err != nil {
-			fmt.Fprintf(errw, "mw: log --follow: %v\n", err) // a board mid-write or mid-merge: try again
-		}
-		for _, r := range rows {
-			if o["json"] == "true" {
-				b, _ := json.Marshal(r)
-				fmt.Fprintln(out, string(b))
-			} else {
-				by := r.By
-				if by == "" {
-					by = "-"
-				}
-				line := fmt.Sprintf("%s  %s  %-8s %-9s %s", shortTS(r.At), r.Tenant, r.Item, r.Action, by)
-				if r.Note != "" {
-					line += "  " + compactText(r.Note, 90)
-				}
-				fmt.Fprintln(out, line)
+	return func() error {
+		for {
+			rows, err := step()
+			if err != nil {
+				fmt.Fprintf(errw, "mw: log --follow: %v\n", err) // a board mid-write or mid-merge: try again
 			}
-			if argv != nil && on[r.Action] {
-				runAlertExec(argv, r, errw)
+			for _, r := range rows {
+				if o["json"] == "true" {
+					b, _ := json.Marshal(r)
+					fmt.Fprintln(out, string(b))
+				} else {
+					by := r.By
+					if by == "" {
+						by = "-"
+					}
+					line := fmt.Sprintf("%s  %s  %-8s %-9s %s", shortTS(r.At), r.Tenant, r.Item, r.Action, by)
+					if r.Note != "" {
+						line += "  " + compactText(r.Note, 90)
+					}
+					fmt.Fprintln(out, line)
+				}
+				if argv != nil && on[r.Action] {
+					runAlertExec(argv, r, errw)
+				}
+			}
+			select {
+			case <-stop:
+				return nil
+			case <-time.After(poll):
 			}
 		}
-		select {
-		case <-stop:
-			return nil
-		case <-time.After(poll):
-		}
-	}
+	}, nil
 }

@@ -318,7 +318,11 @@ func TestLogFollowLive(t *testing.T) {
 	stop := make(chan struct{})
 	var buf syncBuf
 	done := make(chan error, 1)
-	go func() { done <- logFollow(map[string]string{"exec": "true"}, &buf, &buf, 20*time.Millisecond, stop) }()
+	loop, err := startFollow(map[string]string{"exec": "true"}, &buf, &buf, 20*time.Millisecond, stop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { done <- loop() }()
 	time.Sleep(200 * time.Millisecond)
 	runAll(t, []string{"done", "TSK-001", "ok", "--no-evidence", "x"})
 	deadline := time.Now().Add(10 * time.Second)
