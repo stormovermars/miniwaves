@@ -334,7 +334,7 @@ mw user fanfare-defaults     # fanfare.enabled=true and fanfare.use=all, only wh
 mw configure KEY=VALUE...    # validate and save without prompting
 ```
 
-`mw configure` without a terminal on stdin prints the settings plus a hint and exits 0; it never reads stdin then. It uses plain stdin and stdout, so it works on Windows too. `user get -j` prints `{"keys":[{"key","value","default","source","group","choices"}]}`: `value` is the effective value, `source` is `default`, `user` or `board` (only `fanfare.enabled`, when the board runs `mw fanfare set enabled=false`), `group` is one of fanfare, status (the chat bar), discover, and `choices` lists the allowed values (empty for free text). These keys are per user and never stored on a board; an invalid value is refused with a non-zero exit.
+`mw configure` without a terminal on stdin prints the settings plus a hint and exits 0; it never reads stdin then. It uses plain stdin and stdout, so it works on Windows too. `user get -j` prints `{"keys":[{"key","value","default","source","group","choices"}]}`: `value` is the effective value, `source` is `default`, `user` or `board` (only `fanfare.enabled`, when the board runs `mw fanfare set enabled=false`), `group` is one of fanfare, status (the chat bar), discover, wip, and `choices` lists the allowed values (empty for free text). These keys are per user and never stored on a board; an invalid value is refused with a non-zero exit.
 
 mw opens no notification of its own: sounds are the fanfare, and your own `alerts.exec` (run by `mw log --follow --exec`) is unaffected.
 
@@ -345,6 +345,7 @@ mw opens no notification of its own: sounds are the fanfare, and your own `alert
 | `status.show` | `true`, `false` | `true` | show the mw line in the chat status bar (`mw status --line`) |
 | `discover.home` | `true`, `false` | `true` | also look for boards under your home folder |
 | `discover.depth` | `1`..`6` | `4` | folder levels to search |
+| `wip.session` | `true`, `false` | `false` | one task per session: `mw start` (and `next --claim`) by a session that already has another item doing is refused with code `WIP_LIMIT` and a message naming that item; restarting its own item is fine. Applies to named sessions and the implicit `local` session; off = unchanged |
 
 Two older keys are set the same way and are not part of `user get`:
 

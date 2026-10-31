@@ -22,7 +22,7 @@ type userKey struct {
 }
 
 var userGroups = []struct{ ID, Label string }{
-	{"fanfare", "Fanfare"}, {"status", "Chat bar"}, {"discover", "Discovery"},
+	{"fanfare", "Fanfare"}, {"status", "Chat bar"}, {"discover", "Discovery"}, {"wip", "Work in progress"},
 }
 
 var userKeys = []userKey{
@@ -31,6 +31,7 @@ var userKeys = []userKey{
 	{Name: "status.show", Group: "status", Kind: "bool", Default: "true", Help: "Show the mw line in the chat status bar."},
 	{Name: "discover.home", Group: "discover", Kind: "bool", Default: "true", Help: "Also look for boards under your home folder."},
 	{Name: "discover.depth", Group: "discover", Kind: "int", lo: 1, hi: 6, Default: "4", Help: "How many folder levels deep to look for boards."},
+	{Name: "wip.session", Group: "wip", Kind: "bool", Default: "false", Help: "Refuse mw start by a session that already has a doing item (one task per session)."},
 }
 
 func init() {

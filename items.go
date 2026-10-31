@@ -677,6 +677,13 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 	if command == "start" && !implicitLocal && s != nil && s.Item != "" && s.Item != it.ID {
 		return nil, nil, coded("WIP_LIMIT", fmt.Errorf("session %s already owns %s", s.ID, s.Item))
 	}
+	if command == "start" && sessionID != "" && wipSessionOn() {
+		for _, other := range t.Items {
+			if other.Status == "doing" && other.Assignee == sessionID && other.ID != it.ID && other.Kind != "wave" {
+				return nil, nil, coded("WIP_LIMIT", fmt.Errorf("wip.session is on: session %s already has %s doing (finish or block it first)", displayName(sessionID), other.ID))
+			}
+		}
+	}
 	dep := ""
 	if o["on"] != "" {
 		d, e := itemByID(t, o["on"])
@@ -1360,4 +1367,15 @@ func syncLocal(w *Workspace) {
 			}
 		}
 	}
+}
+
+// wipSessionOn reports the opt-in per-user key wip.session (default off; mw configure wip.session=true).
+// A missing or unreadable user config means off: a broken file never blocks a board command.
+func wipSessionOn() bool {
+	c, _, _, err := readUserConfig()
+	if err != nil {
+		return false
+	}
+	v, _ := userValue(c, userKeyByName("wip.session"))
+	return v == "true"
 }
