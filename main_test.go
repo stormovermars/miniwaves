@@ -1046,7 +1046,16 @@ func TestListJSONShapeWithoutWaves(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	syncWrites = false
-	os.Exit(m.Run())
+	// never read the developer's real per-user file (its fanfare.enabled would beep and banner on every test done)
+	d, err := os.MkdirTemp("", "mw-test-user")
+	if err == nil && os.Getenv("MW_USER_CONFIG") == "" {
+		os.Setenv("MW_USER_CONFIG", filepath.Join(d, "mw-user.json"))
+	}
+	code := m.Run()
+	if err == nil {
+		os.RemoveAll(d)
+	}
+	os.Exit(code)
 }
 
 func TestEventOrderAndCoverage(t *testing.T) { // F8 F9
@@ -1088,7 +1097,7 @@ func TestBoardWithoutActiveTenantField(t *testing.T) { // F11
 }
 
 func TestVersion051(t *testing.T) {
-	if version != "0.3.17" || currentSchema != 9 {
+	if version != "0.3.18" || currentSchema != 9 {
 		t.Fatal(version, currentSchema)
 	}
 }
