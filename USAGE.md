@@ -504,6 +504,24 @@ totals (`DONE (n, +N archived)` with `-v`, `archived` in `board -j`); IDs are ne
 
 `mw status --line` prints one short line for the Claude Code status bar: `mw:N2R1B1:12/40`. N = needs you (open ask, or blocked with no `--on`), R = awaiting review, B = blocked on another open item (a letter is left out when its count is zero; no item is counted twice), then `open/all` items after a `:` (open = not done; inbox drafts are in neither number). With N, R and B all zero the line is `mw:12/40`. It counts the nearest board (walking up from the cwd, or from `.workspace.current_dir` / `.cwd` of the status-line JSON on stdin) and prints nothing when the user key `status.show` is `false`. Outside a board it sums the boards up to 2 folder levels below the cwd (same rules, e.g. `mw:N1:12/180`; unreadable or newer-schema boards are skipped) and prints nothing when there are none; that result is cached for 30 s in `<user cache dir>/miniwaves/statusline-<hash>.txt` (the only file it ever writes; a failed write is ignored). It never writes a board, never fails (exit 0) and takes a few milliseconds. `--link` wraps the line in an OSC 8 hyperlink (`ESC ] 8 ; ; URL ESC \\ TEXT ESC ] 8 ; ; ESC \\`): in the below-the-cwd sum the link is left out unless exactly one board is found. URL is the published page from `jobs.artifact-url` next to `jobs.md` when that file exists, else the `file://` URL of `jobs.md`. To switch it on add `"statusLine":{"type":"command","command":"mw status --line --link"}` to `~/.claude/settings.json`; `mw status --explain` and the mw-jobs `/mw-status` explain the line.
 
+## Error codes (`-j`)
+
+A command that fails and was run with `-j` also prints one JSON object on stdout: `{"error":MESSAGE,"code":CODE,"exit":N}`. `error` is the text of the stderr line without `mw: `. Stderr and the exit code are exactly what they were without `-j` (wr and scripts match them), and stdout stays empty on failure without `-j`. `ready|start|block|done|reopen` accept `-j` only for this: a success prints the same line as before. `get-prompt session NAME -j` keeps its own object byte for byte (`{"error":"session_exists","session":NAME}`, exit 3): its `error` token already is the stable code, so it has no `code` field. `next -j` with nothing ready still prints `null` and exits 0 (without `-j`: `mw: nothing ready`, exit 1).
+
+| code | meaning |
+|---|---|
+| `USAGE` | wrong arguments, unknown command or option, `-j` not valid here |
+| `NOT_FOUND` | item, tenant, session or job does not exist |
+| `TASK_CLAIMED` | the item is owned by another session or already doing |
+| `WIP_LIMIT` | the session already owns an item (see `wip.session`) |
+| `GATE_REFUSED` | an evidence or judge gate refused the change |
+| `HUMAN_ONLY` | a human-only command was run under `MW_SESSION` or `-s` |
+| `LOCKED` | board lock wait timed out |
+| `INTERNAL` | internal error (exit 70) |
+| `ERROR` | any other failure |
+
+The set only grows; codes are never renamed.
+
 ## Git
 
 Git is the coding agent's job, not mw's. Commit `.miniwaves.json` and `.miniwaves/` (and the published page) together with your code changes and resolve board conflicts in git like any file; a board with merge markers is refused with "board has merge markers: resolve it in git". `mw init` adds `.miniwaves/*.lock*`, `.miniwaves/*.tmp` and `.miniwaves.json.tmp` to `.git/info/exclude` so commits never include them.

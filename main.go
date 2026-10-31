@@ -39,6 +39,7 @@ type exitError struct {
 	code  int
 	msg   string
 	quiet bool
+	ccode string // stable error code for -j (see errCode); empty = classify from the message
 }
 
 func (e *exitError) Error() string { return e.msg }
@@ -54,9 +55,80 @@ func mainExit(args []string, stderr io.Writer) (code int) {
 		if r := recover(); r != nil {
 			fmt.Fprintf(stderr, "mw: internal error: %s\n", oneLine(fmt.Sprint(r)))
 			code = 70
+			printJSONError(coded("INTERNAL", errors.New("internal error")), code, args)
 		}
 	}()
-	return mainExitErr(run(args), stderr)
+	err := run(args)
+	code = mainExitErr(err, stderr)
+	if code != 0 {
+		printJSONError(err, code, args)
+	}
+	return code
+}
+
+// codedError tags an error with a stable code (errCode) without changing its text or exit code.
+type codedError struct {
+	code string
+	err  error
+}
+
+func (e *codedError) Error() string { return e.err.Error() }
+func (e *codedError) Unwrap() error { return e.err }
+
+// coded attaches a stable error code to err (nil stays nil).
+func coded(code string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &codedError{code, err}
+}
+
+// errCode is the stable machine-readable code of an error, shown as "code" in -j errors (USAGE.md,
+// "Error codes"). Sites that matter tag their error with coded; the rest is classified from the
+// message prefixes below, and anything else is ERROR. The text and the exit code never depend on it.
+func errCode(err error) string {
+	var ce *codedError
+	if errors.As(err, &ce) {
+		return ce.code
+	}
+	var ee *exitError
+	if errors.As(err, &ee) && ee.ccode != "" {
+		return ee.ccode
+	}
+	m := strings.TrimSpace(err.Error())
+	switch {
+	case strings.HasPrefix(m, "board locked"):
+		return "LOCKED"
+	case strings.HasPrefix(m, "usage:"), strings.HasPrefix(m, "unknown option"), strings.HasPrefix(m, "unknown command"),
+		strings.Contains(m, "needs a value"), strings.HasSuffix(m, "is not valid here"), strings.Contains(m, "requires a reason"):
+		return "USAGE"
+	case strings.Contains(m, " not found"):
+		return "NOT_FOUND"
+	}
+	return "ERROR"
+}
+
+// printJSONError prints {"error":MSG,"code":CODE,"exit":N} on stdout for a failed command run with -j
+// (stderr and the exit code are unchanged). An error that already printed its own JSON (quiet) is skipped.
+func printJSONError(err error, code int, args []string) {
+	var ee *exitError
+	if errors.As(err, &ee) && ee.quiet {
+		return
+	}
+	for _, a := range args {
+		if a == "--" {
+			return
+		}
+		if a == "-j" || a == "--json" {
+			msg := strings.TrimSpace(err.Error())
+			if msg == "" {
+				msg = fmt.Sprintf("failed (exit %d)", code)
+			}
+			b, _ := json.Marshal(map[string]any{"error": msg, "code": errCode(err), "exit": code})
+			fmt.Println(string(b))
+			return
+		}
+	}
 }
 
 // mainExitErr maps run's error to an exit code and prints its reason.

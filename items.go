@@ -311,7 +311,7 @@ func addItem(path string, w *Workspace, args []string) error {
 	}
 	gs := gateStates(w, t)
 	if status == "done" && (byName(gs, "evidence").Effective || byName(gs, "judge").Effective) {
-		return errors.New("add -S done is refused while the evidence or judge gate is on: add it, then mw done ID CHECK")
+		return coded("GATE_REFUSED", errors.New("add -S done is refused while the evidence or judge gate is on: add it, then mw done ID CHECK"))
 	}
 	ticket := ""
 	if o["ticket"] != "" {
@@ -561,7 +561,7 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 	if command != "block" && command != "done" && len(pos) != 1 {
 		return nil, nil, fmt.Errorf("usage: mw %s ID", command)
 	}
-	allowed := []string{"tenant", "session"}
+	allowed := []string{"tenant", "session", "json"} // -j only shapes errors (code field); success prints the same line
 	if command == "done" {
 		allowed = append(allowed, "no-evidence")
 	}
@@ -655,7 +655,7 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 	}
 	to := map[string]string{"ready": "ready", "start": "doing", "block": "blocked", "done": "done", "reopen": "ready"}[command]
 	if command == "start" && it.Assignee != "" && it.Assignee != sessionID {
-		return nil, nil, fmt.Errorf("%s is owned by session %s", it.ID, it.Assignee)
+		return nil, nil, coded("TASK_CLAIMED", fmt.Errorf("%s is owned by session %s", it.ID, it.Assignee))
 	}
 	if command == "start" && it.Status != "inbox" && it.Status != "ready" && !(it.Assignee != "" && it.Assignee == sessionID) {
 		hint := "use mw ready first"
@@ -664,14 +664,18 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 		} else if it.Status == "doing" {
 			hint = "it is already being worked on"
 		}
-		return nil, nil, fmt.Errorf("start: %s is %s — %s", it.ID, it.Status, hint)
+		err := fmt.Errorf("start: %s is %s — %s", it.ID, it.Status, hint)
+		if it.Status == "doing" {
+			return nil, nil, coded("TASK_CLAIMED", err)
+		}
+		return nil, nil, err
 	}
 	if command != "start" && sessionID != "" && it.Assignee != "" && it.Assignee != sessionID {
-		return nil, nil, fmt.Errorf("%s is owned by session %s", it.ID, it.Assignee)
+		return nil, nil, coded("TASK_CLAIMED", fmt.Errorf("%s is owned by session %s", it.ID, it.Assignee))
 	}
 	// the implicit local session is the human/controller and may own many items; named sessions keep the one-item rule
 	if command == "start" && !implicitLocal && s != nil && s.Item != "" && s.Item != it.ID {
-		return nil, nil, fmt.Errorf("session %s already owns %s", s.ID, s.Item)
+		return nil, nil, coded("WIP_LIMIT", fmt.Errorf("session %s already owns %s", s.ID, s.Item))
 	}
 	dep := ""
 	if o["on"] != "" {
