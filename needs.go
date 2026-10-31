@@ -117,17 +117,18 @@ func answerCommand(path string, w *Workspace, args []string) error {
 	if err := allowOptions(o, "tenant", "session", "by", "accept"); err != nil {
 		return err
 	}
-	by, err := humanName("mw answer", o)
-	if err != nil {
-		return err
-	}
-	t, err := selectTenant(w, o)
-	if err != nil {
-		return err
-	}
-	it, err := itemByID(t, pos[0])
-	if err != nil {
-		return err
+	t, it, by, ai := answerTarget(w, o, pos[0])
+	if !ai { // the human path, unchanged; a refused session gets today's refusal
+		var err error
+		if by, err = humanName("mw answer", o); err != nil {
+			return err
+		}
+		if t, err = selectTenant(w, o); err != nil {
+			return err
+		}
+		if it, err = itemByID(t, pos[0]); err != nil {
+			return err
+		}
 	}
 	text := strings.TrimSpace(strings.Join(pos[1:], " "))
 	if text == "" && !accept {
@@ -138,16 +139,23 @@ func answerCommand(path string, w *Workspace, args []string) error {
 		return fmt.Errorf("%s has no open question", it.ID)
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
+	mark := ""
+	if ai {
+		mark = "ai: " // a session answered, not a human: log, show and needs say so
+	}
 	if accept { // the whole ask is the decision: it stays findable with mw log --action decide
-		emit(it, now, "decide", by, "accepted: "+ask.Note)
+		emit(it, now, "decide", by, mark+"accepted: "+ask.Note)
 		text = "accepted"
 	}
-	emit(it, now, "answer", by, text)
+	emit(it, now, "answer", by, mark+text)
+	if ai {
+		touchSession(w, by, now)
+	}
 	it.Updated = now
 	if err := save(path, w); err != nil {
 		return err
 	}
-	fmt.Printf("[%s] %s  answered by %s\n", t.Slug, it.ID, by)
+	fmt.Printf("[%s] %s  answered by %s%s\n", t.Slug, it.ID, by, map[bool]string{true: " (ai)"}[ai])
 	return nil
 }
 
@@ -228,4 +236,42 @@ func answererCycle(w *Workspace, id, answerer string) error {
 		p = s.Answerer
 	}
 	return nil
+}
+
+// liveAnswerer is the answerer of session by when that answerer is a registered session that is not stopped ("" otherwise).
+func liveAnswerer(w *Workspace, by string) string {
+	if by == "" {
+		return ""
+	}
+	s, err := sessionByID(w, by)
+	if err != nil || s.Answerer == "" {
+		return ""
+	}
+	if a, err := sessionByID(w, s.Answerer); err != nil || a.State == "stopped" {
+		return ""
+	}
+	return s.Answerer
+}
+
+// answerTarget finds the item for a session that is the registered answerer of the session that made its open ask.
+// ai is false in every other case (no -s/MW_SESSION, --by given, no open ask, not the answerer, a stopped answerer,
+// its own ask), so the caller takes the human path and its refusals.
+func answerTarget(w *Workspace, o map[string]string, id string) (*Tenant, *Item, string, bool) {
+	caller := value(o, "session", os.Getenv("MW_SESSION"))
+	if caller == "" || strings.TrimSpace(o["by"]) != "" {
+		return nil, nil, "", false
+	}
+	t, err := selectTenant(w, o)
+	if err != nil {
+		return nil, nil, "", false
+	}
+	it, err := itemByID(t, id)
+	if err != nil {
+		return nil, nil, "", false
+	}
+	ask, ok := openAsk(*it)
+	if !ok || ask.By == caller || liveAnswerer(w, ask.By) != caller {
+		return nil, nil, "", false
+	}
+	return t, it, caller, true
 }
