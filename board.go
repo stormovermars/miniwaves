@@ -273,20 +273,14 @@ func initWorkspace(name string) error {
 	return nil
 }
 
+// findWorkspace is the board for the cwd (boardPath; in a worktree usually the main checkout's) and
+// remembers where it was found for the cwd mapping (workDir) and the worktree sync.
 func findWorkspace() (string, error) {
-	d := mustGetwd()
-	for {
-		p := filepath.Join(d, dataFile)
-		if _, err := statShared(p); err == nil {
-			return p, nil
-		}
-		parent := filepath.Dir(d)
-		if parent == d {
-			break
-		}
-		d = parent
+	workLoc = boardPath(mustGetwd())
+	if workLoc.path == "" {
+		return "", errors.New("no .miniwaves.json found; run `mw init`")
 	}
-	return "", errors.New("no .miniwaves.json found; run `mw init`")
+	return workLoc.path, nil
 }
 
 // syncWrites fsyncs the temp file before the rename (tests switch it off: fsync is slow on macOS).
@@ -383,6 +377,7 @@ func folderDefault(w *Workspace, cwd string) (string, string) {
 	best, folder, slug := -1, "", ""
 	for candidate, tenant := range w.Defaults {
 		p, _ := filepath.Abs(candidate)
+		p = matchDir(p)
 		if (cwd == p || strings.HasPrefix(cwd, p+string(os.PathSeparator))) && len(p) > best {
 			best, folder, slug = len(p), candidate, tenant
 		}
@@ -430,7 +425,7 @@ func selectTenantAny(w *Workspace, o map[string]string) (*Tenant, error) {
 			fmt.Fprintf(os.Stderr, "mw: MW_SESSION %s is not registered and no tenant was given; using the folder/first tenant (mw session start %s -t SLUG)\n", sessionID, sessionID)
 		}
 	}
-	cwd, _ := filepath.Abs(mustGetwd())
+	cwd, _ := filepath.Abs(workDir())
 	best := -1
 	var match *Tenant
 	if folder, slug := folderDefault(w, cwd); slug != "" {
@@ -445,6 +440,7 @@ func selectTenantAny(w *Workspace, o map[string]string) (*Tenant, error) {
 			continue
 		}
 		p, _ := filepath.Abs(w.Tenants[i].Path)
+		p = matchDir(p)
 		if (cwd == p || strings.HasPrefix(cwd, p+string(os.PathSeparator))) && len(p) > best {
 			match, best = &w.Tenants[i], len(p)
 		}

@@ -49,7 +49,7 @@ func tenantCommand(path string, w *Workspace, args []string) error {
 		}
 		return printData(out, o)
 	case "default":
-		cwd, err := filepath.Abs(mustGetwd())
+		cwd, err := filepath.Abs(workDir())
 		if err != nil {
 			return err
 		}
@@ -110,6 +110,7 @@ func tenantCommand(path string, w *Workspace, args []string) error {
 				return fmt.Errorf("tenant %s already exists; the update path takes no NAME", slug)
 			}
 			newPath, _ := filepath.Abs(o["path"])
+			newPath = workLoc.mapCwd(newPath)
 			for _, other := range w.Tenants {
 				if other.Slug != slug && other.Path != "" && filepath.Clean(other.Path) == filepath.Clean(newPath) {
 					return fmt.Errorf("path %s is already held by tenant %s", newPath, other.Slug)
@@ -130,6 +131,7 @@ func tenantCommand(path string, w *Workspace, args []string) error {
 		p := o["path"]
 		if p != "" {
 			p, _ = filepath.Abs(p)
+			p = workLoc.mapCwd(p)
 		}
 		w.Tenants = append(w.Tenants, Tenant{Slug: slug, Name: name, Path: p, Next: map[string]int{}, Items: []Item{}, loaded: true})
 		if err := save(path, w); err != nil {

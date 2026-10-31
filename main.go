@@ -224,6 +224,9 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := worktreeTenant(idx, args); err != nil {
+		return err
+	}
 	sc := scopeOf(idx, args)
 	unlock := func() {}
 	if !readOnly(args) { // reads take no lock; a writer locks only the tenants and index it writes

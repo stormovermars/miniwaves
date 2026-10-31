@@ -102,6 +102,7 @@ func resetRunState() {
 	announced = map[string]bool{}
 	manifestCache = map[string]manifestResult{}
 	fanfarePending = nil
+	workLoc = boardLoc{}
 }
 
 func validGateName(n string) bool {
