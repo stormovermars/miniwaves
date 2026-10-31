@@ -504,8 +504,8 @@ cycles are enforced, waves are not parents: use mw wave add). A session may set 
 the acceptance is empty (drafting); changing a non-empty acceptance is humans only.`,
 		"fanfare": `mw fanfare [-j]
 mw fanfare on | off
-mw fanfare set enabled=true milestone_seconds=15 finale_seconds=60 volume=1 stop_dialog=true dir=~/fanfare-finale-songs
-mw fanfare test [milestone|finale]
+mw fanfare set enabled=true milestone_seconds=15 finale_seconds=60 volume=1 stop_dialog=true task_beep=true dir=~/fanfare-finale-songs
+mw fanfare test [task|milestone|finale]
 mw fanfare fetch
 mw fanfare list [-j]
 mw fanfare sets [-j]

@@ -90,7 +90,7 @@ func TestFanfareConfigRoundTrip(t *testing.T) {
 	runAll(t, []string{"fanfare", "set", "enabled=true", "milestone_seconds=20", "finale_seconds=240", "dir=" + songs, "volume=0.5"})
 	b, _ := os.ReadFile(path)
 	sj, _ := json.Marshal(songs)
-	if !strings.Contains(string(b), `"fanfare":{"enabled":true,"dir":`+string(sj)+`,"milestone_seconds":20,"finale_seconds":240,"volume":0.5,"stop_dialog":true}`) {
+	if !strings.Contains(string(b), `"fanfare":{"enabled":true,"dir":`+string(sj)+`,"milestone_seconds":20,"finale_seconds":240,"volume":0.5,"stop_dialog":true,"task_beep":true}`) {
 		t.Fatalf("not stored: %s", b)
 	}
 	w, _ := load(path)
@@ -1028,7 +1028,7 @@ func TestMilestoneNotifiesWhatFinished(t *testing.T) {
 	if l := readNotes(notes, 0); len(l) != 0 {
 		t.Fatalf("notified while off: %v", l)
 	}
-	runAll(t, []string{"reopen", "WAV-001"}, []string{"reopen", "TSK-001"}, []string{"fanfare", "set", "enabled=true", "stop_dialog=false", "dir=" + dir})
+	runAll(t, []string{"reopen", "WAV-001"}, []string{"reopen", "TSK-001"}, []string{"fanfare", "set", "enabled=true", "stop_dialog=false", "task_beep=false", "dir=" + dir}) // task banners: TestFanfareTaskBeepLevels
 	runAll(t, []string{"done", "TSK-001", "ok"}, step, closeWave)
 	plays(t, log, 1)
 	if l := readNotes(notes, 1); len(l) != 1 { // stop_dialog=false still notifies
@@ -1061,4 +1061,65 @@ func TestNotifyMarkupAndEmptyTitle(t *testing.T) {
 	if got := milestoneReason(&Tenant{Slug: "a"}, &Item{ID: "WAV-001"}); got != "A WAV-001 \u2014 done" {
 		t.Fatalf("%q", got)
 	}
+}
+
+func beepStub(t *testing.T) string {
+	t.Helper()
+	log := filepath.Join(t.TempDir(), "beep.log")
+	stub := filepath.Join(t.TempDir(), "beep.sh")
+	os.WriteFile(stub, []byte("#!/bin/sh\necho beep >> '"+log+"'\n"), 0o755)
+	t.Setenv("MW_FANFARE_BEEP", stub)
+	return log
+}
+
+func TestBeepCommand(t *testing.T) {
+	has := func(string) (string, error) { return "", nil }
+	none := func(string) (string, error) { return "", errors.New("no") }
+	yes := func(string) bool { return true }
+	no := func(string) bool { return false }
+	if n, a, ok := beepCommand("darwin", none, yes); !ok || n != "afplay" || !strings.HasSuffix(a[0], "Glass.aiff") {
+		t.Fatal(n, a, ok)
+	}
+	if _, _, ok := beepCommand("darwin", none, no); ok {
+		t.Fatal("beep without Glass.aiff")
+	}
+	if n, _, ok := beepCommand("linux", has, yes); !ok || n != "paplay" {
+		t.Fatal("linux paplay")
+	}
+	if _, _, ok := beepCommand("linux", none, yes); ok {
+		t.Fatal("linux without paplay")
+	}
+	if _, _, ok := beepCommand("windows", has, yes); ok {
+		t.Fatal("windows beep")
+	}
+}
+
+func TestFanfareTaskBeepLevels(t *testing.T) {
+	plog := stubPlayer(t)
+	blog := beepStub(t)
+	nlog := notifyStub(t)
+	inTempDir(t)
+	dir := fakeCollection(t)
+	runAll(t, []string{"init", "Ws"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"})
+	runAll(t, []string{"add", "task", "One", "--status", "ready"}, []string{"add", "task", "Two", "--status", "ready"}, []string{"add", "task", "Three", "--status", "ready"})
+	runAll(t, []string{"wave", "create", "W"}, []string{"wave", "add", "WAV-001", "TSK-001"}, []string{"fanfare", "set", "enabled=true", "dir=" + dir})
+	runAll(t, []string{"done", "TSK-001", "ok"}) // no wave close: task beep + banner only
+	plays(t, blog, 1)
+	if l := plays(t, nlog, 1); !strings.Contains(l[0], "TSK-001") || !strings.Contains(l[0], "done") {
+		t.Fatalf("%v", l)
+	}
+	plays(t, plog, 0)
+	runAll(t, []string{"wave", "step", "WAV-001", "--na-rest", "t"}, []string{"wave", "close", "WAV-001", "--no-evidence", "t"})
+	plays(t, plog, 1) // milestone only
+	plays(t, blog, 1)
+	runAll(t, []string{"fanfare", "set", "task_beep=false"}, []string{"done", "TSK-002", "ok"})
+	plays(t, blog, 1) // off: nothing new
+	plays(t, nlog, 2)
+	runAll(t, []string{"fanfare", "set", "task_beep=true"}, []string{"done", "TSK-003", "ok"}) // last done: finale only
+	l := plays(t, plog, 2)
+	if !strings.Contains(l[1], "finale.ogg") {
+		t.Fatalf("%v", l)
+	}
+	plays(t, blog, 1)
+	plays(t, nlog, 2)
 }
