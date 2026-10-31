@@ -245,10 +245,11 @@ func configureScript(t *testing.T, script string, fn func()) string {
 
 func TestConfigureInteractiveSaves(t *testing.T) {
 	p := userCfgPath(t)
-	// 5 prompts: fanfare(2) status(1) discover(2); fanfare.enabled 1) true, status.show 2) false, depth 6
+	// 6 prompts: fanfare(2) status(1) discover(2) wip(1); fanfare.enabled 1) true, status.show 2) false, depth 6, wip.session kept
 	script := "1\n\n" + // fanfare
 		"2\n" + // status
 		"\n6\n" + // discover
+		"\n" + // wip.session (TSK-082): Enter keeps
 		"s\n"
 	out := configureScript(t, script, func() { runAll(t, []string{"configure"}) })
 	if !strings.Contains(out, "status.show: true -> false") || !strings.Contains(out, "Save or Discard") {

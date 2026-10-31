@@ -149,9 +149,9 @@ func getPromptCommand(path string, w *Workspace, args []string) error {
 			if o["json"] == "true" {
 				b, _ := json.Marshal(map[string]string{"error": "session_exists", "session": name})
 				fmt.Println(string(b))
-				return &exitError{code: 3, msg: "session " + name + " already exists", quiet: true}
+				return &exitError{code: 3, msg: "session " + name + " already exists", quiet: true, ccode: "SESSION_EXISTS"}
 			}
-			return &exitError{code: 3, msg: "session " + name + " already exists"}
+			return &exitError{code: 3, msg: "session " + name + " already exists", ccode: "SESSION_EXISTS"}
 		}
 		t, err := selectTenant(w, map[string]string{"tenant": o["tenant"]})
 		if err != nil {

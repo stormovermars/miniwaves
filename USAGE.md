@@ -106,7 +106,7 @@ mw boards [DIR] [--depth N] [--up] [-j]   # discover boards below DIR (read-only
 mw migrate [--dry-run] [PATH]   # upgrade a schema 5/6 workspace file to 7 (MIGRATION.md)
 mw dirs [init] [-j] | set NAME PATH   # NAME: datalake docs data tools templates builds evidence scratch (all eight shown by mw dirs)
 mw note ID TEXT... [-t SLUG] [-s NAME]
-mw session start NAME [-t SLUG] [-a ROLE]   # optional: `start` registers an unknown -s name; with none it uses the tenant's implicit "local" session (id `local@SLUG`, may own many items; the name `local` is reserved)
+mw session start NAME [-t SLUG] [-a ROLE] [--claude-session ID]   # `--claude-session` records the Claude Code session id on the session record (for `mw context --hook-json`); optional: `start` registers an unknown -s name; with none it uses the tenant's implicit "local" session (id `local@SLUG`, may own many items; the name `local` is reserved)
 mw session list [-t SLUG] [-j] [-v] | stop NAME [--release]
 mw session reap [-t SLUG | -A] [--older-than DUR] [--except NAME,NAME] [-n|--dry-run] [-j]
 mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]   # exit 3 if NAME exists
@@ -129,7 +129,7 @@ mw judge ID [-t SLUG]
 mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]
 mw list [-t SLUG] [-k KIND] [-S STATUS] [-n N] [-j] [-v]
 mw list -A [-s SESSION] [-k KIND] [-S STATUS] [-n N] [-j] [-v]   # every tenant; -s = items that session owns (no waves)
-mw show ID [-t SLUG] [-j] [-v] [--full]   # full brief: body, acceptance + source, evidence dir, children, notes (always whole), last 5 events (notes cut at 90 chars); --full = every event, notes whole (also with -j); falls back to the archive; -j ignores -v
+mw show ID [-t SLUG] [-j] [-v] [--full]   # full brief: body, acceptance + source, evidence dir, children, notes (always whole), last 5 events plus the last 10 reject, 10 answer and 10 decide events (notes cut at 90 chars); --full = every event, notes whole (also with -j); falls back to the archive; -j ignores -v
 mw reopen ID [-t SLUG] [-m REASON]   # back to inbox; optional -m REASON is kept on the reopen event (mw show events, -j, mw log)
 mw ready|reopen ID [-t SLUG] [-s NAME]
 mw start ID [-t SLUG] [-s NAME] [-a ROLE]   # inbox/ready only (or your own item); -a ROLE registers a missing session with that role
@@ -152,7 +152,10 @@ mw log [-t SLUG | -A] --follow [--since CURSOR|start] [--poll SEC] [--exec] [-j]
 mw board [-t SLUG | -A] [-v] [-j]   # last: <ago> <item> <action>, today: N done; -A sorted by last activity
 mw board --md [--job ID] [-o PATH|-]   # Markdown jobs view (see "Jobs view")
 mw context [-t SLUG] [-s NAME] [-j]
+mw context --hook-json     # Claude Code SessionStart hook (below)
 ```
+
+`mw context --hook-json` is what the mw plugin's SessionStart hook (`plugins/mw/scripts/ensure-mw.sh`, after it has ensured mw 0.3.15 or later) runs on startup, resume, clear and compact, with the hook JSON (`session_id`, `transcript_path`, `cwd`, `source`) on stdin; empty or broken stdin is tolerated. It prints `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"..."}}`: the items the session has claimed (doing), each with id, title, acceptance, the last 3 notes and every answer/decide since the claim, plus the gate level. The session is `MW_SESSION`, else the session whose record holds the hook's `session_id` (`mw session start NAME --claude-session ID`; the id is stored on the session record only, not on items). It prints nothing and exits 0 when there is no board above `cwd`, no matching or live session, or no claimed item, and on any error: it never fails the hook. `additionalContext` is cut at 2000 characters with a `… (mw show ID --full)` tail. A new conversation after `/clear` has a new `session_id`, so use `MW_SESSION` for it.
 
 Short flags: `-t` tenant, `-s` session, `-a` agent, `-p` parent,
 `-d` path, `-w` wave, `-b` body, `-c` acceptance (`--acceptance`, alias `--accept`), `-k` kind, `-S` status,
@@ -334,7 +337,7 @@ mw user fanfare-defaults     # fanfare.enabled=true and fanfare.use=all, only wh
 mw configure KEY=VALUE...    # validate and save without prompting
 ```
 
-`mw configure` without a terminal on stdin prints the settings plus a hint and exits 0; it never reads stdin then. It uses plain stdin and stdout, so it works on Windows too. `user get -j` prints `{"keys":[{"key","value","default","source","group","choices"}]}`: `value` is the effective value, `source` is `default`, `user` or `board` (only `fanfare.enabled`, when the board runs `mw fanfare set enabled=false`), `group` is one of fanfare, status (the chat bar), discover, and `choices` lists the allowed values (empty for free text). These keys are per user and never stored on a board; an invalid value is refused with a non-zero exit.
+`mw configure` without a terminal on stdin prints the settings plus a hint and exits 0; it never reads stdin then. It uses plain stdin and stdout, so it works on Windows too. `user get -j` prints `{"keys":[{"key","value","default","source","group","choices"}]}`: `value` is the effective value, `source` is `default`, `user` or `board` (only `fanfare.enabled`, when the board runs `mw fanfare set enabled=false`), `group` is one of fanfare, status (the chat bar), discover, wip, and `choices` lists the allowed values (empty for free text). These keys are per user and never stored on a board; an invalid value is refused with a non-zero exit.
 
 mw opens no notification of its own: sounds are the fanfare, and your own `alerts.exec` (run by `mw log --follow --exec`) is unaffected.
 
@@ -345,6 +348,7 @@ mw opens no notification of its own: sounds are the fanfare, and your own `alert
 | `status.show` | `true`, `false` | `true` | show the mw line in the chat status bar (`mw status --line`) |
 | `discover.home` | `true`, `false` | `true` | also look for boards under your home folder |
 | `discover.depth` | `1`..`6` | `4` | folder levels to search |
+| `wip.session` | `true`, `false` | `false` | one task per session: `mw start` (and `next --claim`) by a session that already has another item doing is refused with code `WIP_LIMIT` and a message naming that item; restarting its own item is fine. Applies to named sessions and the implicit `local` session; off = unchanged |
 
 Two older keys are set the same way and are not part of `user get`:
 
@@ -503,6 +507,24 @@ totals (`DONE (n, +N archived)` with `-v`, `archived` in `board -j`); IDs are ne
 `mw status --explain [--plugins DIR]` prints the version line, the status line explained with the live numbers, the items that need Sir, the user settings and (with `--plugins DIR`, the folder that holds the installed plugins, which `/mw-status` passes) the plugin versions and the description of every slash command; read-only.
 
 `mw status --line` prints one short line for the Claude Code status bar: `mw:N2R1B1:12/40`. N = needs you (open ask, or blocked with no `--on`), R = awaiting review, B = blocked on another open item (a letter is left out when its count is zero; no item is counted twice), then `open/all` items after a `:` (open = not done; inbox drafts are in neither number). With N, R and B all zero the line is `mw:12/40`. It counts the nearest board (walking up from the cwd, or from `.workspace.current_dir` / `.cwd` of the status-line JSON on stdin) and prints nothing when the user key `status.show` is `false`. Outside a board it sums the boards up to 2 folder levels below the cwd (same rules, e.g. `mw:N1:12/180`; unreadable or newer-schema boards are skipped) and prints nothing when there are none; that result is cached for 30 s in `<user cache dir>/miniwaves/statusline-<hash>.txt` (the only file it ever writes; a failed write is ignored). It never writes a board, never fails (exit 0) and takes a few milliseconds. `--link` wraps the line in an OSC 8 hyperlink (`ESC ] 8 ; ; URL ESC \\ TEXT ESC ] 8 ; ; ESC \\`): in the below-the-cwd sum the link is left out unless exactly one board is found. URL is the published page from `jobs.artifact-url` next to `jobs.md` when that file exists, else the `file://` URL of `jobs.md`. To switch it on add `"statusLine":{"type":"command","command":"mw status --line --link"}` to `~/.claude/settings.json`; `mw status --explain` and the mw-jobs `/mw-status` explain the line.
+
+## Error codes (`-j`)
+
+A command that fails and was run with `-j` also prints one JSON object on stdout: `{"error":MESSAGE,"code":CODE,"exit":N}`. `error` is the text of the stderr line without `mw: `. Stderr and the exit code are exactly what they were without `-j` (wr and scripts match them), and stdout stays empty on failure without `-j`. `ready|start|block|done|reopen` accept `-j` only for this: a success prints the same line as before. `get-prompt session NAME -j` keeps its own object byte for byte (`{"error":"session_exists","session":NAME}`, exit 3): its `error` token already is the stable code, so it has no `code` field. `next -j` with nothing ready still prints `null` and exits 0 (without `-j`: `mw: nothing ready`, exit 1).
+
+| code | meaning |
+|---|---|
+| `USAGE` | wrong arguments, unknown command or option, `-j` not valid here |
+| `NOT_FOUND` | item, tenant, session or job does not exist |
+| `TASK_CLAIMED` | the item is owned by another session or already doing |
+| `WIP_LIMIT` | the session already owns an item (see `wip.session`) |
+| `GATE_REFUSED` | an evidence or judge gate refused the change |
+| `HUMAN_ONLY` | a human-only command was run under `MW_SESSION` or `-s` |
+| `LOCKED` | board lock wait timed out |
+| `INTERNAL` | internal error (exit 70) |
+| `ERROR` | any other failure |
+
+The set only grows; codes are never renamed.
 
 ## Git
 

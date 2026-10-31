@@ -206,6 +206,34 @@ type briefDoc struct {
 
 const eventsTail = 5
 
+// decisionEventsKept caps each of reject, answer and decide in a brief.
+const decisionEventsKept = 10
+
+// briefEvents is the event list a brief shows. TSK-080: reject, answer and decide events are kept (a
+// send-back reason or a decision must not fall out of the brief), the last decisionEventsKept of each
+// kind; the rest stay capped at the last eventsTail. Chronological order is preserved.
+func briefEvents(evs []Event) []Event {
+	isDecision := func(a string) bool { return a == "reject" || a == "answer" || a == "decide" }
+	seen := map[string]int{} // newer events of each kind, counted from the end
+	keep := make([]bool, len(evs))
+	for i := len(evs) - 1; i >= 0; i-- {
+		a := evs[i].Action
+		if isDecision(a) {
+			seen[a]++
+			keep[i] = seen[a] <= decisionEventsKept || i >= len(evs)-eventsTail
+		} else {
+			keep[i] = i >= len(evs)-eventsTail
+		}
+	}
+	out := []Event{}
+	for i, e := range evs {
+		if keep[i] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func countEvidence(dir string) int {
 	root := dir
 	if r, err := filepath.EvalSymlinks(dir); err == nil {
@@ -247,13 +275,7 @@ func briefOf(w *Workspace, t *Tenant, it Item, verbose bool) briefDoc {
 		}
 	}
 	d.Notes = append(d.Notes, it.Notes...)
-	d.Events = it.Events
-	if len(d.Events) > eventsTail {
-		d.Events = d.Events[len(d.Events)-eventsTail:]
-	}
-	if d.Events == nil {
-		d.Events = []Event{}
-	}
+	d.Events = briefEvents(it.Events)
 	if verbose {
 		d.Created, d.Updated = it.Created, it.Updated
 	}

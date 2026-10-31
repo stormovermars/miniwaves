@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -39,6 +39,7 @@ type exitError struct {
 	code  int
 	msg   string
 	quiet bool
+	ccode string // stable error code for -j (see errCode); empty = classify from the message
 }
 
 func (e *exitError) Error() string { return e.msg }
@@ -54,9 +55,80 @@ func mainExit(args []string, stderr io.Writer) (code int) {
 		if r := recover(); r != nil {
 			fmt.Fprintf(stderr, "mw: internal error: %s\n", oneLine(fmt.Sprint(r)))
 			code = 70
+			printJSONError(coded("INTERNAL", errors.New("internal error")), code, args)
 		}
 	}()
-	return mainExitErr(run(args), stderr)
+	err := run(args)
+	code = mainExitErr(err, stderr)
+	if code != 0 {
+		printJSONError(err, code, args)
+	}
+	return code
+}
+
+// codedError tags an error with a stable code (errCode) without changing its text or exit code.
+type codedError struct {
+	code string
+	err  error
+}
+
+func (e *codedError) Error() string { return e.err.Error() }
+func (e *codedError) Unwrap() error { return e.err }
+
+// coded attaches a stable error code to err (nil stays nil).
+func coded(code string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &codedError{code, err}
+}
+
+// errCode is the stable machine-readable code of an error, shown as "code" in -j errors (USAGE.md,
+// "Error codes"). Sites that matter tag their error with coded; the rest is classified from the
+// message prefixes below, and anything else is ERROR. The text and the exit code never depend on it.
+func errCode(err error) string {
+	var ce *codedError
+	if errors.As(err, &ce) {
+		return ce.code
+	}
+	var ee *exitError
+	if errors.As(err, &ee) && ee.ccode != "" {
+		return ee.ccode
+	}
+	m := strings.TrimSpace(err.Error())
+	switch {
+	case strings.HasPrefix(m, "board locked"):
+		return "LOCKED"
+	case strings.HasPrefix(m, "usage:"), strings.HasPrefix(m, "unknown option"), strings.HasPrefix(m, "unknown command"),
+		strings.Contains(m, "needs a value"), strings.HasSuffix(m, "is not valid here"), strings.Contains(m, "requires a reason"):
+		return "USAGE"
+	case strings.Contains(m, " not found"):
+		return "NOT_FOUND"
+	}
+	return "ERROR"
+}
+
+// printJSONError prints {"error":MSG,"code":CODE,"exit":N} on stdout for a failed command run with -j
+// (stderr and the exit code are unchanged). An error that already printed its own JSON (quiet) is skipped.
+func printJSONError(err error, code int, args []string) {
+	var ee *exitError
+	if errors.As(err, &ee) && ee.quiet {
+		return
+	}
+	for _, a := range args {
+		if a == "--" {
+			return
+		}
+		if a == "-j" || a == "--json" {
+			msg := strings.TrimSpace(err.Error())
+			if msg == "" {
+				msg = fmt.Sprintf("failed (exit %d)", code)
+			}
+			b, _ := json.Marshal(map[string]any{"error": msg, "code": errCode(err), "exit": code})
+			fmt.Println(string(b))
+			return
+		}
+	}
 }
 
 // mainExitErr maps run's error to an exit code and prints its reason.
@@ -134,6 +206,9 @@ func run(args []string) error {
 	}
 	if args[0] == "boards" {
 		return boardsCommand(args[1:])
+	}
+	if args[0] == "context" && hasFlag(args[1:], "--hook-json") { // SessionStart hook: silent on any problem, always exit 0
+		return hookContextCommand(os.Stdin, os.Stdout)
 	}
 	if args[0] == "status" { // read-only, silent on any problem, always exit 0
 		return statusCommand(args[1:])
@@ -375,7 +450,7 @@ stores a path (relative = under home, ~/ expanded) in the board.
 Example: mw dirs set data D:\out`,
 		"note": `mw note ID TEXT... [-t SLUG] [-s NAME]
 Append a timestamped note to any item or wave; shown by mw show.`,
-		"session": `mw session start NAME [-t SLUG] [-a ROLE]
+		"session": `mw session start NAME [-t SLUG] [-a ROLE] [--claude-session ID]
 mw session list [-t SLUG] [-j] [-v]
 mw session stop NAME [-t SLUG] [--release]   (-t limits the command to one tenant file)
 mw session reap [-t SLUG | -A] [--older-than DUR] [--except NAME,NAME] [-n|--dry-run] [-j]
@@ -513,7 +588,7 @@ Waves are listed apart: text gains a waves section when any match; -j always pri
 items that session owns.`,
 		"show": `mw show ID [-t SLUG] [-j] [-v] [--full]
 One call, everything: title, parent/wave/session, body, effective acceptance and where it comes
-from, evidence folder (path + file count), children with status, notes (always in full), the last 5 events
+from, evidence folder (path + file count), children with status, notes (always in full), the last 5 events plus every reject/answer/decide event
 (each event note cut to 90 characters). --full shows every event with its note in full (also with -j).
 -v adds raw timestamps (ignored with -j). Falls back to the archive (mw archive) for archived items.
 Example: mw show TSK-001`,
@@ -589,7 +664,13 @@ with no job), rewritten only when the content changed (hash in jobs.md.hash), pr
 Show a small progress bar, a "last: <ago> <item> <action>  today: N done" line and active work.
 -A shows every tenant, most recently active first; -v includes history. A gates line appears when any gate is on.`,
 		"context": `mw context [-t SLUG] [-s NAME] [-j]
-Show a compact startup brief for one coding-assistant session.`,
+Show a compact startup brief for one coding-assistant session.
+mw context --hook-json
+For Claude Code's SessionStart hook (startup, resume, clear, compact): reads the hook JSON on stdin and prints
+{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":...}} with the session's claimed
+(doing) items: id, title, acceptance, last notes, every answer/decide since the claim and the gates. The session is
+MW_SESSION, else the one started with mw session start NAME --claude-session ID. Prints nothing (exit 0) with no
+board, no matching session or no claimed item, never fails, and cuts the text at 2000 characters.`,
 	}
 	if topic != "" {
 		text, ok := help[topic]

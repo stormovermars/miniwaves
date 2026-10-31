@@ -319,7 +319,7 @@ func realStdinIsTerminal() bool {
 
 func refuseSession(o map[string]string, what string) error {
 	if o["session"] != "" || os.Getenv("MW_SESSION") != "" {
-		return fmt.Errorf("%s is for humans: unset MW_SESSION and drop -s", what)
+		return coded("HUMAN_ONLY", fmt.Errorf("%s is for humans: unset MW_SESSION and drop -s", what))
 	}
 	return nil
 }
@@ -699,7 +699,7 @@ func checkEvidenceFiles(w *Workspace, t *Tenant, id string) ([]string, error) {
 	parent := filepath.Dir(want)
 	entries, err := os.ReadDir(parent)
 	if err != nil {
-		return nil, fmt.Errorf("evidence required: put proof in %s (or --no-evidence REASON)", want)
+		return nil, coded("GATE_REFUSED", fmt.Errorf("evidence required: put proof in %s (or --no-evidence REASON)", want))
 	}
 	found := false
 	wrongCase := ""
@@ -717,9 +717,9 @@ func checkEvidenceFiles(w *Workspace, t *Tenant, id string) ([]string, error) {
 	}
 	if !found {
 		if wrongCase != "" {
-			return nil, fmt.Errorf("evidence folder %s has the wrong case: it must be named exactly %s", wrongCase, id)
+			return nil, coded("GATE_REFUSED", fmt.Errorf("evidence folder %s has the wrong case: it must be named exactly %s", wrongCase, id))
 		}
-		return nil, fmt.Errorf("evidence required: put proof in %s (or --no-evidence REASON)", want)
+		return nil, coded("GATE_REFUSED", fmt.Errorf("evidence required: put proof in %s (or --no-evidence REASON)", want))
 	}
 	var files []string
 	root := want

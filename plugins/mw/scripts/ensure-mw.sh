@@ -5,12 +5,23 @@
 # asset is the .zip and the binary mw.exe.
 set -u
 want="0.3.14"
+# SessionStart passes its JSON on stdin; keep it for `mw context --hook-json` (not when run by hand in a terminal).
+input=""; [ -t 0 ] || input=$(cat 2>/dev/null || true)
+# After mw is ensured: print the session's claimed items for the conversation (mw 0.3.15+; silent when none).
+ctx() {
+  local bin="$HOME/.local/bin/mw$exe" v
+  [ -x "$bin" ] || bin=$(command -v mw 2>/dev/null || true)
+  [ -n "$bin" ] || return 0
+  v=$("$bin" version 2>/dev/null | sed -n 's/^mw \([0-9.]*\) .*/\1/p')
+  [ -n "$v" ] && [ "$(printf '%s\n%s\n' "0.3.15" "$v" | sort -V | head -n1)" = "0.3.15" ] || return 0
+  printf '%s' "$input" | "$bin" context --hook-json 2>/dev/null || true
+}
 exe=""
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) exe=".exe" ;; esac
 mwbin="$HOME/.local/bin/mw$exe"; [ -x "$mwbin" ] || mwbin=$(command -v mw 2>/dev/null || true)
 have=$("$mwbin" version 2>/dev/null | sed -n 's/^mw \([0-9.]*\) .*/\1/p')
 if [ -n "$have" ] && [ "$(printf '%s\n%s\n' "$want" "$have" | sort -V | head -n1)" = "$want" ]; then
-  exit 0
+  ctx; exit 0
 fi
 case "$(uname -s)" in Darwin) os=Darwin ;; Linux) os=Linux ;; MINGW*|MSYS*|CYGWIN*) os=Windows ;; *) echo "mw: unsupported OS $(uname -s); see github.com/stormovermars/miniwaves" >&2; exit 0 ;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64 ;; x86_64) arch=x86_64 ;; *) echo "mw: unsupported CPU $(uname -m)" >&2; exit 0 ;; esac
@@ -30,5 +41,5 @@ if [ "$os" = Windows ]; then
 else
   tar -xzf "$tmp/$name" -C "$tmp" mw || exit 0
 fi
-mkdir -p "$HOME/.local/bin" && cp "$tmp/mw$exe" "$HOME/.local/bin/mw$exe" && chmod 755 "$HOME/.local/bin/mw$exe" && echo "mw ${want} installed to ~/.local/bin/mw$exe (add it to PATH if needed)"
-exit 0
+mkdir -p "$HOME/.local/bin" && cp "$tmp/mw$exe" "$HOME/.local/bin/mw$exe" && chmod 755 "$HOME/.local/bin/mw$exe" && echo "mw ${want} installed to ~/.local/bin/mw$exe (add it to PATH if needed)" >&2
+ctx; exit 0
