@@ -9,7 +9,7 @@ import (
 )
 
 // gitW runs git in dir for a test (mw itself never runs git); the test is skipped without git.
-func gitW(t *testing.T, dir string, args ...string) {
+func gitW(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
@@ -18,9 +18,11 @@ func gitW(t *testing.T, dir string, args ...string) {
 		"-c", "protocol.file.allow=always", "-c", "commit.gpgsign=false"}, args...)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
-	if out, err := cmd.CombinedOutput(); err != nil {
+	out, err := cmd.CombinedOutput()
+	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
+	return string(out)
 }
 
 // tmpReal is a fresh temp dir with symlinks resolved (/var vs /private/var on macOS).
