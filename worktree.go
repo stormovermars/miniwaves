@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 )
 
@@ -222,4 +226,131 @@ func worktreeTenant(main *Workspace, args []string) error {
 		return &exitError{code: 2, msg: fmt.Sprintf("tenant %s is not on the main board; run mw tenant add in the main checkout", t.Slug)}
 	}
 	return nil
+}
+
+// wroteTenants are the tenant files this run saved (the worktree sync copies them; reset by resetRunState).
+var wroteTenants = map[string]bool{}
+
+// syncWorktree copies main's board into the worktree's after a command, reads included. A failure is a
+// warning only: the command's exit code stands and the next command heals the copy.
+func syncWorktree(loc boardLoc) {
+	if err := syncBoard(loc.path, loc.wtPath, os.Stderr); err != nil {
+		fmt.Fprintf(os.Stderr, "mw: worktree board not synced: %v\n", err)
+	}
+}
+
+// syncBoard byte-copies main's index and every tenant file the worktree holds or this run wrote into
+// the worktree board. It runs after main's locks are released, under the worktree's own locks, and
+// re-reads main's files (never the command's in-memory board): the last process to sync writes the
+// newest state. A worktree tenant file with events main lacks (from an older mw, MW_WORKTREE=off or
+// before main had the board) is never overwritten; it is reported on errw instead.
+func syncBoard(main, wt string, errw io.Writer) error {
+	want := map[string]bool{}
+	for s := range wroteTenants {
+		want[s] = true
+	}
+	ents, err := os.ReadDir(filepath.Join(filepath.Dir(wt), storeDir))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, e := range ents {
+		if s, ok := strings.CutSuffix(e.Name(), ".json"); ok && validID(s) {
+			want[s] = true
+		}
+	}
+	slugs := make([]string, 0, len(want))
+	for s := range want {
+		slugs = append(slugs, s)
+	}
+	sort.Strings(slugs)
+	unlock, err := lockSet(wt, true, slugs)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	ib, err := readIndexBytes(main)
+	if err != nil {
+		return err
+	}
+	var ix indexDoc
+	if err := json.Unmarshal(ib, &ix); err != nil {
+		return fmt.Errorf("read %s: %w", main, err)
+	}
+	onMain := map[string]bool{}
+	for _, t := range ix.Tenants {
+		onMain[t.Slug] = true
+	}
+	keepIndex := false
+	for _, slug := range slugs {
+		mb, err := readFileShared(tenantPath(main, slug))
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		missing := err != nil
+		wb, err := readFileShared(tenantPath(wt, slug))
+		if err == nil {
+			if bytes.Equal(mb, wb) {
+				continue
+			}
+			ab, _ := readFileShared(archivePath(main, slug))
+			n, err := unsharedEvents(wb, mb, ab)
+			if err != nil {
+				return fmt.Errorf("read %s: %w", tenantPath(wt, slug), err)
+			}
+			if n > 0 {
+				fmt.Fprintf(errw, "mw: worktree board has %d events not on main (%s); not synced\n", n, slug)
+				keepIndex = keepIndex || !onMain[slug]
+				continue
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if missing {
+			continue
+		}
+		if err := writeFileAtomic(tenantPath(wt, slug), mb); err != nil {
+			return err
+		}
+	}
+	if keepIndex { // main's index would drop a tenant whose events are only here
+		return nil
+	}
+	if wb, err := readFileShared(wt); err == nil && bytes.Equal(wb, ib) {
+		return nil
+	}
+	return writeFileAtomic(wt, ib)
+}
+
+// unsharedEvents counts the events of a worktree tenant file that main's tenant and archive files lack
+// (an event is its item id, time, action and actor).
+func unsharedEvents(wtb, mainb, archiveb []byte) (int, error) {
+	var w tenantDoc
+	if err := json.Unmarshal(wtb, &w); err != nil {
+		return 0, err
+	}
+	seen := map[string]bool{}
+	add := func(items []Item) {
+		for _, it := range items {
+			for _, e := range it.Events {
+				seen[it.ID+"\x00"+e.At+"\x00"+e.Action+"\x00"+e.By] = true
+			}
+		}
+	}
+	var m tenantDoc
+	if len(mainb) > 0 && json.Unmarshal(mainb, &m) == nil {
+		add(m.Items)
+	}
+	var a archiveDoc
+	if len(archiveb) > 0 && json.Unmarshal(archiveb, &a) == nil {
+		add(a.Items)
+	}
+	n := 0
+	for _, it := range w.Items {
+		for _, e := range it.Events {
+			if !seen[it.ID+"\x00"+e.At+"\x00"+e.Action+"\x00"+e.By] {
+				n++
+			}
+		}
+	}
+	return n, nil
 }

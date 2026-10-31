@@ -202,7 +202,11 @@ func run(args []string) error {
 		return configureCommand(args[1:])
 	}
 	if args[0] == "migrate" {
-		return migrateCommand(args[1:])
+		err := migrateCommand(args[1:])
+		if workLoc.wtPath != "" {
+			syncWorktree(workLoc)
+		}
+		return err
 	}
 	if args[0] == "boards" {
 		return boardsCommand(args[1:])
@@ -219,6 +223,9 @@ func run(args []string) error {
 			return dirsCommand(nil, "", args[1:])
 		}
 		return err
+	}
+	if loc := workLoc; loc.wtPath != "" { // write-through: copy into the worktree board once main's locks are gone
+		defer syncWorktree(loc)
 	}
 	idx, err := loadScoped(path, false)
 	if err != nil {
