@@ -19,7 +19,7 @@ func TestGrillSkill(t *testing.T) {
 	if !strings.HasPrefix(g, "---\nname: grill\ndescription: ") {
 		t.Errorf("grill frontmatter:\n%.200s", g)
 	}
-	for _, want := range []string{"mw answer ID --accept", "mw log -A --action decide --grep", "mw ask", "mw decide", "mw done", "--on ID"} {
+	for _, want := range []string{"mw answer ID --accept", "mw log -A --action decide --grep", "mw ask", "mw decide", "mw done", "--on ID", "--answerer", "Never run `mw answer`"} {
 		if !strings.Contains(g, want) {
 			t.Errorf("grill skill lacks %q", want)
 		}
