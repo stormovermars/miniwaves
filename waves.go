@@ -526,7 +526,7 @@ func waveCommand(path string, w *Workspace, args []string) error {
 		wv.Status, wv.Updated, wv.Note = "done", now, "closed "+time.Now().Format("2006-01-02")
 		emit(wv, now, "done", value(o, "session", os.Getenv("MW_SESSION")), "closed")
 		unblockDependents(t, wv.ID, now, value(o, "session", os.Getenv("MW_SESSION")))
-		fanfareAfterChange(w, t, true, now)
+		fanfareAfterChange(w, t, wv, true, now)
 		if err := save(path, w); err != nil {
 			return err
 		}
