@@ -350,3 +350,30 @@ type syncBuf struct {
 
 func (s *syncBuf) Write(p []byte) (int, error) { s.mu.Lock(); defer s.mu.Unlock(); return s.b.Write(p) }
 func (s *syncBuf) String() string              { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
+
+// With --since, a board caught mid-write at start is retried like the from-now start.
+func TestLogFollowSinceRetriesLoadAtStart(t *testing.T) {
+	path := followBoard(t)
+	good, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := followStartBackoff
+	followStartBackoff = 100 * time.Millisecond
+	defer func() { followStartBackoff = old }()
+	os.WriteFile(path, []byte("{"), 0o644)
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		os.WriteFile(path, good, 0o644)
+	}()
+	stop := make(chan struct{})
+	var buf syncBuf
+	loop, err := startFollow(map[string]string{"since": "start"}, &buf, &buf, 20*time.Millisecond, stop)
+	if err != nil || loop == nil {
+		t.Fatalf("start did not retry: %v", err)
+	}
+	close(stop)
+	if err := loop(); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -701,11 +701,11 @@ func TestFinaleIcon(t *testing.T) {
 
 func TestFinaleReasonAndSong(t *testing.T) {
 	tn := &Tenant{Slug: "infotool", Name: "infotool", Items: []Item{{Status: "done"}, {Status: "done"}, {Status: "cut"}}}
-	if got := finaleReason(tn); got != "Tenant \"infotool\" finished \u2014 2 items done" {
+	if got := finaleReason(tn, ""); got != "Tenant \"infotool\" finished \u2014 2 items done" {
 		t.Fatal(got)
 	}
 	tn = &Tenant{Slug: "a", Name: "Alpha", Items: []Item{{Status: "done"}}}
-	if got := finaleReason(tn); got != "Tenant \"a\" (Alpha) finished \u2014 1 item done" {
+	if got := finaleReason(tn, ""); got != "Tenant \"a\" (Alpha) finished \u2014 1 item done" {
 		t.Fatal(got)
 	}
 	d := t.TempDir()
@@ -933,14 +933,15 @@ func TestBuiltinFanfareWhenNoPairs(t *testing.T) {
 func TestFinaleReasonNamesLastDone(t *testing.T) {
 	long := strings.Repeat("x", 90)
 	tn := &Tenant{Slug: "a", Name: "a", Items: []Item{
-		{ID: "TSK-001", Title: "one", Status: "done", Updated: "2026-01-01T00:00:01Z"},
-		{ID: "TSK-002", Title: "two", Status: "done", Updated: "2026-01-01T00:00:02Z"},
-		{ID: "TSK-003", Title: long, Status: "done", Updated: "2026-01-01T00:00:03Z"},
-		{ID: "TSK-004", Title: "four", Status: "done", Updated: "2026-01-01T00:00:04Z"},
-		{ID: "TSK-005", Title: "cut", Status: "cut", Updated: "2026-01-01T00:00:09Z"},
+		{ID: "TSK-001", Title: "one", Status: "done", Updated: "2027-01-01T00:00:00Z", Events: []Event{{At: "2026-01-01T00:00:01Z", Action: "done"}}},
+		{ID: "TSK-002", Title: "two", Status: "done", Events: []Event{{At: "2026-01-01T00:00:02Z", Action: "done"}}},
+		{ID: "TSK-003", Title: long, Status: "done", Events: []Event{{At: "2026-01-01T00:00:03Z", Action: "done"}}},
+		{ID: "TSK-004", Title: "four", Status: "done", Events: []Event{{At: "2026-01-01T00:00:04Z", Action: "done"}}},
+		{ID: "TSK-005", Title: "cut", Status: "cut"},
+		{ID: "WAV-009", Title: "wave", Status: "done", Events: []Event{{At: "2026-01-01T00:00:09Z", Action: "done"}}},
 	}}
-	got := finaleReason(tn)
-	want := "Tenant \"a\" finished — 4 items done; last: TSK-004 four, TSK-003 " + strings.Repeat("x", 59) + "…, TSK-002 two"
+	got := finaleReason(tn, "WAV-009")
+	want := "Tenant \"a\" finished — 5 items done; last: TSK-004 four, TSK-003 " + strings.Repeat("x", 59) + "…, TSK-002 two"
 	if got != want {
 		t.Fatalf("got %q\nwant %q", got, want)
 	}
@@ -1043,5 +1044,21 @@ func TestMilestoneNotifiesWhatFinished(t *testing.T) {
 	l = l[1:]
 	if len(l) != 1 || !strings.HasPrefix(l[0], "WS WAV-001 Big wave") || !strings.HasSuffix(l[0], "— done") {
 		t.Fatalf("notes: %q", l)
+	}
+}
+
+func TestNotifyMarkupAndEmptyTitle(t *testing.T) {
+	t.Setenv("MW_FANFARE_PLAYER", "")
+	t.Setenv("MW_FANFARE_NOTIFY", "")
+	has := func(n string) (string, error) { return "/bin/" + n, nil }
+	_, a, ok := notifyCommand("linux", "A & <b>x</b> --flag", has)
+	if !ok || len(a) != 3 || a[0] != "--" || a[2] != "A &amp; &lt;b&gt;x&lt;/b&gt; --flag" {
+		t.Fatalf("%q", a)
+	}
+	if got := itemLabel(&Item{ID: "TSK-001"}); got != "TSK-001" {
+		t.Fatalf("%q", got)
+	}
+	if got := milestoneReason(&Tenant{Slug: "a"}, &Item{ID: "WAV-001"}); got != "A WAV-001 \u2014 done" {
+		t.Fatalf("%q", got)
 	}
 }

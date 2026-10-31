@@ -372,7 +372,7 @@ func finaleMessage(reason, song string, secs int) string {
 }
 
 // finaleReason: why the finale plays for a finished tenant: slug (and name when different) and the done count.
-func finaleReason(t *Tenant) string {
+func finaleReason(t *Tenant, skip string) string {
 	done := 0
 	for _, it := range t.Items {
 		if it.Status == "done" {
@@ -388,24 +388,39 @@ func finaleReason(t *Tenant) string {
 		noun = "item"
 	}
 	r := fmt.Sprintf("Tenant %s finished \u2014 %d %s done", who, done, noun)
-	if last := lastDone(t, 3); len(last) > 0 {
+	if last := lastDone(t, 3, skip); len(last) > 0 {
 		r += "; last: " + strings.Join(last, ", ")
 	}
 	return r
 }
 
 // itemLabel is "ID title" with the title cut to 60 characters.
-func itemLabel(it *Item) string { return it.ID + " " + compactText(it.Title, 60) }
+func itemLabel(it *Item) string {
+	if t := compactText(it.Title, 60); t != "" {
+		return it.ID + " " + t
+	}
+	return it.ID
+}
+
+// doneAt is the time of the item's last "done" event ("" when it has none).
+func doneAt(it *Item) string {
+	for i := len(it.Events) - 1; i >= 0; i-- {
+		if it.Events[i].Action == "done" {
+			return it.Events[i].At
+		}
+	}
+	return ""
+}
 
 // lastDone labels the n most recently finished items, newest first.
-func lastDone(t *Tenant, n int) []string {
+func lastDone(t *Tenant, n int, skip string) []string {
 	var done []*Item
 	for i := range t.Items {
-		if t.Items[i].Status == "done" && t.Items[i].ID != "" {
+		if t.Items[i].Status == "done" && t.Items[i].ID != "" && t.Items[i].ID != skip {
 			done = append(done, &t.Items[i])
 		}
 	}
-	sort.SliceStable(done, func(a, b int) bool { return done[a].Updated > done[b].Updated })
+	sort.SliceStable(done, func(a, b int) bool { return doneAt(done[a]) > doneAt(done[b]) })
 	var out []string
 	for i := 0; i < len(done) && i < n; i++ {
 		out = append(out, itemLabel(done[i]))
@@ -434,9 +449,22 @@ func notifyCommand(goos, msg string, look func(string) (string, error)) (string,
 		return "", nil, false
 	}
 	if _, err := look("notify-send"); err == nil {
-		return "notify-send", []string{"miniwaves", msg}, true
+		return "notify-send", []string{"--", "miniwaves", escapeMarkup(msg)}, true
 	}
 	return "", nil, false
+}
+
+// escapeMarkup: notify-send reads its body as markup, so & < > are escaped.
+func escapeMarkup(s string) string {
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
+}
+
+// finishedWave is the id of the wave whose close finished the tenant ("" otherwise): a wave is not a "last" item.
+func finishedWave(it *Item, waveClosed bool) string {
+	if it == nil || !waveClosed {
+		return ""
+	}
+	return it.ID
 }
 
 func notifyMilestone(msg string) {
@@ -716,7 +744,7 @@ func fanfareAfterChange(w *Workspace, t *Tenant, it *Item, waveClosed bool, now 
 	}
 	if tenantFinished(t) && t.FanfareFinaleAt == "" {
 		t.FanfareFinaleAt = now
-		fanfarePending = &fanfareEvent{"finale", finaleReason(t)}
+		fanfarePending = &fanfareEvent{"finale", finaleReason(t, finishedWave(it, waveClosed))}
 		return
 	}
 	if waveClosed && fanfarePending == nil {

@@ -214,19 +214,26 @@ func startFollow(o map[string]string, out, errw io.Writer, poll time.Duration, s
 		})
 		return all, nil
 	}
-	if hasSince { // tenant selection reads run state: do it now, not on the loop's goroutine
+	// Start: from now takes the cursors; with --since only the tenant is resolved (here, not on the loop's
+	// goroutine, which must read no run state). A board mid-write is retried a few times; a pick error is fatal.
+	first := func() error {
+		if !hasSince {
+			_, err := step()
+			return err
+		}
 		w, err := load(path)
-		if err == nil {
-			err = pick(w)
-		}
 		if err != nil {
-			return nil, err
+			return err
 		}
+		if err := pick(w); err != nil {
+			return &fatalFollowError{err}
+		}
+		return nil
 	}
-	if !hasSince { // from now: take the cursors, deliver nothing; a board mid-write is retried a few times
+	{
 		var err error
 		for i := 0; i < followStartAttempts; i++ {
-			if _, err = step(); err == nil {
+			if err = first(); err == nil {
 				break
 			}
 			var fe *fatalFollowError
