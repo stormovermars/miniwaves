@@ -59,7 +59,10 @@ All off until you turn them on. Details in [USAGE.md](USAGE.md).
 | Uncapped news lists | `mw news --job ID --full -o FILE` (or `-o -`, `--format json\|text`) | leave `--full` off |
 | Personal settings (fanfare, chat bar, discovery) | `mw configure` (or `mw configure KEY=VALUE...`) | `mw user set KEY=` resets a key |
 | Fanfare set | `mw fanfare use NAME` | `mw fanfare use all` |
+| Design questions in rounds, answered with one command (Claude Code skill `mw:grill`; `mw answer ID --accept`, `mw log -A --action decide --grep TEXT`) | installed with the `mw` plugin | none |
 | mw-jobs md files: jobs, news (Claude Code): `/mw-jobs`, `/mw-news`, `/mw-publish`, `/mw-fanfare` | installed with the `mw` plugin (`mw update --plugins`); no setup, it finds your boards | `claude plugin uninstall mw-jobs` |
+
+The `mw:grill` skill builds on Matt Pocock's idea of grilling (a design tree asked in rounds, a recommended answer per question); the wording and the board integration are ours.
 
 To share mw-jobs with your team, install it, then ask Claude Code: "publish the mw-jobs plugin to my organization". It shows every file and asks before sending; an admin may review it first. Colleagues then install it from the organization library.
 
