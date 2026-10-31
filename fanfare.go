@@ -806,7 +806,7 @@ func playClip(w *Workspace, kind, reason string) error {
 		file, secs = p.Finale, c.FinaleSeconds
 		return playFinale(expandHome(c.Dir), file, secs, c.Volume, *c.StopDialog, reason)
 	}
-	if reason != "" && *c.StopDialog { // a banner, never a blocking dialog; stop_dialog=false silences it too
+	if reason != "" { // a banner, never a blocking dialog; independent of stop_dialog (that is the finale's Stop dialog)
 		notifyMilestone(reason)
 	}
 	return playFile(expandHome(c.Dir), file, secs, c.Volume)

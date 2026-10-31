@@ -1030,13 +1030,17 @@ func TestMilestoneNotifiesWhatFinished(t *testing.T) {
 	runAll(t, []string{"reopen", "WAV-001"}, []string{"reopen", "TSK-001"}, []string{"fanfare", "set", "enabled=true", "stop_dialog=false", "dir=" + dir})
 	runAll(t, []string{"done", "TSK-001", "ok"}, step, closeWave)
 	plays(t, log, 1)
-	if l := readNotes(notes, 0); len(l) != 0 {
-		t.Fatalf("notified with stop_dialog=false: %v", l)
+	if l := readNotes(notes, 1); len(l) != 1 { // stop_dialog=false still notifies
+		t.Fatalf("stop_dialog=false must still notify: %v", l)
 	}
 	runAll(t, []string{"reopen", "WAV-001"}, []string{"reopen", "TSK-001"}, []string{"fanfare", "set", "stop_dialog=true"})
 	runAll(t, []string{"done", "TSK-001", "ok"}, step, closeWave)
-	plays(t, log, 2)
-	l := readNotes(notes, 1)
+	plays(t, log, 3)
+	l := readNotes(notes, 2)
+	if len(l) != 2 {
+		t.Fatalf("notes: %q", l)
+	}
+	l = l[1:]
 	if len(l) != 1 || !strings.HasPrefix(l[0], "WS WAV-001 Big wave") || !strings.HasSuffix(l[0], "— done") {
 		t.Fatalf("notes: %q", l)
 	}
