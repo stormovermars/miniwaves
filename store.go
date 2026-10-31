@@ -214,6 +214,7 @@ func save(path string, w *Workspace) error {
 				return err
 			}
 			w.base[t.Slug] = s
+			wroteTenants[t.Slug] = true
 			wrote = true
 		}
 	}

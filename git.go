@@ -59,6 +59,11 @@ func ensureGitExclude(dir string) {
 	if !filepath.IsAbs(p) {
 		p = filepath.Join(dir, p)
 	}
+	appendExclude(p, lockArtifacts)
+}
+
+// appendExclude appends the lines the git exclude file p lacks (idempotent, best effort).
+func appendExclude(p string, lines []string) {
 	have := map[string]bool{}
 	if b, err := os.ReadFile(p); err == nil {
 		for _, l := range strings.Split(string(b), "\n") {
@@ -66,7 +71,7 @@ func ensureGitExclude(dir string) {
 		}
 	}
 	var add []string
-	for _, l := range lockArtifacts {
+	for _, l := range lines {
 		if !have[l] {
 			add = append(add, l)
 		}

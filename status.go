@@ -42,24 +42,8 @@ func statusCwd(stdin io.Reader) string {
 	return mustGetwd()
 }
 
-// statusFindBoard walks up from dir to the nearest board file.
-func statusFindBoard(dir string) string {
-	d, err := filepath.Abs(dir)
-	if err != nil {
-		return ""
-	}
-	for {
-		p := filepath.Join(d, dataFile)
-		if _, err := statShared(p); err == nil {
-			return p
-		}
-		parent := filepath.Dir(d)
-		if parent == d {
-			return ""
-		}
-		d = parent
-	}
-}
+// statusFindBoard is the board for dir (boardPath: the nearest one, in a worktree usually main's).
+func statusFindBoard(dir string) string { return boardPath(dir).path }
 
 // statusLine is the line for the board nearest to cwd, "" when there is nothing to show.
 func statusLine(cwd string, link bool) string {
@@ -68,14 +52,14 @@ func statusLine(cwd string, link bool) string {
 			return ""
 		}
 	}
-	if path := statusFindBoard(cwd); path != "" {
-		w, err := load(path)
+	if loc := boardPath(cwd); loc.path != "" {
+		w, err := load(loc.path)
 		if err != nil {
 			return ""
 		}
 		line := formatStatusLine(statusCounts(w))
 		if link {
-			line = statusLink(line, statusTarget(path, w, cwd))
+			line = statusLink(line, statusTarget(loc.path, w, loc.mapCwd(cwd)))
 		}
 		return line
 	}

@@ -202,7 +202,14 @@ func run(args []string) error {
 		return configureCommand(args[1:])
 	}
 	if args[0] == "migrate" {
-		return migrateCommand(args[1:])
+		err := migrateCommand(args[1:])
+		if workLoc.wtPath != "" {
+			syncWorktree(workLoc)
+		}
+		return err
+	}
+	if args[0] == "link" {
+		return linkCommand(args[1:])
 	}
 	if args[0] == "boards" {
 		return boardsCommand(args[1:])
@@ -220,8 +227,14 @@ func run(args []string) error {
 		}
 		return err
 	}
+	if loc := workLoc; loc.wtPath != "" { // write-through: copy into the worktree board once main's locks are gone
+		defer syncWorktree(loc)
+	}
 	idx, err := loadScoped(path, false)
 	if err != nil {
+		return err
+	}
+	if err := worktreeTenant(idx, args); err != nil {
 		return err
 	}
 	sc := scopeOf(idx, args)
@@ -412,6 +425,13 @@ are in neither). Settings: "statusLine":{"type":"command","command":"mw status -
 on stdin); --link wraps the line in an OSC 8 hyperlink to the published page (jobs.artifact-url) or the file:// URL of jobs.md;
 outside a board it sums the boards up to 2 folder levels below the cwd (no link unless exactly one; cached 30 s in the user cache folder) and prints nothing when there are none;
 prints nothing when status.show is false or on any error; never writes a board; always exits 0.`,
+		"link": `mw link [MAIN_DIR|-] [-j]
+
+Link this separate clone to the main checkout MAIN_DIR: mw then writes MAIN_DIR's
+board and copies it here, as in a git worktree. The link is .git/mw-main (local,
+never committed); MW_MAIN overrides it, MW_MAIN= ignores it. No argument shows the
+link (or "not linked"); - removes it. Refused (exit 2) in a git worktree, which
+shares the main board already. See USAGE.md, "Worktrees and clones".`,
 		"boards": `mw boards [DIR] [--depth N] [--up] [-j]
 Read-only discovery of mw boards: scans DIR (default .) down to --depth (1..6; default: your discover.depth, 4) for
 .miniwaves.json; --up also adds the nearest ancestor board, never looking inside macOS-protected
@@ -689,6 +709,7 @@ Usage:
   mw description [-j]
   mw status --line [--link]             one line for the Claude Code status bar (mw:N2R1B1:12/40); mw status --explain
   mw boards [DIR] [--depth N] [--up] [-j]
+  mw link [MAIN_DIR|-] [-j]
   mw migrate [--dry-run] [PATH]
   mw version [-j]
   mw update [--check] [--plugins]

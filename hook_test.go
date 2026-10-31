@@ -179,13 +179,20 @@ func TestEnsureMwChainsContext(t *testing.T) { // TSK-079
 		os.MkdirAll(bin, 0o755)
 		stub := "#!/bin/sh\ncase \"$1\" in version) echo 'mw " + version + " (stub)';; context) echo \"ctx:$*:$(cat)\";; esac\n"
 		os.WriteFile(filepath.Join(bin, "mw"), []byte(stub), 0o755)
+		// fake curl: the install attempt for an old mw fails offline and records that it ran (never the network)
+		fake := t.TempDir()
+		os.WriteFile(filepath.Join(fake, "curl"), []byte("#!/bin/sh\necho \"$*\" >> '"+filepath.Join(fake, "calls")+"'\nexit 22\n"), 0o755)
 		cmd := exec.Command(bash, script)
-		cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
+		cmd.Env = []string{"HOME=" + home, "PATH=" + fake + ":/usr/bin:/bin"}
 		cmd.Stdin = strings.NewReader(`{"session_id":"s1"}`)
 		out, _ := cmd.CombinedOutput()
+		if _, err := os.Stat(filepath.Join(fake, "calls")); (err == nil) != (version == "0.3.14") {
+			t.Fatalf("%s: install attempt ran=%v", version, err == nil)
+		}
 		return string(out)
 	}
-	if got := run("0.3.14"); strings.Contains(got, "ctx:") { // (the install attempt for the newer plugin version may print a download error) // an mw without --hook-json is never called
+	// an mw without --hook-json is never called: the output is empty or the download note, never ctx:
+	if got := run("0.3.14"); strings.Contains(got, "ctx:") || (got != "" && !strings.HasPrefix(got, "mw: download failed")) {
 		t.Fatalf("old mw: %q", got)
 	}
 	if got := run("0.3.99"); strings.TrimSpace(got) != `ctx:context --hook-json:{"session_id":"s1"}` {
