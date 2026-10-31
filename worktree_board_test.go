@@ -199,3 +199,16 @@ func TestWorktreeReadersFollowMain(t *testing.T) {
 }
 
 func existsT(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// The worktree tenant check prints nothing for a named session (sessions live on main).
+func TestWorktreeTenantCheckQuietForSessions(t *testing.T) {
+	e := wtBoard(t, true)
+	runAll(t, []string{"session", "start", "w1", "-t", "api"})
+	chdirT(t, filepath.Join(e.wt, "api"))
+	t.Setenv("MW_SESSION", "w1")
+	code := -1
+	se := captureFile(t, &os.Stderr, func() { captureOutput(t, func() { code = mainExit([]string{"list"}, os.Stderr) }) })
+	if code != 0 || se != "" {
+		t.Fatalf("list with MW_SESSION: %d %q", code, se)
+	}
+}

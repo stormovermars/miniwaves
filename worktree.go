@@ -202,7 +202,7 @@ func matchDir(p string) string {
 }
 
 // worktreeTenant refuses (exit 2) a command whose tenant, as the worktree's own board selects it from
-// the real cwd, is missing on the main board: its history would split between the two.
+// the real cwd (-t, MW_TENANT or the folder), is missing on the main board: its history would split.
 func worktreeTenant(main *Workspace, args []string) error {
 	if workLoc.wtPath == "" {
 		return nil
@@ -212,8 +212,8 @@ func worktreeTenant(main *Workspace, args []string) error {
 		return nil
 	}
 	o, _, err := options(args[1:])
-	if err != nil {
-		return nil
+	if err != nil || value(o, "tenant", os.Getenv("MW_TENANT")) == "" && value(o, "session", os.Getenv("MW_SESSION")) != "" {
+		return nil // a session's tenant is resolved on main, where sessions live
 	}
 	saved := workLoc
 	workLoc = boardLoc{}
