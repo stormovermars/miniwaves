@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -144,9 +145,11 @@ func answerCommand(path string, w *Workspace, args []string) error {
 	if err := allowOptions(o, "tenant", "session", "by", "accept"); err != nil {
 		return err
 	}
-	t, it, by, ai := answerTarget(w, o, pos[0])
+	t, it, by, ai, err := answerTarget(w, o, pos[0])
+	if err != nil {
+		return err
+	}
 	if !ai { // the human path, unchanged; a refused session gets today's refusal
-		var err error
 		if by, err = humanName("mw answer", o); err != nil {
 			return err
 		}
@@ -250,13 +253,15 @@ func decideCommand(path string, w *Workspace, args []string) error {
 // allSessions is every session of the board: those of the loaded tenants plus, read once and only when asked,
 // those of the tenants this command did not load (a coordinator on one tenant answers workers on another).
 func (w *Workspace) allSessions() []Session {
-	if !w.otherDone {
+	// An ask is judged in a loaded tenant by the asker's record in the same tenant file, so without an answerer on a
+	// loaded session the other tenants cannot matter; and a file without sessions holds none.
+	if !w.otherDone && (w.wantOthers || loadedAnswerer(w)) {
 		w.otherDone = true
 		for _, t := range w.Tenants {
 			if t.loaded || w.path == "" {
 				continue
 			}
-			if b, err := readFileShared(tenantPath(w.path, t.Slug)); err == nil {
+			if b, err := readFileShared(tenantPath(w.path, t.Slug)); err == nil && bytes.Contains(b, []byte(`"session`)) {
 				var td tenantDoc
 				if json.Unmarshal(b, &td) == nil {
 					w.otherSess = append(w.otherSess, td.Sessions...)
@@ -265,6 +270,15 @@ func (w *Workspace) allSessions() []Session {
 		}
 	}
 	return append(append([]Session{}, w.Sessions...), w.otherSess...)
+}
+
+func loadedAnswerer(w *Workspace) bool {
+	for _, s := range w.Sessions {
+		if s.Answerer != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // liveAnswerer is the answerer of the session that made ask e in tenant (an id may sit in two tenant files: the
@@ -293,10 +307,10 @@ func liveAnswerer(sessions []Session, tenant string, e Event) string {
 // The tenant is -t, else the one (any tenant) whose item ID has such an ask; two matches are ambiguous. ai is false
 // in every other case (no -s/MW_SESSION, --by given, no open ask, not the answerer, a stopped answerer, its own ask),
 // so the caller takes the human path and its refusals. It prints nothing.
-func answerTarget(w *Workspace, o map[string]string, id string) (*Tenant, *Item, string, bool) {
+func answerTarget(w *Workspace, o map[string]string, id string) (*Tenant, *Item, string, bool, error) {
 	caller := value(o, "session", os.Getenv("MW_SESSION"))
 	if caller == "" || strings.TrimSpace(o["by"]) != "" {
-		return nil, nil, "", false
+		return nil, nil, "", false, nil
 	}
 	sessions := w.allSessions()
 	var ft *Tenant
@@ -312,15 +326,15 @@ func answerTarget(w *Workspace, o map[string]string, id string) (*Tenant, *Item,
 		}
 		if ask, ok := openAsk(*it); ok && ask.By != caller && liveAnswerer(sessions, t.Slug, ask) == caller {
 			if fi != nil {
-				return nil, nil, "", false
+				return nil, nil, "", false, fmt.Errorf("%s is in several tenants; add -t SLUG", it.ID)
 			}
 			ft, fi = t, it
 		}
 	}
 	if fi == nil {
-		return nil, nil, "", false
+		return nil, nil, "", false, nil
 	}
-	return ft, fi, caller, true
+	return ft, fi, caller, true, nil
 }
 
 // answererStamp is the time an answerer is set ("" without one).
@@ -333,6 +347,7 @@ func answererStamp(answerer, now string) string {
 
 // answererCycle refuses an answerer that is the session itself or whose own answerer chain (any tenant) leads back to it.
 func answererCycle(w *Workspace, id, answerer string) error {
+	w.wantOthers = true
 	sessions := w.allSessions()
 	for seen, p := 0, answerer; p != "" && seen <= len(sessions); seen++ {
 		if p == id {

@@ -187,3 +187,47 @@ func TestAnswererSprintNeeds(t *testing.T) {
 		}
 	}
 }
+
+func ageSession(t *testing.T, path, id string) {
+	t.Helper()
+	w, _ := load(path)
+	s, _ := sessionByID(w, id)
+	s.Updated = "2020-01-01T00:00:00Z"
+	if err := save(path, w); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// reap counts an answer or decide event of the session as activity: an answerer that only answers is not reaped.
+func TestReapSparesAnswerer(t *testing.T) {
+	path := crossBoard(t)
+	runAll(t, []string{"session", "start", "idle", "-t", "job"})
+	runAll(t, []string{"ask", "TSK-001", "q?", "-t", "app", "-s", "wk"}, []string{"answer", "TSK-001", "yes", "-s", "boss"})
+	ageSession(t, path, "boss")
+	ageSession(t, path, "idle")
+	runAll(t, []string{"session", "reap", "-t", "job", "--older-than", "2h"}) // job only: the answer sits on app
+	w, _ := load(path)
+	if s, _ := sessionByID(w, "boss"); s.State == "stopped" {
+		t.Fatal("an answerer that answered recently must not be reaped")
+	}
+	if s, _ := sessionByID(w, "idle"); s.State != "stopped" {
+		t.Fatal("a session with no activity is still reaped")
+	}
+}
+
+// An item id that matches an answerable ask in two tenants is refused, not guessed.
+func TestAnswererAmbiguousID(t *testing.T) {
+	crossBoard(t)
+	runAll(t,
+		[]string{"tenant", "add", "app2", "App2"},
+		[]string{"add", "task", "Other", "-t", "app2", "-S", "ready"},
+		[]string{"session", "start", "wk2", "-t", "app2", "--answerer", "boss"},
+		[]string{"ask", "TSK-001", "a?", "-t", "app", "-s", "wk"},
+		[]string{"ask", "TSK-001", "b?", "-t", "app2", "-s", "wk2"},
+	)
+	err := run([]string{"answer", "TSK-001", "x", "-s", "boss"})
+	if err == nil || err.Error() != "TSK-001 is in several tenants; add -t SLUG" {
+		t.Fatalf("ambiguous id: %v", err)
+	}
+	runAll(t, []string{"answer", "TSK-001", "x", "-s", "boss", "-t", "app2"})
+}

@@ -167,11 +167,12 @@ type Workspace struct {
 	Fanfare      *FanfareConfig       `json:"fanfare,omitempty"`
 	Jobs         map[string]JobConfig `json:"jobs,omitempty"` // coordinated jobs: config by job id (mw jobs)
 
-	path      string    // the index file, to read the sessions of tenants this command did not load
-	otherSess []Session // those sessions, read once (allSessions)
-	otherDone bool
-	base      map[string]string // sha of each loaded tenant file as read (save writes only what changed)
-	indexBase string
+	path       string    // the index file, to read the sessions of tenants this command did not load
+	otherSess  []Session // those sessions, read once (allSessions)
+	otherDone  bool
+	wantOthers bool              // read the unloaded tenants even when no loaded session has an answerer (the cycle check)
+	base       map[string]string // sha of each loaded tenant file as read (save writes only what changed)
+	indexBase  string
 }
 
 type itemBrief struct {
