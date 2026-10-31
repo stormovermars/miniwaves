@@ -30,7 +30,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "accept": true, "action": true, "grep": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -521,8 +521,10 @@ Job ids match ^[a-z0-9][a-z0-9-]{0,31}$. Example: mw jobs enable tiny -t sheet,d
 Record a question that needs a human, as an "ask" event on the item (any board, no gate; the status is unchanged).
 It stays open until an answer follows it on the same item. mw review shows it as "needs you" (-j: needs), and so does mw board.`,
 		"answer": `mw answer ID TEXT... --by NAME [-t SLUG]
+mw answer ID --accept --by NAME [-t SLUG]
 Human only (refused under MW_SESSION or -s; --by NAME when stdin is not a terminal). Appends an "answer" event that
-closes the item's open ask; refused when the item has none.`,
+closes the item's open ask; refused when the item has none. --accept takes the ask as asked: it first records a
+"decide" event "accepted: <the ask>" on the item, then the answer "accepted".`,
 		"decide": `mw decide TEXT... [--by NAME] [-s SESSION] [-b WHY] [-p ID] [-t SLUG]
 Open to humans and sessions: with -s (or MW_SESSION) the event is recorded by that session and --by NAME is kept in the
 note as "(for NAME)"; else by --by NAME (required when stdin is not a terminal), else the login name. Record a decision as a "decide" event on item ID (-p), else on the tenant's "Decisions" chore, which is created
@@ -983,7 +985,7 @@ func options(args []string) (map[string]string, []string, error) {
 		if key == "" || !validOptions[key] {
 			return nil, nil, fmt.Errorf("unknown option %s", a)
 		}
-		if key == "json" || key == "explain" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "md" || key == "archived" || key == "follow" || key == "exec" {
+		if key == "json" || key == "explain" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "md" || key == "archived" || key == "follow" || key == "exec" || key == "accept" {
 			o[key] = "true"
 			continue
 		}

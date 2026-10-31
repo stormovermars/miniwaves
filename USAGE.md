@@ -117,6 +117,7 @@ mw gate [-t SLUG] [-j] | mw gate level trust|proof|spec|judged [-t SLUG] [--work
 mw version [-j]   # {version, schema, board_schema, board}: nearest workspace and its schema (null if none)
 mw ask ID QUESTION... [-t SLUG] [-s NAME]   # a question for a human, as an event (see "Needs you and decisions")
 mw answer ID TEXT... --by NAME [-t SLUG]   # human only; closes the item's open ask
+mw answer ID --accept --by NAME [-t SLUG]   # human only; takes the open ask as asked: a decide "accepted: ASK", then the answer "accepted"
 mw decide TEXT... [--by NAME] [-s SESSION] [-b WHY] [-p ID] [-t SLUG]   # a decision event on ID, else on the tenant's "Decisions" chore
 mw user show [-j] | get [KEY] [-j] | set KEY=VALUE...   # per-user config (see "Per-user config")
 mw status --explain [--plugins DIR]    # explain the line, settings, versions, commands (/mw-status)
@@ -295,7 +296,7 @@ block/done note.
 `ask`, `answer` and `decide` append item events (`ask`, `answer`, `decide`; see PROTOCOL.md). They work on any board: there is no gate and no job is needed, and they never change an item's status.
 
 - `mw ask ID QUESTION... [-s NAME]` records a question for a human. Any session may ask.
-- `mw answer ID TEXT... --by NAME` is human only, like `accept`: it is refused under `MW_SESSION` or `-s`, and `--by` is required when stdin is not a terminal. It is refused when the item has no open ask.
+- `mw answer ID TEXT... --by NAME` is human only, like `accept`: it is refused under `MW_SESSION` or `-s`, and `--by` is required when stdin is not a terminal. It is refused when the item has no open ask. `--accept` (no text) records a `decide` event "accepted: <the open ask>" on the item and then the `answer` "accepted": one command settles a digest ask whose recommendations Sir takes as they are.
 - An **open ask** is the last `ask` of an item with no later `answer` and no later final event (`done`, `accept`) on that item (one answer closes every earlier ask). `mw done` prints `closed open ask from AGO: QUESTION` when it closes one; a `reopen` does not revive it, an `ask` after the final event is open.
 - **N and B.** N (needs you) counts an item with an open ask, or a blocked item with no dependency; B counts a blocked item whose `mw block --on ID` names an open item. An item is counted once (ask, then review, then N/B), and a block on a done item counts as no dependency.
 - `mw review` shows open asks as `needs you`, `mw review -j` and `mw board -j` gain `needs` (`[{tenant, item, question, by, at}]`, always an array), and the text `mw board` prints a `NEEDS YOU` block.

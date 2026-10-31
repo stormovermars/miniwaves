@@ -110,10 +110,11 @@ func answerCommand(path string, w *Workspace, args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(pos) < 2 {
-		return errors.New("usage: mw answer ID TEXT... --by NAME [-t SLUG]")
+	accept := o["accept"] == "true"
+	if len(pos) < 2 && !(accept && len(pos) == 1) || accept && len(pos) > 1 {
+		return errors.New("usage: mw answer ID TEXT... --by NAME [-t SLUG] | mw answer ID --accept --by NAME [-t SLUG]")
 	}
-	if err := allowOptions(o, "tenant", "session", "by"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "by", "accept"); err != nil {
 		return err
 	}
 	by, err := humanName("mw answer", o)
@@ -129,13 +130,18 @@ func answerCommand(path string, w *Workspace, args []string) error {
 		return err
 	}
 	text := strings.TrimSpace(strings.Join(pos[1:], " "))
-	if text == "" {
+	if text == "" && !accept {
 		return errors.New("the answer must not be blank")
 	}
-	if _, ok := openAsk(*it); !ok {
+	ask, ok := openAsk(*it)
+	if !ok {
 		return fmt.Errorf("%s has no open question", it.ID)
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
+	if accept { // the whole ask is the decision: it stays findable with mw log --action decide
+		emit(it, now, "decide", by, "accepted: "+ask.Note)
+		text = "accepted"
+	}
 	emit(it, now, "answer", by, text)
 	it.Updated = now
 	if err := save(path, w); err != nil {
