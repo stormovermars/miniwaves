@@ -143,6 +143,7 @@ type Session struct {
 	// ClaudeSession is the Claude Code session id recorded by mw session start --claude-session, so that
 	// mw context --hook-json can find this session from the SessionStart hook's stdin. A session-record
 	// field (omitempty; older binaries ignore it), not an item field: the schema is unchanged.
+	// An older mw (<0.3.15) drops it when it rewrites the board: re-run mw session start NAME --claude-session ID.
 	ClaudeSession string `json:"claude_session,omitempty"`
 }
 
