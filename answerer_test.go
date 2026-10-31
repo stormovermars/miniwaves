@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -112,5 +113,45 @@ func TestAnswererAnswers(t *testing.T) {
 	runAll(t, []string{"ask", "TSK-001", "again", "-s", "worker"}, []string{"session", "stop", "parent"})
 	if got := refusal("answer", "TSK-001", "x", "-s", "parent"); got != human {
 		t.Fatalf("stopped answerer: %q", got)
+	}
+}
+
+func TestAnswererNeedsRouting(t *testing.T) {
+	path := answererBoard(t)
+	runAll(t, []string{"ask", "TSK-001", "which format?", "-s", "worker"}, []string{"ask", "TSK-002", "human asks"})
+	// only the human ask counts for the human; the worker's ask is listed for its answerer
+	if n := reviewNeeds(t); len(n) != 1 || n[0].Item != "TSK-002" {
+		t.Fatalf("human needs: %+v", n)
+	}
+	var d struct {
+		For []needRow `json:"for_answerers"`
+	}
+	if err := json.Unmarshal([]byte(captureOutput(t, func() { runAll(t, []string{"review", "-j"}) })), &d); err != nil || len(d.For) != 1 || d.For[0].Item != "TSK-001" || d.For[0].For != "parent" {
+		t.Fatalf("for_answerers: %+v %v", d.For, err)
+	}
+	for _, cmd := range []string{"review", "board"} {
+		out := captureOutput(t, func() { runAll(t, []string{cmd}) })
+		if !strings.Contains(out, "for parent") || strings.Count(out, "which format?") != 1 {
+			t.Fatalf("%s text:\n%s", cmd, out)
+		}
+	}
+	w, _ := load(path)
+	if c := statusCounts(w); c.Needs != 1 {
+		t.Fatalf("status N must count only the human ask: %+v", c)
+	}
+	md := captureOutput(t, func() { runAll(t, []string{"board", "--md", "-o", "-"}) })
+	needsPart, _, _ := strings.Cut(md, "### For answerers")
+	if !strings.Contains(md, "### For answerers") || !strings.Contains(md, "for parent: which format?") || strings.Contains(needsPart, "which format?") {
+		t.Fatalf("jobs md:\n%s", md)
+	}
+
+	// (a) a stopped answerer: the ask falls back to the human list
+	runAll(t, []string{"session", "stop", "parent"})
+	if n := reviewNeeds(t); len(n) != 2 {
+		t.Fatalf("stopped answerer must not orphan the ask: %+v", n)
+	}
+	w, _ = load(path)
+	if c := statusCounts(w); c.Needs != 2 {
+		t.Fatalf("status N after the answerer stopped: %+v", c)
 	}
 }

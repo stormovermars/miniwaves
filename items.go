@@ -1132,28 +1132,29 @@ func activityLine(t *Tenant) string {
 
 // boardDoc is the -j form of the board.
 type boardDoc struct {
-	Last     string                 `json:"last"`
-	LastAt   string                 `json:"last_at,omitempty"`
-	Today    int                    `json:"today_done"`
-	Tenant   string                 `json:"tenant"`
-	Name     string                 `json:"name"`
-	Done     int                    `json:"done"`
-	Total    int                    `json:"total"`
-	Archived int                    `json:"archived,omitempty"`
-	Tags     []string               `json:"tags,omitempty"`
-	Percent  int                    `json:"percent"`
-	Level    string                 `json:"level"`
-	Gates    map[string]bool        `json:"gates"`
-	Sessions []string               `json:"sessions"`
-	Waves    []waveRow              `json:"waves"`
-	States   map[string][]itemBrief `json:"states"`
-	Needs    []needRow              `json:"needs"`
+	Last         string                 `json:"last"`
+	LastAt       string                 `json:"last_at,omitempty"`
+	Today        int                    `json:"today_done"`
+	Tenant       string                 `json:"tenant"`
+	Name         string                 `json:"name"`
+	Done         int                    `json:"done"`
+	Total        int                    `json:"total"`
+	Archived     int                    `json:"archived,omitempty"`
+	Tags         []string               `json:"tags,omitempty"`
+	Percent      int                    `json:"percent"`
+	Level        string                 `json:"level"`
+	Gates        map[string]bool        `json:"gates"`
+	Sessions     []string               `json:"sessions"`
+	Waves        []waveRow              `json:"waves"`
+	States       map[string][]itemBrief `json:"states"`
+	Needs        []needRow              `json:"needs"`
+	ForAnswerers []needRow              `json:"for_answerers,omitempty"`
 }
 
 func boardData(t *Tenant, sessions []Session, full bool, gs []gateInfo) boardDoc {
 	judgeOn := byName(gs, "judge").Effective
 	at, id, act := lastActivity(t)
-	d := boardDoc{LastAt: at, Today: doneToday(t), Tenant: t.Slug, Name: t.Name, Tags: t.Tags, Level: levelOf(gs), Gates: effectiveMap(gs), Sessions: []string{}, Waves: []waveRow{}, States: map[string][]itemBrief{}, Needs: needsOf(t)}
+	d := boardDoc{LastAt: at, Today: doneToday(t), Tenant: t.Slug, Name: t.Name, Tags: t.Tags, Level: levelOf(gs), Gates: effectiveMap(gs), Sessions: []string{}, Waves: []waveRow{}, States: map[string][]itemBrief{}, Needs: needsOf(sessions, t), ForAnswerers: answererNeeds(sessions, t)}
 	for _, it := range t.Items {
 		if it.Kind == "wave" {
 			if full || it.Status != "done" {
@@ -1217,10 +1218,15 @@ func printBoardJ(t *Tenant, sessions []Session, full bool, gates string, judgeOn
 		fmt.Println(gates)
 	}
 	fmt.Println()
-	needs := needsOf(t)
+	needs := needsOf(sessions, t)
+	forAnswerers := answererNeeds(sessions, t)
 	if len(needs) > 0 {
 		fmt.Printf("NEEDS YOU (%d)\n", len(needs))
 		printNeeds(needs)
+		fmt.Println()
+	}
+	if len(forAnswerers) > 0 {
+		printAnswererNeeds("FOR ANSWERERS", forAnswerers)
 		fmt.Println()
 	}
 	shownWaves := false
@@ -1280,7 +1286,7 @@ func printBoardJ(t *Tenant, sessions []Session, full bool, gates string, judgeOn
 		}
 		fmt.Println()
 	}
-	if !full && !shownAny && !shownWaves && len(needs) == 0 {
+	if !full && !shownAny && !shownWaves && len(needs) == 0 && len(forAnswerers) == 0 {
 		fmt.Println("quiet")
 	}
 }

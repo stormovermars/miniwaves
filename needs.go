@@ -18,6 +18,7 @@ type needRow struct {
 	Question string `json:"question" toon:"question"`
 	By       string `json:"by" toon:"by"`
 	At       string `json:"at" toon:"at"`
+	For      string `json:"for,omitempty" toon:"for,omitempty"` // the answerer session, on rows of for_answerers
 }
 
 // finalAction is true for the events that move an item to its final state (done; accept also finishes it).
@@ -48,15 +49,40 @@ func printClosedAsk(it *Item) {
 	}
 }
 
-// needsOf lists the open asks of a tenant, in item order.
-func needsOf(t *Tenant) []needRow {
+// needsOf lists the open asks of a tenant that wait for a human, in item order. An ask by a session whose
+// answerer is live is listed by answererNeeds instead.
+func needsOf(sessions []Session, t *Tenant) []needRow {
 	rows := []needRow{}
 	for _, it := range t.Items {
-		if e, ok := openAsk(it); ok {
-			rows = append(rows, needRow{t.Slug, it.ID, e.Note, e.By, e.At})
+		if e, ok := openAsk(it); ok && liveAnswerer(sessions, e.By) == "" {
+			rows = append(rows, needRow{t.Slug, it.ID, e.Note, e.By, e.At, ""})
 		}
 	}
 	return rows
+}
+
+// answererNeeds lists the open asks that wait for a session (the asker's live answerer), not for a human.
+func answererNeeds(sessions []Session, t *Tenant) []needRow {
+	var rows []needRow
+	for _, it := range t.Items {
+		if e, ok := openAsk(it); ok {
+			if a := liveAnswerer(sessions, e.By); a != "" {
+				rows = append(rows, needRow{t.Slug, it.ID, e.Note, e.By, e.At, a})
+			}
+		}
+	}
+	return rows
+}
+
+// printAnswererNeeds writes the asks that wait for an answerer session, under the needs-you block.
+func printAnswererNeeds(label string, rows []needRow) {
+	if len(rows) == 0 {
+		return
+	}
+	fmt.Printf("%s (%d)\n", label, len(rows))
+	for _, r := range rows {
+		fmt.Printf("  %-8s %s @%s  for %s  %s\n", r.Item, compactText(r.Question, 90), displayName(r.By), r.For, ago(r.At))
+	}
 }
 
 // printNeeds writes the "needs you" block of the text board and review (rows indented by two).
@@ -238,19 +264,23 @@ func answererCycle(w *Workspace, id, answerer string) error {
 	return nil
 }
 
-// liveAnswerer is the answerer of session by when that answerer is a registered session that is not stopped ("" otherwise).
-func liveAnswerer(w *Workspace, by string) string {
-	if by == "" {
+// liveAnswerer is the answerer of session by (in sessions) when that answerer is a registered session that is not stopped ("" otherwise).
+func liveAnswerer(sessions []Session, by string) string {
+	var ans string
+	for _, s := range sessions {
+		if s.ID == by {
+			ans = s.Answerer
+		}
+	}
+	if by == "" || ans == "" {
 		return ""
 	}
-	s, err := sessionByID(w, by)
-	if err != nil || s.Answerer == "" {
-		return ""
+	for _, s := range sessions {
+		if s.ID == ans && s.State != "stopped" {
+			return ans
+		}
 	}
-	if a, err := sessionByID(w, s.Answerer); err != nil || a.State == "stopped" {
-		return ""
-	}
-	return s.Answerer
+	return ""
 }
 
 // answerTarget finds the item for a session that is the registered answerer of the session that made its open ask.
@@ -270,7 +300,7 @@ func answerTarget(w *Workspace, o map[string]string, id string) (*Tenant, *Item,
 		return nil, nil, "", false
 	}
 	ask, ok := openAsk(*it)
-	if !ok || ask.By == caller || liveAnswerer(w, ask.By) != caller {
+	if !ok || ask.By == caller || liveAnswerer(w.Sessions, ask.By) != caller {
 		return nil, nil, "", false
 	}
 	return t, it, caller, true
