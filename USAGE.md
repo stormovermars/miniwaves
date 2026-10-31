@@ -129,7 +129,7 @@ mw judge ID [-t SLUG]
 mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]
 mw list [-t SLUG] [-k KIND] [-S STATUS] [-n N] [-j] [-v]
 mw list -A [-s SESSION] [-k KIND] [-S STATUS] [-n N] [-j] [-v]   # every tenant; -s = items that session owns (no waves)
-mw show ID [-t SLUG] [-j] [-v] [--full]   # full brief: body, acceptance + source, evidence dir, children, notes (always whole), last 5 events (notes cut at 90 chars); --full = every event, notes whole (also with -j); falls back to the archive; -j ignores -v
+mw show ID [-t SLUG] [-j] [-v] [--full]   # full brief: body, acceptance + source, evidence dir, children, notes (always whole), last 5 events plus every reject/answer/decide event (notes cut at 90 chars); --full = every event, notes whole (also with -j); falls back to the archive; -j ignores -v
 mw reopen ID [-t SLUG] [-m REASON]   # back to inbox; optional -m REASON is kept on the reopen event (mw show events, -j, mw log)
 mw ready|reopen ID [-t SLUG] [-s NAME]
 mw start ID [-t SLUG] [-s NAME] [-a ROLE]   # inbox/ready only (or your own item); -a ROLE registers a missing session with that role

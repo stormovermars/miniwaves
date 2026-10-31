@@ -206,6 +206,19 @@ type briefDoc struct {
 
 const eventsTail = 5
 
+// briefEvents is the event list a brief shows. TSK-080: every reject, answer and decide event is kept
+// (a send-back reason or a decision must not fall out of the brief); the rest stay capped at the last
+// eventsTail. Chronological order is preserved.
+func briefEvents(evs []Event) []Event {
+	out := []Event{}
+	for i, e := range evs {
+		if i >= len(evs)-eventsTail || e.Action == "reject" || e.Action == "answer" || e.Action == "decide" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func countEvidence(dir string) int {
 	root := dir
 	if r, err := filepath.EvalSymlinks(dir); err == nil {
@@ -247,13 +260,7 @@ func briefOf(w *Workspace, t *Tenant, it Item, verbose bool) briefDoc {
 		}
 	}
 	d.Notes = append(d.Notes, it.Notes...)
-	d.Events = it.Events
-	if len(d.Events) > eventsTail {
-		d.Events = d.Events[len(d.Events)-eventsTail:]
-	}
-	if d.Events == nil {
-		d.Events = []Event{}
-	}
+	d.Events = briefEvents(it.Events)
 	if verbose {
 		d.Created, d.Updated = it.Created, it.Updated
 	}

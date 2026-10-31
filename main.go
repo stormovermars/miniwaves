@@ -513,7 +513,7 @@ Waves are listed apart: text gains a waves section when any match; -j always pri
 items that session owns.`,
 		"show": `mw show ID [-t SLUG] [-j] [-v] [--full]
 One call, everything: title, parent/wave/session, body, effective acceptance and where it comes
-from, evidence folder (path + file count), children with status, notes (always in full), the last 5 events
+from, evidence folder (path + file count), children with status, notes (always in full), the last 5 events plus every reject/answer/decide event
 (each event note cut to 90 characters). --full shows every event with its note in full (also with -j).
 -v adds raw timestamps (ignored with -j). Falls back to the archive (mw archive) for archived items.
 Example: mw show TSK-001`,
