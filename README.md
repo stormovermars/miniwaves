@@ -20,7 +20,7 @@ Upgrade: `mw update` (checks GitHub releases, verifies the checksum, replaces th
 - `mw update --plugins` alone (re)installs or updates just the plugins `mw` and `mw-jobs`, then removes the retired `tidewatch` and `mw-watch` (only after the install succeeded).
 - `MW_NO_PLUGINS=1` skips the plugin step in `install.sh`, `install.ps1` and `mw update`.
 - `MW_INSTALL_FILE=<path>` makes `install.sh` / `install.ps1` install a local `mw` binary (or a `.tar.gz` / `.zip` holding it) instead of downloading a release; checksum verification is skipped (CI smoke tests).
-- No Claude Code, or the binary only: `go install github.com/stormovermars/miniwaves@latest` (the binary is named `miniwaves`). By hand: `claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves mw-jobs@miniwaves`.
+- No Claude Code, or the binary only: `go install github.com/stormovermars/miniwaves/cmd/mw@latest` (the binary is named `mw`). By hand: `claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves mw-jobs@miniwaves`.
 
 Open the jobs view: run `/mw-jobs` (or `/mw-news`; `/mw-publish` for a claude.ai artifact; fanfare: `/mw-fanfare`). It renders `jobs.md` with `mw board --md` and the Claude desktop app shows it in its file pane. No panes. Fanfare is switched on with defaults at install (change it with `mw configure`). `mw-watch` (formerly `tidewatch`) is retired; mw-jobs replaces it.
 
