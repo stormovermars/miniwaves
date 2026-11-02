@@ -515,7 +515,7 @@ mw fanfare sets drop NAME [PAIR...]
 mw fanfare use NAME|all
 mw fanfare stop
 Play a short clip when a wave closes and a longer finale when a tenant is finished (items exist, none inbox/ready/doing/blocked, no open wave; once per transition).
-Sound only: no banner, dialog or notification. Playback is a detached player (afplay, ffplay, mpv, paplay, Windows .wav) and never fails a board command; Ctrl-C does not stop a finale, "mw fanfare stop" does. A milestone or finale needs 2 or more items; a lone task gets the task beep (at most one per 15 s). "fetch" downloads public-domain, CC0 and CC-BY pairs; the
+Sound only: no banner, dialog or notification. Playback is a detached player (afplay, ffplay, mpv, paplay, Windows .wav) and never fails a board command; Ctrl-C does not stop a finale, "mw fanfare stop" does. A milestone or finale needs 2 or more items; a lone task gets the task beep (at most one per second). One clip at a time: a new milestone or finale stops the one playing. "fetch" downloads public-domain, CC0 and CC-BY pairs; the
 bring-your-own pair folders stay empty until you add fanfare.<ext> and finale.<ext>. Example: mw fanfare set enabled=true`,
 		"news": `mw news [--job ID] [--full] [--format md|html|text|json] [--tenant SLUG] [-o PATH|-] [-j]
 mw news --job ID --release [--force] [--format ...] [-j]

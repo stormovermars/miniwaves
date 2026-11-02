@@ -624,13 +624,13 @@ func TestFanfarePlayingKeys(t *testing.T) {
 	rs := readPlayers(dir)
 	writePlayers(dir, append(rs, playerRec{PID: 1, Stamp: "stale", Kind: "finale"}))
 	before, _ := os.ReadFile(playersPath(dir))
-	if n, f := playingState(dir); n != 2 || !f {
-		t.Fatalf("both: %d %v", n, f)
+	if n, f := playingState(dir); n != 1 || !f { // the finale stopped the milestone; the stale record is not counted
+		t.Fatalf("finale only: %d %v", n, f)
 	}
 	if after, _ := os.ReadFile(playersPath(dir)); !bytes.Equal(before, after) {
 		t.Fatal("playingState rewrote the file")
 	}
-	if rs[0].Kind != "milestone" || rs[1].Kind != "finale" {
+	if len(rs) != 1 || rs[0].Kind != "finale" {
 		t.Fatalf("kinds: %+v", rs)
 	}
 	stopPlayers(dir)
@@ -783,11 +783,11 @@ func TestBeepCoalescedAcrossBoards(t *testing.T) {
 	if !beepDue(now) {
 		t.Fatal("first beep must sound")
 	}
-	if beepDue(now.Add(5 * time.Second)) {
-		t.Fatal("beep within 15 s must be skipped")
+	if beepDue(now.Add(500 * time.Millisecond)) {
+		t.Fatal("beep within 1 s must be skipped")
 	}
-	if !beepDue(now.Add(16 * time.Second)) {
-		t.Fatal("beep after 15 s must sound")
+	if !beepDue(now.Add(2 * time.Second)) {
+		t.Fatal("beep after 1 s must sound")
 	}
 	beepStampPath = func() string { return filepath.Join(t.TempDir(), "f", "g") + "/\x00" } // unwritable: just beep
 	if !beepDue(now) || !beepDue(now) {
@@ -828,5 +828,34 @@ func TestNoNotificationCodeInSources(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// One clip at a time: starting a clip stops the one still playing (the newest wins).
+func TestNewClipStopsPrevious(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a sh stub player")
+	}
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "player.sh")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MW_FANFARE_PLAYER", stub)
+	clip := filepath.Join(dir, "a.mp3")
+	_ = os.WriteFile(clip, []byte("x"), 0o644)
+	first, err := startPlayer(dir, clip, 15, 1, "milestone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopPlayers(dir)
+	second, err := startPlayer(dir, clip, 60, 1, "finale")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the killed first player stays a zombie of this test process (no Wait), so check the records
+	rs := readPlayers(dir)
+	if len(rs) != 1 || rs[0].PID != second || rs[0].Kind != "finale" || first == second {
+		t.Fatalf("want only the finale recorded, got %+v", rs)
 	}
 }

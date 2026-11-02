@@ -411,7 +411,7 @@ func soundAllowed(boardPath string) bool {
 }
 
 // beepInterval: the task beep sounds at most once per this long across all boards.
-const beepInterval = 15 * time.Second
+const beepInterval = time.Second
 
 // beepStampPath is the timestamp file shared by all boards (var so tests can point it elsewhere).
 var beepStampPath = func() string {
@@ -452,11 +452,14 @@ func beepTask(coalesce bool) bool {
 	return true
 }
 
+// startPlayer starts a milestone or finale clip. One clip at a time: a clip still playing is stopped first
+// (the newest wins). Task beeps are not recorded, so they never stop a clip.
 func startPlayer(dir, file string, secs int, vol float64, kind string) (int, error) {
 	name, args, err := playerCommand(runtime.GOOS, file, secs, vol, lookPath)
 	if err != nil {
 		return 0, err
 	}
+	stopPlayers(dir)
 	pid, err := startDetached(name, args, nil)
 	if err != nil {
 		return 0, err

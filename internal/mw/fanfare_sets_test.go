@@ -65,6 +65,7 @@ func TestFanfarePickLimitedToSet(t *testing.T) {
 	runAll(t, []string{"fanfare", "sets", "add", "only-b", "b", "star-wars"}, []string{"fanfare", "use", "only-b"})
 	for i := 0; i < 6; i++ {
 		runAll(t, []string{"fanfare", "test"})
+		plays(t, log, i+1) // a new clip stops the previous one: let each stub log first
 	}
 	for _, l := range plays(t, log, 6) {
 		if !strings.Contains(l, "/b/") {
