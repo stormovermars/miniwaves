@@ -48,7 +48,7 @@ func alertArgv() ([]string, error) {
 		return nil, err
 	}
 	if len(c.Alerts.Exec) == 0 {
-		return nil, errors.New(`--exec needs alerts.exec: mw user set alerts.exec='["notify-send","mw"]' alerts.on=block,ask`)
+		return nil, errors.New(`--exec needs alerts.exec: mw user set alerts.exec='["my-alert-script"]' alerts.on=block,ask`)
 	}
 	return c.Alerts.Exec, nil
 }

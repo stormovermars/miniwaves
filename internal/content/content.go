@@ -20,11 +20,6 @@ var Prompts embed.FS
 //go:embed kit/*
 var Kit embed.FS
 
-// FanfareIcon is the notification icon.
-//
-//go:embed assets/fanfare-icon.png
-var FanfareIcon []byte
-
 // FanfareWAV is the synthesized default fanfare (scripts/gen_fanfare_default.py).
 //
 //go:embed assets/fanfare-default.wav

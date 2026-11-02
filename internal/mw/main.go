@@ -284,8 +284,8 @@ func run(args []string) error {
 	if err := dispatch(path, w, args); err != nil {
 		return err
 	}
-	unlock()              // publish and hash work happen after the lock is released
-	playPendingFanfare(w) // spawn after the locks are gone: the collection may sit on a slow mount
+	unlock()                    // publish and hash work happen after the lock is released
+	playPendingFanfare(path, w) // spawn after the locks are gone: the collection may sit on a slow mount
 	if savedCount > 0 {
 		afterWrite(path)
 	} else {
@@ -505,7 +505,7 @@ cycles are enforced, waves are not parents: use mw wave add). A session may set 
 the acceptance is empty (drafting); changing a non-empty acceptance is humans only.`,
 		"fanfare": `mw fanfare [-j]
 mw fanfare on | off
-mw fanfare set enabled=true milestone_seconds=15 finale_seconds=60 volume=1 stop_dialog=true task_beep=true dir=~/fanfare-finale-songs
+mw fanfare set enabled=true milestone_seconds=15 finale_seconds=60 volume=1 task_beep=true dir=~/fanfare-finale-songs
 mw fanfare test [task|milestone|finale]
 mw fanfare fetch
 mw fanfare list [-j]
@@ -515,7 +515,7 @@ mw fanfare sets drop NAME [PAIR...]
 mw fanfare use NAME|all
 mw fanfare stop
 Play a short clip when a wave closes and a longer finale when a tenant is finished (items exist, none inbox/ready/doing/blocked, no open wave; once per transition).
-Playback is a detached player (afplay, ffplay, mpv, paplay, Windows .wav) and never fails a board command. "fetch" downloads public-domain, CC0 and CC-BY pairs; the
+Sound only: no banner, dialog or notification. Playback is a detached player (afplay, ffplay, mpv, paplay, Windows .wav) and never fails a board command; Ctrl-C does not stop a finale, "mw fanfare stop" does. A milestone or finale needs 2 or more items; a lone task gets the task beep (at most one per 15 s). "fetch" downloads public-domain, CC0 and CC-BY pairs; the
 bring-your-own pair folders stay empty until you add fanfare.<ext> and finale.<ext>. Example: mw fanfare set enabled=true`,
 		"news": `mw news [--job ID] [--full] [--format md|html|text|json] [--tenant SLUG] [-o PATH|-] [-j]
 mw news --job ID --release [--force] [--format ...] [-j]
@@ -648,7 +648,7 @@ of the 24h before it, so an event that reaches the board late with an older stam
 An event stamped after the cursor time that arrives later (a git merge) is returned once; one stamped before it is not (read from start). -n keeps the first N.
 mw log [-t SLUG | -A] --follow [--since CURSOR|start] [--poll SECONDS] [--exec] [-j]
 --follow is a live feed: new events as they arrive, oldest first, from now unless --since names a cursor (default poll 2s; -j prints one JSON object per line; Ctrl-C stops it; not with -n or --since-file).
---exec also runs your alerts.exec (mw user set alerts.exec='["notify-send","mw"]') for each event whose action is in alerts.on (mw user set alerts.on=block,ask; empty means no event). The command is an argv array, never run through a shell; the event is a JSON file (ts, tenant, item, action, by, note, key) in a private temp file whose path is added as the last argument; stdin is closed; 30 s limit; a failure is reported on stderr and the feed goes on. MW_ALERT_EXEC (the same JSON array) overrides alerts.exec.`,
+--exec also runs your alerts.exec (mw user set alerts.exec='["my-alert-script"]') for each event whose action is in alerts.on (mw user set alerts.on=block,ask; empty means no event). The command is an argv array, never run through a shell; the event is a JSON file (ts, tenant, item, action, by, note, key) in a private temp file whose path is added as the last argument; stdin is closed; 30 s limit; a failure is reported on stderr and the feed goes on. MW_ALERT_EXEC (the same JSON array) overrides alerts.exec.`,
 		"wave": `mw wave create TITLE... [-t SLUG] [-p WAVE] [-b TEXT]
 mw wave add|remove WAVE ID... [-t SLUG]
 mw wave step WAVE KEY=NOTE [KEY=NOTE...] [--na] [-t SLUG]   (several steps in one call; --na applies to all)

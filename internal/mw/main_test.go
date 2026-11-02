@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1050,6 +1051,24 @@ func repoPath(elem ...string) string {
 	return filepath.Join(append([]string{filepath.Dir(file), "..", ".."}, elem...)...)
 }
 
+// noopCommand is a command that exits 0 and does nothing: `true`, or a .bat on Windows.
+func noopCommand(dir string, haveDir bool) string {
+	if runtime.GOOS == "windows" {
+		if !haveDir {
+			return ""
+		}
+		p := filepath.Join(dir, "noop.bat")
+		if os.WriteFile(p, []byte("@exit /b 0\r\n"), 0o755) != nil {
+			return ""
+		}
+		return p
+	}
+	if p, err := exec.LookPath("true"); err == nil {
+		return p
+	}
+	return ""
+}
+
 func TestMain(m *testing.M) {
 	syncWrites = false
 	// never read the developer's real per-user file (its fanfare.enabled would beep and banner on every test done)
@@ -1057,6 +1076,15 @@ func TestMain(m *testing.M) {
 	if err == nil && os.Getenv("MW_USER_CONFIG") == "" {
 		os.Setenv("MW_USER_CONFIG", filepath.Join(d, "mw-user.json"))
 	}
+	// never play a real sound or open anything on the developer's machine: no-op stubs unless a test overrides
+	if noop := noopCommand(d, err == nil); noop != "" {
+		for _, k := range []string{"MW_FANFARE_PLAYER", "MW_FANFARE_BEEP"} {
+			if os.Getenv(k) == "" {
+				os.Setenv(k, noop)
+			}
+		}
+	}
+	beepStampPath = func() string { return "" } // no coalescing stamp unless a test sets one
 	code := m.Run()
 	if err == nil {
 		os.RemoveAll(d)

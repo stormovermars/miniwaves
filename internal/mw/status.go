@@ -312,8 +312,8 @@ func statusExplain(cwd, pluginsDir string) string {
 		v, src := userValue(c, &k)
 		fmt.Fprintf(&b, "- %s = %s (%s; %s) %s\n", k.Name, v, src, k.allowed(), k.Help)
 	}
-	fmt.Fprintln(&b, "- More fanfare settings (milestone and finale sounds, Stop dialog, volume): mw fanfare -j, mw fanfare set KEY=VALUE.")
-	fmt.Fprintln(&b, "- Alerts are the fanfare sounds plus the Stop dialog: no popups, no OS notifications; the old pane.* and alerts.* keys are gone.")
+	fmt.Fprintln(&b, "- More fanfare settings (milestone and finale sounds, volume): mw fanfare -j, mw fanfare set KEY=VALUE.")
+	fmt.Fprintln(&b, "- Alerts are fanfare sounds only: no popups, no dialogs, no OS notifications; the old pane.* and alerts.* keys are gone.")
 	if len(cmds) > 0 {
 		fmt.Fprintln(&b, "\nCommands")
 		for _, cm := range cmds {

@@ -182,6 +182,7 @@ func TestUserFanfareOverridesBoard(t *testing.T) {
 	if l := plays(t, log, 1); !strings.Contains(l[0], "finale") {
 		t.Fatalf("board on, user on: %v", l)
 	}
+	time.Sleep(1100 * time.Millisecond) // a batch is the items done after the last finale (second resolution)
 	runAll(t, []string{"fanfare", "set", "enabled=false"})
 	// board on, user off: silence again
 	runAll(t, []string{"fanfare", "set", "enabled=true"}, []string{"user", "set", "fanfare.enabled=false"},
@@ -192,7 +193,8 @@ func TestUserFanfareOverridesBoard(t *testing.T) {
 	plays(t, log, 2)
 	// a broken user file never fails a command and falls back to the board
 	_ = os.WriteFile(os.Getenv("MW_USER_CONFIG"), []byte("{broken"), 0o600)
-	runAll(t, []string{"add", "task", "G", "--status", "ready"}, []string{"done", "TSK-008", "ok"})
+	time.Sleep(1100 * time.Millisecond)
+	runAll(t, []string{"add", "task", "G", "--status", "ready"}, []string{"add", "task", "H", "--status", "ready"}, []string{"done", "TSK-008", "ok"}, []string{"done", "TSK-009", "ok"})
 	plays(t, log, 3)
 }
 

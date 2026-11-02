@@ -60,17 +60,18 @@ type indexDoc struct {
 
 // tenantDoc is .miniwaves/<slug>.json.
 type tenantDoc struct {
-	Next            map[string]int    `json:"next"`
-	Items           []Item            `json:"items"`
-	Sessions        []Session         `json:"sessions,omitempty"`
-	Gates           map[string]string `json:"gates,omitempty"`
-	GatesSeen       map[string]bool   `json:"gates_seen,omitempty"`
-	GateBy          string            `json:"gate_by,omitempty"`
-	GateLatch       map[string]string `json:"gate_latch,omitempty"`
-	AcceptStreak    int               `json:"accept_streak,omitempty"`
-	Archived        int               `json:"archived,omitempty"`
-	Protocol        []string          `json:"protocol,omitempty"`
-	FanfareFinaleAt string            `json:"fanfare_finale_at,omitempty"`
+	Next              map[string]int    `json:"next"`
+	Items             []Item            `json:"items"`
+	Sessions          []Session         `json:"sessions,omitempty"`
+	Gates             map[string]string `json:"gates,omitempty"`
+	GatesSeen         map[string]bool   `json:"gates_seen,omitempty"`
+	GateBy            string            `json:"gate_by,omitempty"`
+	GateLatch         map[string]string `json:"gate_latch,omitempty"`
+	AcceptStreak      int               `json:"accept_streak,omitempty"`
+	Archived          int               `json:"archived,omitempty"`
+	Protocol          []string          `json:"protocol,omitempty"`
+	FanfareFinaleAt   string            `json:"fanfare_finale_at,omitempty"`
+	FanfareLastFinale string            `json:"fanfare_last_finale,omitempty"`
 }
 
 func sum(b []byte) string { h := sha256.Sum256(b); return string(h[:]) }
@@ -156,8 +157,8 @@ func loadScopedFrom(path string, minSchema int, all bool, slugs ...string) (*Wor
 
 func (t *Tenant) applyDoc(td tenantDoc) {
 	t.GateBy = td.GateBy
-	t.Next, t.Items, t.Gates, t.GatesSeen, t.GateLatch, t.AcceptStreak, t.Archived, t.Protocol, t.FanfareFinaleAt =
-		td.Next, td.Items, td.Gates, td.GatesSeen, td.GateLatch, td.AcceptStreak, td.Archived, td.Protocol, td.FanfareFinaleAt
+	t.Next, t.Items, t.Gates, t.GatesSeen, t.GateLatch, t.AcceptStreak, t.Archived, t.Protocol, t.FanfareFinaleAt, t.FanfareLastFinale =
+		td.Next, td.Items, td.Gates, td.GatesSeen, td.GateLatch, td.AcceptStreak, td.Archived, td.Protocol, td.FanfareFinaleAt, td.FanfareLastFinale
 	if t.Next == nil {
 		t.Next = map[string]int{}
 	}
@@ -182,7 +183,7 @@ func indexBytes(w *Workspace) []byte {
 }
 
 func tenantBytes(w *Workspace, t *Tenant) []byte {
-	td := tenantDoc{Next: t.Next, Items: t.Items, Gates: t.Gates, GateBy: t.GateBy, GatesSeen: t.GatesSeen, GateLatch: t.GateLatch, AcceptStreak: t.AcceptStreak, Archived: t.Archived, Protocol: t.Protocol, FanfareFinaleAt: t.FanfareFinaleAt}
+	td := tenantDoc{Next: t.Next, Items: t.Items, Gates: t.Gates, GateBy: t.GateBy, GatesSeen: t.GatesSeen, GateLatch: t.GateLatch, AcceptStreak: t.AcceptStreak, Archived: t.Archived, Protocol: t.Protocol, FanfareFinaleAt: t.FanfareFinaleAt, FanfareLastFinale: t.FanfareLastFinale}
 	for _, s := range w.Sessions {
 		if s.Tenant == t.Slug {
 			td.Sessions = append(td.Sessions, s)

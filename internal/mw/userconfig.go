@@ -88,7 +88,7 @@ func readUserConfig() (UserConfig, string, bool, error) {
 func parseAlertExec(val string) ([]string, error) {
 	var argv []string
 	if err := json.Unmarshal([]byte(val), &argv); err != nil {
-		return nil, errors.New(`alerts.exec: must be a JSON array of strings, for example ["notify-send","mw"]`)
+		return nil, errors.New(`alerts.exec: must be a JSON array of strings, for example ["my-alert-script"]`)
 	}
 	if len(argv) == 0 || len(argv) > 32 {
 		return nil, errors.New("alerts.exec: 1 to 32 arguments")
