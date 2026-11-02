@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/stormovermars/miniwaves/internal/fsx"
 )
 
 // The tabloid edition: the md and html renderings of the news model. One document structure (tabloidDoc) is
@@ -77,7 +79,7 @@ func proofFor(w *Workspace, t *Tenant, it Item) []newsProof {
 			continue
 		}
 		p := filepath.Join(dir, filepath.FromSlash(rel))
-		if fi, err := statShared(p); err != nil || !fi.Mode().IsRegular() {
+		if fi, err := fsx.Stat(p); err != nil || !fi.Mode().IsRegular() {
 			continue
 		}
 		pr := newsProof{Path: filepath.ToSlash(p), Image: proofImageExt[strings.ToLower(filepath.Ext(rel))]}

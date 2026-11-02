@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"github.com/stormovermars/miniwaves/internal/fsx"
 )
 
 // Schema 8 storage: .miniwaves.json is the index (workspace settings and the tenant
@@ -75,7 +76,7 @@ type tenantDoc struct {
 func sum(b []byte) string { h := sha256.Sum256(b); return string(h[:]) }
 
 func readIndexBytes(path string) ([]byte, error) {
-	b, err := readFileShared(path)
+	b, err := fsx.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +132,7 @@ func loadScopedFrom(path string, minSchema int, all bool, slugs ...string) (*Wor
 	for _, it := range ix.Tenants {
 		t := Tenant{Slug: it.Slug, Name: it.Name, Path: it.Path, Hidden: it.Archived, Tags: it.Tags, Job: it.Job, Next: map[string]int{}, Items: []Item{}}
 		if all || want[it.Slug] {
-			tb, err := readFileShared(tenantPath(path, it.Slug))
+			tb, err := fsx.ReadFile(tenantPath(path, it.Slug))
 			if err != nil && !os.IsNotExist(err) {
 				return nil, err
 			}
@@ -240,7 +241,7 @@ func sessionElsewhere(path string, w *Workspace, id, tenant string) error {
 		if t.Slug == tenant {
 			continue
 		}
-		b, err := readFileShared(tenantPath(path, t.Slug))
+		b, err := fsx.ReadFile(tenantPath(path, t.Slug))
 		if err != nil || !bytes.Contains(b, needle) {
 			continue
 		}
@@ -306,7 +307,7 @@ func lockFile(lp string, deadline time.Time) (func(), error) {
 			}
 		}()
 		pid := "?"
-		if b, e := readFileShared(pp); e == nil && strings.TrimSpace(string(b)) != "" {
+		if b, e := fsx.ReadFile(pp); e == nil && strings.TrimSpace(string(b)) != "" {
 			pid = strings.TrimSpace(string(b))
 		}
 		return nil, lockTimeoutError(pid, wait)

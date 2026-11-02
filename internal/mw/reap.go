@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/stormovermars/miniwaves/internal/fsx"
 )
 
 // Session liveness: Session.Updated is the session's last activity. It is set by
@@ -267,7 +269,7 @@ func lastAnswerAt(w *Workspace, id string) time.Time {
 		if t.loaded {
 			scan(t.Items)
 		} else if w.path != "" {
-			if b, err := readFileShared(tenantPath(w.path, t.Slug)); err == nil && bytes.Contains(b, needle) {
+			if b, err := fsx.ReadFile(tenantPath(w.path, t.Slug)); err == nil && bytes.Contains(b, needle) {
 				var td tenantDoc
 				if json.Unmarshal(b, &td) == nil {
 					scan(td.Items)

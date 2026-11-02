@@ -14,6 +14,23 @@ Its model is deliberately small:
 The application does not launch assistants. Embedded dispatcher and session
 prompts describe how a capable host application should create them.
 
+### Source layout
+
+The repository root holds only docs, scripts, plugins, release notes and the build/install
+scripts; the Go code lives under `cmd/` and `internal/`:
+
+- `cmd/mw` — the entry point; `main` calls `mw.Main()`. Build with `go build ./cmd/mw`.
+- `internal/mw` — the CLI: commands, board model and store, waves, gates, jobs, news, fanfare,
+  update. File names below (`store.go`, `gates.go`, ...) are in this package; its `testdata/`
+  holds the golden files.
+- `internal/fsx` — platform file helpers: shared reads (`ReadFile`, `Stat`, `OpenShared`), the
+  non-blocking open (`OpenNoBlock`) and the atomic replace (`Replace`, POSIX rename on Windows).
+- `internal/content` — the files compiled in with `go:embed`: `PROTOCOL.md`, `prompts/`, `kit/`,
+  `assets/` (fanfare icon and default WAV), and the generated fanfare catalogue
+  `fanfare_sources.go`.
+
+Tests that check repo files (plugins, README, USAGE) reach the root through `repoPath`.
+
 ## Storage and concurrency
 
 Workspace state lives in `.miniwaves.json`. The current schema version is 7 (4 added waves, 5 added `folders` and `notes`, 6 added gates and evidence, 7 added the per-item `events` activity list: `{at, action, by, note}` appended through `emit` by add, ready, start, block, done, reopen, accept, reject, note, edit and wave steps; `load` refuses any other schema; `migrate.go` (`mw migrate`, recipe in MIGRATION.md) is the only code that reads schemas 5/6 and synthesises created/updated events; older binaries refuse newer boards).
@@ -22,7 +39,7 @@ to a temporary file, `fsync` it, and atomically rename it. Read-only commands (`
 `board`, `next` without `--claim`, `review`, `judge`, `context`, `get-prompt`, `tenant|session list`,
 `wave show|list`, `dirs`) take a shared lock; every lock waits at most `MW_LOCK_WAIT` s, then fails with
 "board locked (pid P): lock wait timed out after D — retry, or raise MW_LOCK_WAIT (seconds)". On Windows the lockless reads open with
-`FILE_SHARE_READ|WRITE|DELETE` and retry sharing violations (`fsread*.go`). Cross-platform file locking prevents concurrent local sessions from
+`FILE_SHARE_READ|WRITE|DELETE` and retry sharing violations (`internal/fsx`). Cross-platform file locking prevents concurrent local sessions from
 overwriting one another. `mw archive` moves old done items to `.miniwaves/<slug>.archive.json` (
 `{version, tenants: [{slug, items}]}`) and counts them in the tenant's `archived` field; only `show`
 reads the archive. The optional `publish` board key drives `html.go` (static page, after the command succeeded, never fails it). mw never runs git itself, except that `mw init` writes the lock/tmp/pid names to `.git/info/exclude` (`git.go`).
@@ -31,7 +48,7 @@ State and lock files use `0600` where the operating system supports POSIX
 permissions. `mw dirs init` creates missing shared folders with `0700` and
 leaves existing folders unchanged.
 
-The session, dispatcher and coach prompts live in `prompts/*.md`, embedded with
+The session, dispatcher and coach prompts live in `internal/content/prompts/*.md`, embedded with
 `//go:embed` and rendered with `text/template` (`prompts.go`). The optional
 board key `folders` (`datalake`, `docs`, `data`, `tools`, `templates`, `builds`, `evidence`, `scratch`; additive, schema stays 5) is resolved by
 `workspaceFolders`: relative and `~/` paths go under the home directory,
@@ -44,8 +61,8 @@ This is single-machine coordination, not a distributed lease system.
 
 A wave is an `Item` with `kind: "wave"` (ID prefix `WAV`, counter in the
 tenant's `Next`). It alone carries `steps`, an array of
-`{key, title, done, na, note, when}` seeded from `defaultProtocol` in `waves.go` (parsed from `PROTOCOL.md`), or
-from the tenant's `protocol: [names]` (tenant file), else the index's top-level `protocol` (`protocolFor`/`protocolSteps`). The default list lives in `PROTOCOL.md`, embedded with `go:embed` and parsed at startup.
+`{key, title, done, na, note, when}` seeded from `defaultProtocol` in `waves.go` (parsed from `internal/content/PROTOCOL.md`), or
+from the tenant's `protocol: [names]` (tenant file), else the index's top-level `protocol` (`protocolFor`/`protocolSteps`). The default list lives in `internal/content/PROTOCOL.md`, embedded with `go:embed` and parsed at startup.
 Waves start `ready`; moveCommand verbs refuse them except `reopen`, which
 resets every step. Membership is a separate `wave` field on the member
 (`omitempty`; board schema was bumped to 4 (waves) and 5 (folders, notes); older binaries refuse newer boards with "upgrade mw"; `mw migrate` repairs cfa03cf-style boards: WAV parent on a non-wave becomes `wave`, an unclosed `doing` wave becomes `ready`); `parent` is only the story/prompt hierarchy and
@@ -107,7 +124,7 @@ Windows.
 Source builds require Go 1.23 or newer:
 
 ```sh
-./build.sh          # build/mw
+./build.sh          # build/mw (go build ./cmd/mw)
 ./build.sh clean
 ```
 
@@ -158,4 +175,4 @@ miniwaves into another fleet service.
 
 ## Fanfare (`fanfare.go`)
 
-Config is the index's `fanfare` object; a tenant's `fanfare_finale_at` stamps the finished transition (set in `done`/`wave close` before the save, cleared by `save` when a non-done item exists). The trigger only queues a clip (`fanfarePending`); `run` plays it after the command succeeded and after the locks are released, as a detached player (`Setsid`; `DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP|CREATE_BREAKAWAY_FROM_JOB` on Windows, retried without the breakaway flag if the start is refused) so the CLI never waits and a failure is a stderr note. `playerCommand` builds the command per OS; `MW_FANFARE_PLAYER` (a stub called `STUB FILE SECONDS VOLUME`) replaces it in tests. `pickPair`/`scanPairs` skip or mark (`unplayable here`) pairs whose formats `playerCommand` rejects for this OS and the installed players. Pids of started players go to `<dir>/.players.json` with a process stamp (`ps lstart`, tasklist image name) so `mw fanfare stop` never kills a reused pid. `fanfare_sources.go` is generated by `scripts/gen_fanfare_sources.py` from `scripts/fanfare_sources.json` (Commons file pages checked by hand: US government band or CC0/CC BY by the performer); every track has a pinned sha256 (`TestBuiltinPairsAreFreeLicences` enforces it), `download` compares the streamed hash before renaming `.part` and fetch refuses unpinned tracks. The HTTP client follows redirects only to https on upload.wikimedia.org, caps a track at 64 MB and bounds the transfer (600 s, 30 s to headers). `mw tenant protocol SLUG` without set/reset is read-only (no write locks). The collection stays outside the board folder.
+Config is the index's `fanfare` object; a tenant's `fanfare_finale_at` stamps the finished transition (set in `done`/`wave close` before the save, cleared by `save` when a non-done item exists). The trigger only queues a clip (`fanfarePending`); `run` plays it after the command succeeded and after the locks are released, as a detached player (`Setsid`; `DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP|CREATE_BREAKAWAY_FROM_JOB` on Windows, retried without the breakaway flag if the start is refused) so the CLI never waits and a failure is a stderr note. `playerCommand` builds the command per OS; `MW_FANFARE_PLAYER` (a stub called `STUB FILE SECONDS VOLUME`) replaces it in tests. `pickPair`/`scanPairs` skip or mark (`unplayable here`) pairs whose formats `playerCommand` rejects for this OS and the installed players. Pids of started players go to `<dir>/.players.json` with a process stamp (`ps lstart`, tasklist image name) so `mw fanfare stop` never kills a reused pid. `internal/content/fanfare_sources.go` is generated by `scripts/gen_fanfare_sources.py` from `scripts/fanfare_sources.json` (Commons file pages checked by hand: US government band or CC0/CC BY by the performer); every track has a pinned sha256 (`TestBuiltinPairsAreFreeLicences` enforces it), `download` compares the streamed hash before renaming `.part` and fetch refuses unpinned tracks. The HTTP client follows redirects only to https on upload.wikimedia.org, caps a track at 64 MB and bounds the transfer (600 s, 30 s to headers). `mw tenant protocol SLUG` without set/reset is read-only (no write locks). The collection stays outside the board folder.

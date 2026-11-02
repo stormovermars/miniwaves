@@ -3,7 +3,6 @@ package mw
 import (
 	"bytes"
 	"crypto/sha256"
-	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -20,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/stormovermars/miniwaves/internal/content"
 )
 
 // Fanfare: a short clip when a wave closes, a longer finale when a tenant has nothing left.
@@ -98,15 +99,13 @@ func expandHome(p string) string {
 
 // ---- collection ----
 
-type fanfareTrack struct {
-	Kind, Ext, URL, Source, License, Attribution, Title string
-	SHA256                                              string // optional pin; a download that differs fails
-}
+type (
+	fanfareTrack = content.FanfareTrack
+	fanfarePair  = content.FanfarePair
+)
 
-type fanfarePair struct {
-	Name, Label string
-	Tracks      []fanfareTrack
-}
+// builtinPairs is the generated catalogue (internal/content/fanfare_sources.go).
+var builtinPairs = content.FanfarePairs
 
 // byoSlots are pair folders the user fills from copies they own; mw never downloads them.
 var byoSlots = []struct{ Name, Label, Fanfare, Finale string }{
@@ -613,8 +612,7 @@ var zenityBodyIcon = func() bool {
 	return e1 == nil && e2 == nil && (maj > 3 || (maj == 3 && min >= 90))
 }
 
-//go:embed assets/fanfare-icon.png
-var fanfareIconPNG []byte
+var fanfareIconPNG = content.FanfareIcon
 
 // finaleIcon picks the picture of the Stop dialog: cover.png, cover.jpg or cover.icns in the
 // played pair's folder, else mw's built-in icon written once to <dir>/.mw-fanfare-icon.png.
@@ -818,8 +816,7 @@ func playPendingFanfare(w *Workspace) {
 	}
 }
 
-//go:embed assets/fanfare-default.wav
-var defaultFanfareWAV []byte
+var defaultFanfareWAV = content.FanfareWAV
 
 // pickPairOrBuiltin is pickPairFor; with no playable pair at all it falls back to the built-in WAV
 // (a short synthesized fanfare, played for both milestone and finale), so a fresh user hears something.

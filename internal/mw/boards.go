@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/stormovermars/miniwaves/internal/fsx"
 )
 
 // mw boards: read-only discovery of boards below (and optionally above) a folder, so pane
@@ -119,7 +121,7 @@ func readBoardIndex(dir string) boardInfo {
 	var err error
 	if fi, serr := os.Stat(p); serr == nil && fi.Size() > boardsIndexMax {
 		err = fmt.Errorf("%s is %d bytes: larger than the %d byte limit, not read", p, fi.Size(), boardsIndexMax)
-	} else if data, err = readFileShared(p); err == nil && len(data) > boardsIndexMax {
+	} else if data, err = fsx.ReadFile(p); err == nil && len(data) > boardsIndexMax {
 		err = fmt.Errorf("%s is larger than the %d byte limit, not read", p, boardsIndexMax)
 	}
 	if err == nil {

@@ -196,7 +196,7 @@ with this checklist by default, in this order (key in parentheses):
 10. plan revised (`plan`)
 11. plan audited (`plan-audit`): plan issues solved
 
-The default checklist is `PROTOCOL.md` (embedded in the binary). Precedence for a new wave: the tenant's own list, else the workspace list, else the default.
+The default checklist is `internal/content/PROTOCOL.md` (embedded in the binary). Precedence for a new wave: the tenant's own list, else the workspace list, else the default.
 `mw tenant protocol SLUG` shows the steps and their source (`tenant`, `workspace` or `default`); `mw tenant protocol SLUG set "Step one" "Step two" ...` stores a tenant list
 (key = lower-cased name with dashes; duplicates dropped); `mw tenant protocol SLUG reset` drops it. `--workspace` (no SLUG) does the same for the workspace list (`"protocol"` in `.miniwaves.json`).
 A change applies to waves created afterwards; existing waves keep their steps.
@@ -293,7 +293,7 @@ block/done note.
 
 ## Needs you and decisions
 
-`ask`, `answer` and `decide` append item events (`ask`, `answer`, `decide`; see PROTOCOL.md). They work on any board: there is no gate and no job is needed, and they never change an item's status.
+`ask`, `answer` and `decide` append item events (`ask`, `answer`, `decide`; see internal/content/PROTOCOL.md). They work on any board: there is no gate and no job is needed, and they never change an item's status.
 
 - `mw ask ID QUESTION... [-s NAME]` records a question for a human. Any session may ask.
 - `mw answer ID TEXT... --by NAME` is human only, like `accept`: it is refused under `MW_SESSION` or `-s`, and `--by` is required when stdin is not a terminal. It is refused when the item has no open ask. `--accept` (no text) records a `decide` event "accepted: <the open ask>" on the item and then the `answer` "accepted": one command settles a digest ask whose recommendations Sir takes as they are.

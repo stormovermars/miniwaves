@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/stormovermars/miniwaves/internal/fsx"
 )
 
 // The news model (version 1): one struct per job that every news rendering (json, md, html, text) is drawn
@@ -1146,7 +1148,7 @@ func readRegular(path string, max int) ([]byte, error) {
 	} else if !fi.Mode().IsRegular() {
 		return nil, fmt.Errorf("%s is not a regular file", path)
 	}
-	f, err := openNoBlock(path) // a swap to a FIFO after the check does not block
+	f, err := fsx.OpenNoBlock(path) // a swap to a FIFO after the check does not block
 	if err != nil {
 		return nil, err
 	}

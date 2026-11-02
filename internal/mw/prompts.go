@@ -1,7 +1,6 @@
 package mw
 
 import (
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,10 +8,11 @@ import (
 	"runtime"
 	"strings"
 	"text/template"
+
+	"github.com/stormovermars/miniwaves/internal/content"
 )
 
-//go:embed prompts/*.md
-var promptFS embed.FS
+var promptFS = content.Prompts
 
 var promptTemplates = template.Must(template.New("prompts").
 	Funcs(template.FuncMap{"q": func(s string) string { return fmt.Sprintf("%q", s) }}).

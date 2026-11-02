@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/stormovermars/miniwaves/internal/fsx"
 )
 
 // mw news: the news bulletin of a coordinated job (or of the whole workspace when no job exists), built from
@@ -115,7 +117,7 @@ func openConfined(root, key, rel string) (*os.File, error) {
 	if fi, err := os.Stat(p); err == nil && !fi.Mode().IsRegular() {
 		return nil, fmt.Errorf("%s: %q is not a regular file", key, rel)
 	}
-	f, err := openNoBlock(p)
+	f, err := fsx.OpenNoBlock(p)
 	if err != nil {
 		return nil, err
 	}

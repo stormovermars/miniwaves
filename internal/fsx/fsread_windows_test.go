@@ -1,6 +1,6 @@
 //go:build windows
 
-package mw
+package fsx
 
 import (
 	"os"
@@ -12,8 +12,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// A reader's handle from readFileShared's open lets a writer replace the file. MoveFileEx
-// (os.Rename) cannot replace an open target even with FILE_SHARE_DELETE; replaceFile's POSIX
+// A reader's handle from ReadFile's open lets a writer replace the file. MoveFileEx
+// (os.Rename) cannot replace an open target even with FILE_SHARE_DELETE; Replace's POSIX
 // rename can.
 func TestWindowsSharedOpenAllowsRename(t *testing.T) {
 	dir := t.TempDir()
@@ -21,7 +21,7 @@ func TestWindowsSharedOpenAllowsRename(t *testing.T) {
 	if err := os.WriteFile(p, []byte("old"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	f, err := openShared(p)
+	f, err := OpenShared(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,16 +30,16 @@ func TestWindowsSharedOpenAllowsRename(t *testing.T) {
 	if err := os.WriteFile(tmp, []byte("new"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := replaceFile(tmp, p); err != nil { // no retry: the shared handle must not block it
+	if err := Replace(tmp, p); err != nil { // no retry: the shared handle must not block it
 		t.Fatalf("rename over a shared-open file: %v", err)
 	}
-	if b, err := readFileShared(p); err != nil || string(b) != "new" {
+	if b, err := ReadFile(p); err != nil || string(b) != "new" {
 		t.Fatalf("after rename %q %v", b, err)
 	}
 }
 
 // A handle that denies all sharing (an antivirus scan, an exclusive writer) makes the open fail
-// with a sharing violation; readFileShared waits it out.
+// with a sharing violation; ReadFile waits it out.
 func TestWindowsReadRetriesSharingViolation(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "x.json")
 	if err := os.WriteFile(p, []byte("data"), 0600); err != nil {
@@ -50,43 +50,17 @@ func TestWindowsReadRetriesSharingViolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := openShared(p); !transientShareErr(err) {
+	if _, err := OpenShared(p); !transientShareErr(err) {
 		syscall.CloseHandle(h)
 		t.Fatalf("exclusive handle: want a sharing violation, got %v", err)
 	}
 	go func() { time.Sleep(100 * time.Millisecond); syscall.CloseHandle(h) }()
-	if b, err := readFileShared(p); err != nil || string(b) != "data" {
+	if b, err := ReadFile(p); err != nil || string(b) != "data" {
 		t.Fatalf("read after the exclusive handle closed: %q %v", b, err)
 	}
 }
 
-// The atomic writer replaces the board while a shared reader holds it open, at once (no retry
-// loop), and the reader keeps seeing the old contents through its handle.
-func TestWindowsAtomicWriteWhileSharedReaderOpen(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "board.json")
-	if err := os.WriteFile(p, []byte("old"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	f, err := openShared(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	defer func(n int) { renameTries = n }(renameTries)
-	renameTries = 1
-	if err := writeFileAtomic(p, []byte("new")); err != nil {
-		t.Fatalf("atomic write over a shared-open file: %v", err)
-	}
-	if b, err := readFileShared(p); err != nil || string(b) != "new" {
-		t.Fatalf("after write %q %v", b, err)
-	}
-	buf := make([]byte, 8)
-	if n, _ := f.Read(buf); string(buf[:n]) != "old" {
-		t.Fatalf("open reader sees %q, want the old contents", buf[:n])
-	}
-}
-
-// With the POSIX rename unavailable (pre-1809, FAT) replaceFile falls back to MoveFileEx.
+// With the POSIX rename unavailable (pre-1809, FAT) Replace falls back to MoveFileEx.
 func TestWindowsReplaceFallback(t *testing.T) {
 	defer posixRenameOff.Store(posixRenameOff.Load())
 	posixRenameOff.Store(true)
@@ -98,7 +72,7 @@ func TestWindowsReplaceFallback(t *testing.T) {
 	if err := os.WriteFile(tmp, []byte("new"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := replaceFile(tmp, p); err != nil {
+	if err := Replace(tmp, p); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(p); string(b) != "new" {

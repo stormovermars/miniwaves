@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/stormovermars/miniwaves/internal/fsx"
 )
 
 const (
@@ -264,7 +266,7 @@ type descriptionInfo struct {
 
 func initWorkspace(name string) error {
 	path := filepath.Join(mustGetwd(), dataFile)
-	if _, err := statShared(path); err == nil {
+	if _, err := fsx.Stat(path); err == nil {
 		return fmt.Errorf("%s already exists", path)
 	}
 	slug := slugify(name)
@@ -341,14 +343,14 @@ func writeFileAtomicMode(path string, b []byte, mode os.FileMode) error {
 var (
 	renameTries   = 50
 	renameBackoff = 20 * time.Millisecond
-	renameFn      = replaceFile
+	renameFn      = fsx.Replace
 	// renameRetryOn: only Windows has transient sharing violations; elsewhere one attempt.
 	renameRetryOn = runtime.GOOS == "windows"
 )
 
-// renameRetry renames tmp over path (replaceFile), retrying a failed rename. On Windows
-// replaceFile uses the POSIX rename, which replaces a target that readers hold open with
-// FILE_SHARE_DELETE (openShared); a handle without it (an antivirus scan, a foreign os.Open)
+// renameRetry renames tmp over path (fsx.Replace), retrying a failed rename. On Windows
+// fsx.Replace uses the POSIX rename, which replaces a target that readers hold open with
+// FILE_SHARE_DELETE (fsx.OpenShared); a handle without it (an antivirus scan, a foreign os.Open)
 // still refuses until it closes, hence the retries. A missing tmp is not retried.
 func renameRetry(tmp, path string) error {
 	var err error

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/stormovermars/miniwaves/internal/fsx"
 )
 
 // archiveDoc is .miniwaves/<slug>.archive.json: a tenant's done items (with their
@@ -18,7 +20,7 @@ type archiveDoc struct {
 }
 
 func loadArchive(boardPath, slug string) (*archiveDoc, error) {
-	b, err := readFileShared(archivePath(boardPath, slug))
+	b, err := fsx.ReadFile(archivePath(boardPath, slug))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &archiveDoc{Version: currentSchema}, nil

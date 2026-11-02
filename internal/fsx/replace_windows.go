@@ -1,6 +1,6 @@
 //go:build windows
 
-package mw
+package fsx
 
 import (
 	"errors"
@@ -28,12 +28,12 @@ const fileRenameFlagsPosixReplace = windows.FILE_RENAME_REPLACE_IF_EXISTS | wind
 // network shares): later renames go straight to MoveFileEx. Tests set it to force the fallback.
 var posixRenameOff atomic.Bool
 
-// replaceFile renames tmp over path. MoveFileEx(REPLACE_EXISTING) (os.Rename) cannot replace a
+// Replace renames tmp over path. MoveFileEx(REPLACE_EXISTING) (os.Rename) cannot replace a
 // target that another process holds open, even with FILE_SHARE_DELETE ("Access is denied").
 // The POSIX rename (SetFileInformationByHandle, FileRenameInfoEx, REPLACE_IF_EXISTS|POSIX_SEMANTICS)
 // can: open readers keep the old file's contents and the name points at the new file at once.
 // When the filesystem or OS does not support it, fall back to os.Rename.
-func replaceFile(tmp, path string) error {
+func Replace(tmp, path string) error {
 	if posixRenameOff.Load() {
 		return os.Rename(tmp, path)
 	}

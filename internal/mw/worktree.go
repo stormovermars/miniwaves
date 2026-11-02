@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/stormovermars/miniwaves/internal/fsx"
 )
 
 // Worktree boards (BUG-019, docs: TECHNICAL.md "Worktree boards"). In a linked git worktree whose
@@ -32,7 +34,7 @@ func worktreeOf(dir string) (wt, main string, ok bool) {
 			if fi.IsDir() {
 				return "", "", false
 			}
-			b, err := readFileShared(g)
+			b, err := fsx.ReadFile(g)
 			if err != nil {
 				return "", "", false
 			}
@@ -41,7 +43,7 @@ func worktreeOf(dir string) (wt, main string, ok bool) {
 				return "", "", false
 			}
 			gd := gitPath(d, strings.TrimSpace(ref), runtime.GOOS)
-			c, err := readFileShared(filepath.Join(gd, "commondir"))
+			c, err := fsx.ReadFile(filepath.Join(gd, "commondir"))
 			if err != nil {
 				return "", "", false
 			}
@@ -218,7 +220,7 @@ func gitDirs(root string) (gd, common string, linked, ok bool) {
 	if fi.IsDir() {
 		return g, g, false, true
 	}
-	b, err := readFileShared(g)
+	b, err := fsx.ReadFile(g)
 	if err != nil {
 		return "", "", false, false
 	}
@@ -227,7 +229,7 @@ func gitDirs(root string) (gd, common string, linked, ok bool) {
 		return "", "", false, false
 	}
 	gd = gitPath(root, strings.TrimSpace(ref), runtime.GOOS)
-	if c, err := readFileShared(filepath.Join(gd, "commondir")); err == nil {
+	if c, err := fsx.ReadFile(filepath.Join(gd, "commondir")); err == nil {
 		return gd, gitPath(gd, strings.TrimSpace(string(c)), runtime.GOOS), true, true
 	}
 	return gd, gd, false, true
@@ -397,7 +399,7 @@ func nearestBoard(dir string) string {
 	}
 }
 
-func fileExists(p string) bool { _, err := statShared(p); return err == nil }
+func fileExists(p string) bool { _, err := fsx.Stat(p); return err == nil }
 
 // mapCwd reads a path inside the worktree as the same path in the main checkout (board paths are
 // never rewritten: tenant folders and folder defaults stay main's). Anything else is unchanged.
@@ -514,19 +516,19 @@ func syncBoard(main, wt string, errw io.Writer) error {
 	}
 	keepIndex := false
 	for _, slug := range slugs {
-		mb, err := readFileShared(tenantPath(main, slug))
+		mb, err := fsx.ReadFile(tenantPath(main, slug))
 		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		missing := err != nil
-		wb, err := readFileShared(tenantPath(wt, slug))
+		wb, err := fsx.ReadFile(tenantPath(wt, slug))
 		if err == nil {
 			if bytes.Equal(mb, wb) {
 				recordCopy(wt, slug, wb)
 				continue
 			}
 			if !lastCopy(main, wt, slug, mb, wb) {
-				ab, _ := readFileShared(archivePath(main, slug))
+				ab, _ := fsx.ReadFile(archivePath(main, slug))
 				// Changed since the last copy, but nothing of its own (a git checkout, pull, stash or
 				// branch switch brought an older copy back): overwrite. Otherwise keep it and warn.
 				if n, err := unsharedEvents(wb, mb, ab); err != nil || n > 0 || !sessionsKnown(wb, mb) {
@@ -549,7 +551,7 @@ func syncBoard(main, wt string, errw io.Writer) error {
 	if keepIndex { // main's index would drop a tenant whose events are only here
 		return nil
 	}
-	if wb, err := readFileShared(wt); err == nil && bytes.Equal(wb, ib) {
+	if wb, err := fsx.ReadFile(wt); err == nil && bytes.Equal(wb, ib) {
 		return nil
 	}
 	return writeFileAtomic(wt, ib)
@@ -565,7 +567,7 @@ func hexSum(b []byte) string { return fmt.Sprintf("%x", sha256.Sum256(b)) }
 // means the next sync falls back to the event check).
 func recordCopy(wt, slug string, b []byte) {
 	h := hexSum(b)
-	if old, err := readFileShared(copyPath(wt, slug)); err == nil && string(old) == h {
+	if old, err := fsx.ReadFile(copyPath(wt, slug)); err == nil && string(old) == h {
 		return
 	}
 	_ = writeFileAtomic(copyPath(wt, slug), []byte(h))
@@ -575,10 +577,10 @@ func recordCopy(wt, slug string, b []byte) {
 // overwriting it loses nothing. Without a record (the first sync of a worktree, or a board from an
 // older mw) a file whose events main all has counts as a copy.
 func lastCopy(main, wt, slug string, mb, wb []byte) bool {
-	if h, err := readFileShared(copyPath(wt, slug)); err == nil {
+	if h, err := fsx.ReadFile(copyPath(wt, slug)); err == nil {
 		return string(h) == hexSum(wb)
 	}
-	ab, _ := readFileShared(archivePath(main, slug))
+	ab, _ := fsx.ReadFile(archivePath(main, slug))
 	n, err := unsharedEvents(wb, mb, ab)
 	return err == nil && n == 0
 }

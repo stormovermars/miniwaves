@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate assets/fanfare-default.wav: a short brass-like fanfare, synthesized from scratch.
+"""Generate internal/content/assets/fanfare-default.wav: a short brass-like fanfare, synthesized from scratch.
 
 Python 3 standard library only (wave, math, struct). Deterministic: no randomness, so the same bytes
 come out on every run. Mono, 22050 Hz, 16-bit, about 3.6 s.
@@ -9,7 +9,7 @@ the maths library (libm / the Windows CRT) may round sin() and pow() differently
 It calls only + - * / floor on IEEE doubles, which every platform rounds the same way, and the note frequencies
 are literals. The final rounding to 16 bits is floor(x + 0.5), not round().
 
-Usage: python3 scripts/gen_fanfare_default.py [OUT]   (default: assets/fanfare-default.wav)
+Usage: python3 scripts/gen_fanfare_default.py [OUT]   (default: internal/content/assets/fanfare-default.wav)
 """
 import math
 import os
@@ -103,7 +103,7 @@ def mix(total, parts):
 
 
 def main():
-    out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "fanfare-default.wav")
+    out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "internal", "content", "assets", "fanfare-default.wav")
     # "ta-ta-ta TAAA, ta-TAAAAA": pickup triplet, a rising call, then a held C major chord.
     parts = [
         (0.00, tone(G4, 0.24), 0.9),

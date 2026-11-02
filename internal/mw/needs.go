@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/stormovermars/miniwaves/internal/fsx"
 )
 
 // Needs-human and decisions are item events (ask, answer, decide), ungated and valid on any board.
@@ -261,7 +263,7 @@ func (w *Workspace) allSessions() []Session {
 			if t.loaded || w.path == "" {
 				continue
 			}
-			if b, err := readFileShared(tenantPath(w.path, t.Slug)); err == nil && bytes.Contains(b, []byte(`"session`)) {
+			if b, err := fsx.ReadFile(tenantPath(w.path, t.Slug)); err == nil && bytes.Contains(b, []byte(`"session`)) {
 				var td tenantDoc
 				if json.Unmarshal(b, &td) == nil {
 					w.otherSess = append(w.otherSess, td.Sessions...)

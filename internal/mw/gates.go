@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/stormovermars/miniwaves/internal/fsx"
 )
 
 // version is the mw release; schema is currentSchema.
@@ -583,7 +585,7 @@ type versionTenant struct {
 
 // boardSchemaOf reads only the "version" field of a board file (any schema).
 func boardSchemaOf(path string) (int, bool) {
-	b, err := readFileShared(path) // one short shared read: never blocks a writer's rename on Windows
+	b, err := fsx.ReadFile(path) // one short shared read: never blocks a writer's rename on Windows
 	if err != nil {
 		return 0, false
 	}

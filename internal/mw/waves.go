@@ -1,16 +1,16 @@
 package mw
 
 import (
-	_ "embed"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/stormovermars/miniwaves/internal/content"
 )
 
-//go:embed PROTOCOL.md
-var protocolMD string
+var protocolMD = content.Protocol
 
 // defaultProtocol is parsed from PROTOCOL.md; used unless the board JSON has a top-level "protocol" list.
 var defaultProtocol = parseProtocol(protocolMD)

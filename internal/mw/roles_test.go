@@ -214,7 +214,7 @@ func TestCeremonyDocs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	proto, err := os.ReadFile("PROTOCOL.md")
+	proto, err := os.ReadFile(filepath.Join("..", "content", "PROTOCOL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

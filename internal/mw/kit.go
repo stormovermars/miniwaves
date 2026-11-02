@@ -1,20 +1,20 @@
 package mw
 
 import (
-	"embed"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/stormovermars/miniwaves/internal/content"
 )
 
 // The coordinated kit: files only. Templates are embedded in the binary; nothing is read from repo
 // content, nothing is executed, and an existing file is never overwritten.
 
-//go:embed kit/*
-var kitFS embed.FS
+var kitFS = content.Kit
 
 type kitFile struct {
 	name string
