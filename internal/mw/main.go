@@ -595,7 +595,9 @@ ready task "Fix: REASON"; a child goes to ready and reopens its done story. Refu
 --evidence-gap latches the evidence gate.`,
 		"update": `mw update [--check] [--plugins]
 Replace this mw with the latest GitHub release for this OS/CPU (checksum verified; on Windows the old
-binary is kept as mw.exe.old). --check only reports. Exit 2 when already current. After a real update it
+binary is kept as mw.exe.old), then install or update wr (wave rider) next to mw to its latest release
+(a failed wr download is one note line; the exit status is mw's own). --check only reports (exit 0 when
+either can be updated). Exit 2 when both are already current. After a real mw update it
 also installs/updates the Claude Code plugins mw and mw-jobs and, once that worked, removes the retired
 tidewatch and mw-watch (best effort; MW_NO_PLUGINS=1 skips; claude honours CLAUDE_CONFIG_DIR).
 --plugins runs only that plugin step.`,

@@ -12,11 +12,12 @@ curl -fsSL https://raw.githubusercontent.com/stormovermars/miniwaves/main/instal
 irm https://raw.githubusercontent.com/stormovermars/miniwaves/main/install.ps1 | iex        # Windows
 ```
 
-This installs the `mw` binary and, when Claude Code (`claude`) is on PATH, the Claude Code plugins `mw` (skill, `/mw-next`, `/mw-board`) and `mw-jobs` (jobs and news as Markdown files in the Claude file pane, optional artifact). The plugin step is best effort: if it fails, the binary is still installed.
+This installs mw and wr (wave rider) together: the `mw` binary, the latest `wr` binary next to it, and, when Claude Code (`claude`) is on PATH, the Claude Code plugins `mw` (skill, `/mw-next`, `/mw-board`) and `mw-jobs` (jobs and news as Markdown files in the Claude file pane, optional artifact). The plugin step is best effort: if it fails, the binary is still installed.
 
 Upgrade: `mw update` (checks GitHub releases, verifies the checksum, replaces the binary and updates the plugins; `--check` only reports).
 
 - **Upgrading from 0.3.2 or 0.3.3:** after `mw update`, run `mw update --plugins` once (or re-run the install one-liner). The old binary updates its old plugin list, so only the new one installs `mw-jobs` and removes `tidewatch` and `mw-watch`. From 0.3.1 or older the same step applies.
+- `mw update` updates mw and wr together (each to its latest release; a failed wr download is a one-line note, the exit status is mw's own). The uninstallers remove both. See USAGE.md, "Install and update".
 - `mw update --plugins` alone (re)installs or updates just the plugins `mw` and `mw-jobs`, then removes the retired `tidewatch` and `mw-watch` (only after the install succeeded).
 - `MW_NO_PLUGINS=1` skips the plugin step in `install.sh`, `install.ps1` and `mw update`.
 - `MW_INSTALL_FILE=<path>` makes `install.sh` / `install.ps1` install a local `mw` binary (or a `.tar.gz` / `.zip` holding it) instead of downloading a release; checksum verification is skipped (CI smoke tests).

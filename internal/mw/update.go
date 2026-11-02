@@ -61,14 +61,16 @@ type ghRelease struct {
 	} `json:"assets"`
 }
 
-func latestRelease() (*ghRelease, error) {
-	b, err := httpGet(releaseAPI)
+func latestRelease() (*ghRelease, error) { return releaseFrom(releaseAPI) }
+
+func releaseFrom(api string) (*ghRelease, error) {
+	b, err := httpGet(api)
 	if err != nil {
 		return nil, err
 	}
 	var r ghRelease
 	if err := json.Unmarshal(b, &r); err != nil || r.Tag == "" {
-		return nil, fmt.Errorf("unexpected release data from %s", releaseAPI)
+		return nil, fmt.Errorf("unexpected release data from %s", api)
 	}
 	return &r, nil
 }
@@ -100,14 +102,17 @@ func getWith(c *http.Client, url string) ([]byte, error) {
 }
 
 // assetName is the release.yml name for this platform, e.g. miniwaves_Darwin_arm64.tar.gz.
-func assetName(goos, goarch string) string {
+func assetName(goos, goarch string) string { return assetFor(repoName, goos, goarch) }
+
+// assetFor is the release asset name of repo (miniwaves or wr) for a platform.
+func assetFor(repo, goos, goarch string) string {
 	osn := map[string]string{"darwin": "Darwin", "linux": "Linux", "windows": "Windows"}[goos]
 	arch := map[string]string{"amd64": "x86_64", "arm64": "arm64"}[goarch]
 	ext := ".tar.gz"
 	if goos == "windows" {
 		ext = ".zip"
 	}
-	return repoName + "_" + osn + "_" + arch + ext
+	return repo + "_" + osn + "_" + arch + ext
 }
 
 // newerVersion reports whether b is a newer x.y.z than a.
@@ -138,23 +143,6 @@ func updateCommand(args []string) error {
 	if len(args) > 0 && !check {
 		return errors.New("usage: " + binName + " update [--check] [--plugins]")
 	}
-	rel, err := latestRelease()
-	if err != nil {
-		return fmt.Errorf("cannot read the latest release (%v); see %s", err, releasesURL)
-	}
-	latest := strings.TrimPrefix(rel.Tag, "v")
-	if !newerVersion(version, latest) {
-		fmt.Printf("%s %s is current (latest release %s)\n", binName, version, latest)
-		return &exitError{code: 2, msg: "already current (" + version + "); nothing to update", quiet: true}
-	}
-	if check {
-		fmt.Printf("update available: %s → %s (%s update)\n", version, latest, binName)
-		return nil
-	}
-	bin, err := fetchVerified(rel, assetName(runtime.GOOS, runtime.GOARCH))
-	if err != nil {
-		return err
-	}
 	exe, err := exePath()
 	if err != nil {
 		return err
@@ -162,13 +150,106 @@ func updateCommand(args []string) error {
 	if r, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = r
 	}
+	changed, err := updateSelf(exe, check)
+	// wr is updated with mw (latest release of each); its failure is a note, never mw's exit status.
+	if updatePartner(os.Stdout, exe, check) {
+		changed = true
+	}
+	if err != nil {
+		return err
+	}
+	if !changed { // --check: 0 when something can be updated
+		return &exitError{code: 2, msg: "already current (" + version + "); nothing to update", quiet: true}
+	}
+	return nil
+}
+
+// updateSelf replaces exe with the latest mw release and reports whether it did
+// (check: only says whether one exists).
+func updateSelf(exe string, check bool) (bool, error) {
+	rel, err := latestRelease()
+	if err != nil {
+		return false, fmt.Errorf("cannot read the latest release (%v); see %s", err, releasesURL)
+	}
+	latest := strings.TrimPrefix(rel.Tag, "v")
+	if !newerVersion(version, latest) {
+		fmt.Printf("%s %s is current (latest release %s)\n", binName, version, latest)
+		return false, nil
+	}
+	if check {
+		fmt.Printf("update available: %s → %s (%s update)\n", version, latest, binName)
+		return true, nil
+	}
+	bin, err := fetchVerified(rel, repoName, binName)
+	if err != nil {
+		return false, err
+	}
 	if err := replaceExe(exe, bin); err != nil {
-		return fmt.Errorf("cannot replace %s (%v); install the new version with:\n%s", exe, err, installHint)
+		return false, fmt.Errorf("cannot replace %s (%v); install the new version with:\n%s", exe, err, installHint)
 	}
 	fmt.Printf("%s %s → %s (%s)\n", binName, version, latest, exe)
 	fanfareDefaults(os.Stdout)
 	installPlugins(os.Stdout)
-	return nil
+	return true, nil
+}
+
+// The partner binary: mw and wr install and update together, each at its latest release.
+const partnerRepo, partnerBin = "wr", "wr"
+
+var partnerAPI = "https://api.github.com/repos/stormovermars/" + partnerRepo + "/releases/latest"
+
+// updatePartner installs or updates wr next to exe (best effort: a failure is one note line).
+// It reports whether it changed wr (check: whether it would).
+func updatePartner(w io.Writer, exe string, check bool) bool {
+	p := filepath.Join(filepath.Dir(exe), partnerBin+filepath.Ext(exe))
+	have := binVersion(p) // "" when missing or not runnable
+	rel, err := releaseFrom(partnerAPI)
+	if err != nil {
+		fmt.Fprintf(w, "%s: not updated: cannot read the latest release (%v); retry: %s update\n", partnerBin, err, binName)
+		return false
+	}
+	latest := strings.TrimPrefix(rel.Tag, "v")
+	switch {
+	case have != "" && !newerVersion(have, latest):
+		fmt.Fprintf(w, "%s %s is current (latest release %s)\n", partnerBin, have, latest)
+		return false
+	case check && have == "":
+		fmt.Fprintf(w, "%s %s available, not installed at %s (%s update installs it)\n", partnerBin, latest, p, binName)
+		return true
+	case check:
+		fmt.Fprintf(w, "update available: %s %s → %s (%s update)\n", partnerBin, have, latest, binName)
+		return true
+	}
+	bin, err := fetchVerified(rel, partnerRepo, partnerBin)
+	if err == nil {
+		err = replaceExe(p, bin)
+	}
+	if err != nil {
+		fmt.Fprintf(w, "%s: not updated: %v; retry: %s update\n", partnerBin, oneLine(err.Error()), binName)
+		return false
+	}
+	if have == "" {
+		have = "(new)"
+	}
+	fmt.Fprintf(w, "%s %s → %s (%s)\n", partnerBin, have, latest, p)
+	return true
+}
+
+// binVersion is the version a mw or wr binary reports in `version -j` ("" when it cannot say).
+func binVersion(p string) string {
+	if _, err := os.Stat(p); err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	b, err := exec.CommandContext(ctx, p, "version", "-j").Output()
+	var v struct {
+		Version string `json:"version"`
+	}
+	if err != nil || json.Unmarshal(b, &v) != nil {
+		return ""
+	}
+	return v.Version
 }
 
 // Claude Code plugins: best effort, never changes the exit status.
@@ -273,14 +354,16 @@ func pluginListed(listing, id string) bool {
 	return false
 }
 
-// fetchVerified downloads the asset and checksums.txt, checks the sha256 and returns the binary.
-func fetchVerified(rel *ghRelease, name string) ([]byte, error) {
+// fetchVerified downloads repo's asset for this platform and checksums.txt, checks the sha256
+// and returns the binary bin from the archive.
+func fetchVerified(rel *ghRelease, repo, bin string) ([]byte, error) {
+	name := assetFor(repo, runtime.GOOS, runtime.GOARCH)
 	urls := map[string]string{}
 	for _, a := range rel.Assets {
 		urls[a.Name] = a.URL
 	}
 	if urls[name] == "" || urls["checksums.txt"] == "" {
-		return nil, fmt.Errorf("release %s has no %s (or checksums.txt); see %s", rel.Tag, name, releasesURL)
+		return nil, fmt.Errorf("release %s has no %s (or checksums.txt); see https://github.com/stormovermars/%s/releases", rel.Tag, name, repo)
 	}
 	arc, err := getAsset(urls[name])
 	if err != nil {
@@ -300,10 +383,10 @@ func fetchVerified(rel *ghRelease, name string) ([]byte, error) {
 	if want == "" || want != hex.EncodeToString(got[:]) {
 		return nil, fmt.Errorf("checksum mismatch for %s: not installed", name)
 	}
-	return extractBinary(arc, strings.HasSuffix(name, ".zip"))
+	return extractBinary(arc, strings.HasSuffix(name, ".zip"), bin)
 }
 
-func extractBinary(arc []byte, isZip bool) ([]byte, error) {
+func extractBinary(arc []byte, isZip bool, binName string) ([]byte, error) {
 	if isZip {
 		zr, err := zip.NewReader(bytes.NewReader(arc), int64(len(arc)))
 		if err != nil {
@@ -356,7 +439,7 @@ func replaceExe(exe string, data []byte) error {
 		os.Remove(tmp)
 		return werr
 	}
-	if swapOld {
+	if _, err := os.Stat(exe); swapOld && err == nil {
 		_ = os.Remove(exe + ".old")
 		if err := renameRetry(exe, exe+".old"); err != nil {
 			os.Remove(tmp)

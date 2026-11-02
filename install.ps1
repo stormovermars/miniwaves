@@ -9,12 +9,28 @@ $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
     default { throw "Unsupported architecture: $env:PROCESSOR_ARCHITECTURE" }
 }
 $asset = "miniwaves_Windows_$arch.zip"
-$base = if ($version -eq "latest") {
-    "https://github.com/$repo/releases/latest/download"
-} else {
-    "https://github.com/$repo/releases/download/$version"
-}
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("miniwaves-" + [guid]::NewGuid())
+
+# Fetch REPO ASSET VERSION DIR: download a release asset, check it against the release's
+# checksums.txt and unpack it into DIR. Throws on any failure.
+function Fetch($repo, $asset, $version, $dir) {
+    $base = if ($version -eq "latest") {
+        "https://github.com/$repo/releases/latest/download"
+    } else {
+        "https://github.com/$repo/releases/download/$version"
+    }
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $archive = Join-Path $dir $asset
+    $checksums = Join-Path $dir "checksums.txt"
+    Invoke-WebRequest -UseBasicParsing "$base/$asset" -OutFile $archive
+    Invoke-WebRequest -UseBasicParsing "$base/checksums.txt" -OutFile $checksums
+    $line = Get-Content $checksums | Where-Object { $_ -match "^[0-9a-fA-F]{64}\s+\*?$([regex]::Escape($asset))$" } | Select-Object -First 1
+    if (-not $line) { throw "Release checksum not found for $asset" }
+    $expected = ($line -split "\s+")[0].ToLowerInvariant()
+    $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+    if ($actual -ne $expected) { throw "Release checksum mismatch for $asset" }
+    Expand-Archive -Force $archive $dir
+}
 
 try {
     New-Item -ItemType Directory -Force -Path $temp, $dest | Out-Null
@@ -25,19 +41,19 @@ try {
         if ($env:MW_INSTALL_FILE -like "*.zip") { Expand-Archive -Force $env:MW_INSTALL_FILE $temp }
         else { Copy-Item -Force $env:MW_INSTALL_FILE (Join-Path $temp "mw.exe") }
     } else {
-    $archive = Join-Path $temp $asset
-    $checksums = Join-Path $temp "checksums.txt"
-    Invoke-WebRequest -UseBasicParsing "$base/$asset" -OutFile $archive
-    Invoke-WebRequest -UseBasicParsing "$base/checksums.txt" -OutFile $checksums
-    $line = Get-Content $checksums | Where-Object { $_ -match "^[0-9a-fA-F]{64}\s+\*?$([regex]::Escape($asset))$" } | Select-Object -First 1
-    if (-not $line) { throw "Release checksum not found" }
-    $expected = ($line -split "\s+")[0].ToLowerInvariant()
-    $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
-    if ($actual -ne $expected) { throw "Release checksum mismatch" }
-    Expand-Archive -Force $archive $temp
+        Fetch $repo $asset $version $temp
     }
     Copy-Item -Force (Join-Path $temp "mw.exe") (Join-Path $dest "mw.exe")
     Write-Output "installed miniwaves to $(Join-Path $dest 'mw.exe')"
+    # wr installs with mw, always its latest release. Best effort: a failure is a note.
+    $partnerRepo = if ($env:WR_REPO) { $env:WR_REPO } else { "stormovermars/wr" }
+    try {
+        Fetch $partnerRepo "wr_Windows_$arch.zip" "latest" (Join-Path $temp "wr")
+        Copy-Item -Force (Join-Path $temp "wr\wr.exe") (Join-Path $dest "wr.exe")
+        Write-Output "installed wr to $(Join-Path $dest 'wr.exe')"
+    } catch {
+        Write-Output "wr: not installed (download failed); retry: mw update"
+    }
     if ($env:MW_NO_FANFARE -ne "1" -and $env:MW_NO_PLUGINS -ne "1") {
         try { & (Join-Path $dest "mw.exe") user fanfare-defaults 2>&1 | Out-Null } catch { }
     }

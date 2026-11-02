@@ -135,7 +135,7 @@ On Windows PowerShell:
 ./build.ps1 clean
 ```
 
-Installers always install a compiled release binary. Remove it with:
+Installers always install a compiled release binary, and mw and wr go together: `install.sh` and `install.ps1` fetch mw and then the latest wr through one `fetch` / `Fetch` function (download, checksums.txt, sha256, unpack); a wr failure is a note, never the exit status. `update.go`: `updateSelf` then `updatePartner` (wr next to the mw binary, its version from `wr version -j`, release API `partnerAPI`; tests point it at a closed port or a `fakePartner` httptest server, never GitHub). `fetchVerified(rel, repo, bin)` and `extractBinary(..., bin)` serve both binaries; `replaceExe` also creates a missing target. Exit status: mw's own error, else 2 when neither changed. Remove both with:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/stormovermars/miniwaves/main/uninstall.sh | sh

@@ -23,17 +23,36 @@ import (
 // fakeRelease serves /latest, the platform asset (holding payload) and checksums.txt.
 func fakeRelease(t *testing.T, tag string, payload []byte, badSum bool) {
 	t.Helper()
-	name := assetName(runtime.GOOS, runtime.GOARCH)
+	oldAPI, oldPartner, oldExe, oldChk := releaseAPI, partnerAPI, exePath, assetURLCheck
+	t.Cleanup(func() { releaseAPI, partnerAPI, exePath, assetURLCheck = oldAPI, oldPartner, oldExe, oldChk })
+	assetURLCheck = func(u *url.URL) error {
+		if u.Hostname() == "127.0.0.1" {
+			return nil
+		}
+		return fmt.Errorf("refusing %s", u.Host)
+	}
+	releaseAPI = fakeServer(t, repoName, binName, tag, payload, badSum)
+}
+
+// fakePartner serves a wr release the same way (fakeRelease must run first).
+func fakePartner(t *testing.T, tag string, payload []byte, badSum bool) {
+	partnerAPI = fakeServer(t, partnerRepo, partnerBin, tag, payload, badSum)
+}
+
+// fakeServer serves one release of repo with bin inside; it returns the /latest URL.
+func fakeServer(t *testing.T, repo, bin, tag string, payload []byte, badSum bool) string {
+	t.Helper()
+	name := assetFor(repo, runtime.GOOS, runtime.GOARCH)
 	var arc bytes.Buffer
 	if runtime.GOOS == "windows" {
 		zw := zip.NewWriter(&arc)
-		w, _ := zw.Create(binName + ".exe")
+		w, _ := zw.Create(bin + ".exe")
 		w.Write(payload)
 		zw.Close()
 	} else {
 		gz := gzip.NewWriter(&arc)
 		tw := tar.NewWriter(gz)
-		tw.WriteHeader(&tar.Header{Name: binName, Mode: 0o755, Size: int64(len(payload))})
+		tw.WriteHeader(&tar.Header{Name: bin, Mode: 0o755, Size: int64(len(payload))})
 		tw.Write(payload)
 		tw.Close()
 		gz.Close()
@@ -56,15 +75,7 @@ func fakeRelease(t *testing.T, tag string, payload []byte, badSum bool) {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	oldAPI, oldExe, oldChk := releaseAPI, exePath, assetURLCheck
-	t.Cleanup(func() { releaseAPI, exePath, assetURLCheck = oldAPI, oldExe, oldChk })
-	assetURLCheck = func(u *url.URL) error {
-		if u.Host == srv.Listener.Addr().String() {
-			return nil
-		}
-		return fmt.Errorf("refusing %s", u.Host)
-	}
-	releaseAPI = srv.URL + "/latest"
+	return srv.URL + "/latest"
 }
 
 func fakeExe(t *testing.T) string {
@@ -78,7 +89,7 @@ func fakeExe(t *testing.T) string {
 func TestUpdateReplacesBinary(t *testing.T) {
 	fakeRelease(t, "v9.9.9", []byte("new binary"), false)
 	exe := fakeExe(t)
-	if s := out(t, "update", "--check"); s != "update available: "+version+" → 9.9.9 (mw update)\n" {
+	if s := out(t, "update", "--check"); !strings.HasPrefix(s, "update available: "+version+" → 9.9.9 (mw update)\n") {
 		t.Fatalf("--check: %q", s)
 	}
 	if b, _ := os.ReadFile(exe); string(b) != "old" {
@@ -107,6 +118,68 @@ func TestUpdateBadChecksumRefused(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(exe); string(b) != "old" {
 		t.Fatal("binary replaced despite bad checksum")
+	}
+}
+
+// mw update installs a missing wr next to mw even when mw itself is current.
+func TestUpdateInstallsPartner(t *testing.T) {
+	fakeRelease(t, "v"+version, []byte("x"), false)
+	fakePartner(t, "v9.9.9", []byte("wr binary"), false)
+	exe := fakeExe(t)
+	wr := filepath.Join(filepath.Dir(exe), partnerBin+filepath.Ext(exe))
+	if s := out(t, "update", "--check"); !strings.Contains(s, "wr 9.9.9 available, not installed") {
+		t.Fatalf("--check: %q", s)
+	}
+	if _, err := os.Stat(wr); err == nil {
+		t.Fatal("--check installed wr")
+	}
+	if s := out(t, "update"); !strings.Contains(s, "wr (new) → 9.9.9") {
+		t.Fatalf("update: %q", s)
+	}
+	if b, _ := os.ReadFile(wr); string(b) != "wr binary" {
+		t.Fatalf("wr %q", b)
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "old" {
+		t.Fatal("current mw replaced")
+	}
+}
+
+// A failed wr download is one note line; mw's own update and exit status stand.
+func TestUpdatePartnerFailureIsANote(t *testing.T) {
+	for _, partner := range []string{"unreachable", "bad checksum"} {
+		fakeRelease(t, "v9.9.9", []byte("new binary"), false)
+		if partner == "bad checksum" {
+			fakePartner(t, "v9.9.9", []byte("evil"), true)
+		} else {
+			partnerAPI = "http://127.0.0.1:1/latest"
+		}
+		exe := fakeExe(t)
+		var err error
+		s := captureOutput(t, func() { err = run([]string{"update"}) })
+		if err != nil || !strings.Contains(s, "wr: not updated: ") || !strings.Contains(s, "retry: mw update") {
+			t.Fatalf("%s: %v %q", partner, err, s)
+		}
+		if b, _ := os.ReadFile(exe); string(b) != "new binary" {
+			t.Fatalf("%s: mw %q", partner, b)
+		}
+		if _, err := os.Stat(filepath.Join(filepath.Dir(exe), partnerBin+filepath.Ext(exe))); err == nil {
+			t.Fatalf("%s: wr written", partner)
+		}
+	}
+}
+
+// mw's own failure is the exit status; wr is still updated.
+func TestUpdateSelfFailureStillUpdatesPartner(t *testing.T) {
+	fakeRelease(t, "v9.9.9", []byte("evil"), true)
+	fakePartner(t, "v9.9.9", []byte("wr binary"), false)
+	exe := fakeExe(t)
+	var err error
+	captureOutput(t, func() { err = run([]string{"update"}) })
+	if err == nil || !strings.Contains(err.Error(), "checksum") {
+		t.Fatalf("want mw's checksum error, got %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(filepath.Dir(exe), partnerBin+filepath.Ext(exe))); string(b) != "wr binary" {
+		t.Fatalf("wr %q", b)
 	}
 }
 
@@ -341,4 +414,8 @@ func TestUpdateClaudeConfigDirReachesClaude(t *testing.T) {
 			t.Fatalf("claude saw CLAUDE_CONFIG_DIR=%q, want %q", l, cfg)
 		}
 	}
+}
+
+func init() {
+	partnerAPI = "http://127.0.0.1:1/latest" // tests never reach GitHub for wr (fakePartner serves one)
 }
