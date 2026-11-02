@@ -25,7 +25,7 @@ jobs:
           "$py" -c "import hashlib,sys; h=lambda p: hashlib.sha256(open(p,'rb').read()).hexdigest(); a,b=h(sys.argv[1]),h(sys.argv[2]); print('generated',a); print('shipped  ',b); sys.exit(0 if a==b else 'generated WAV differs from assets/fanfare-default.wav')" "$RUNNER_TEMP/fanfare-default.wav" assets/fanfare-default.wav
       - name: Cross-build every release target
         if: runner.os == 'Linux'
-        run: for t in windows/amd64 windows/arm64 darwin/arm64 linux/amd64; do GOOS=${t%/*} GOARCH=${t#*/} go vet ./... && GOOS=${t%/*} GOARCH=${t#*/} go build -o /dev/null .; done
+        run: for t in windows/amd64 windows/arm64 darwin/arm64 linux/amd64; do GOOS=${t%/*} GOARCH=${t#*/} go vet ./... && GOOS=${t%/*} GOARCH=${t#*/} go build -o /dev/null ./cmd/mw; done
       - run: go test ./...
       - run: go test -race ./...
         if: runner.os != 'Windows' # -race needs cgo; the Windows job runs the plain suite above
@@ -56,8 +56,8 @@ jobs:
         run: |
           sh -n install.sh
           sh -n uninstall.sh
-          want="$(sed -n 's/^var version = "\(.*\)"/\1/p' gates.go)"
-          go build -o "$RUNNER_TEMP/mwbin/mw" .
+          want="$(sed -n 's/^var version = "\(.*\)"/\1/p' internal/mw/gates.go)"
+          go build -o "$RUNNER_TEMP/mwbin/mw" ./cmd/mw
           for plug in 1 0; do
             h="$RUNNER_TEMP/home$plug"; d="$RUNNER_TEMP/inst$plug"
             mkdir -p "$h"
@@ -74,8 +74,8 @@ jobs:
         run: |
           $null = [ScriptBlock]::Create((Get-Content install.ps1 -Raw))
           $null = [ScriptBlock]::Create((Get-Content uninstall.ps1 -Raw))
-          $want = (Select-String -Path gates.go -Pattern '^var version = "(.*)"').Matches[0].Groups[1].Value
-          go build -o (Join-Path $env:RUNNER_TEMP "mwbin\mw.exe") .
+          $want = (Select-String -Path internal/mw/gates.go -Pattern '^var version = "(.*)"').Matches[0].Groups[1].Value
+          go build -o (Join-Path $env:RUNNER_TEMP "mwbin\mw.exe") ./cmd/mw
           foreach ($plug in 1, 0) {
             $h = Join-Path $env:RUNNER_TEMP "home$plug"
             New-Item -ItemType Directory -Force $h | Out-Null

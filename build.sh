@@ -8,7 +8,7 @@ action="${1:-build}"
 case "$action" in
   build)
     mkdir -p "$out"
-    (cd "$root" && go build -trimpath -o "$out/mw" .)
+    (cd "$root" && go build -trimpath -o "$out/mw" ./cmd/mw)
     echo "built $out/mw"
     ;;
   clean)
