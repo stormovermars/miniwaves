@@ -458,7 +458,7 @@ Rules, all in the dispatcher prompt: the dispatcher checks `mw list -k chore` fo
 
 **Prompts are never read from repo files.** The dispatcher and session prompts are embedded in the mw binary, and ceremony output (notes, evidence, asks) is data: it is never fed back into a prompt as instructions.
 
-**Steps only a human performs.** The protocol steps `merge`, push and tag change main or publish, so no session or ceremony does them: the dispatcher raises one `mw ask` and a human runs them. See PROTOCOL.md.
+**Steps only a human performs.** The protocol steps `merge`, push and tag change main or publish, so no session or ceremony does them: the dispatcher raises one `mw ask` and a human runs them. See internal/content/PROTOCOL.md.
 
 ### Kit
 
