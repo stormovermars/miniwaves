@@ -19,11 +19,28 @@ esac
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
-if [ "$version" = latest ]; then
-  url="https://github.com/$repo/releases/latest/download/miniwaves_${os}_${arch}.tar.gz"
-else
-  url="https://github.com/$repo/releases/download/$version/miniwaves_${os}_${arch}.tar.gz"
-fi
+
+# fetch REPO ASSET VERSION DIR: download a release asset, check it against the release's
+# checksums.txt and unpack it into DIR. Returns non-zero on any failure.
+fetch() {
+  if [ "$3" = latest ]; then
+    u="https://github.com/$1/releases/latest/download/$2"
+  else
+    u="https://github.com/$1/releases/download/$3/$2"
+  fi
+  mkdir -p "$4" || return 1
+  curl -fsSL "$u" -o "$4/$2" || return 1
+  curl -fsSL "${u%/*}/checksums.txt" -o "$4/checksums.txt" || return 1
+  expected="$(awk -v file="$2" '$2 == file || $2 == "*" file { print $1 }' "$4/checksums.txt")"
+  [ -n "$expected" ] || { echo "release checksum not found for $2" >&2; return 1; }
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$4/$2" | awk '{print $1}')"
+  else
+    actual="$(shasum -a 256 "$4/$2" | awk '{print $1}')"
+  fi
+  [ "$actual" = "$expected" ] || { echo "release checksum mismatch for $2" >&2; return 1; }
+  tar -xzf "$4/$2" -C "$4"
+}
 
 mkdir -p "$dest"
 if [ -n "${MW_INSTALL_FILE:-}" ]; then
@@ -35,22 +52,18 @@ if [ -n "${MW_INSTALL_FILE:-}" ]; then
     *) cp "$MW_INSTALL_FILE" "$tmp/mw" ;;
   esac
 else
-archive="$tmp/miniwaves.tar.gz"
-curl -fsSL "$url" -o "$archive"
-checksums_url="${url%/*}/checksums.txt"
-curl -fsSL "$checksums_url" -o "$tmp/checksums.txt"
-expected="$(awk -v file="$(basename "$url")" '$2 == file { print $1 }' "$tmp/checksums.txt")"
-[ -n "$expected" ] || { echo "release checksum not found" >&2; exit 1; }
-if command -v sha256sum >/dev/null 2>&1; then
-  actual="$(sha256sum "$archive" | awk '{print $1}')"
-else
-  actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
-fi
-[ "$actual" = "$expected" ] || { echo "release checksum mismatch" >&2; exit 1; }
-tar -xzf "$archive" -C "$tmp"
+  fetch "$repo" "miniwaves_${os}_${arch}.tar.gz" "$version" "$tmp" || exit 1
 fi
 install -m 0755 "$tmp/mw" "$dest/mw"
 echo "installed miniwaves to $dest/mw"
+
+# wr (wave rider) installs with mw, always its latest release. Best effort: a failure is a note.
+wr_repo="${WR_REPO:-stormovermars/wr}"
+if fetch "$wr_repo" "wr_${os}_${arch}.tar.gz" latest "$tmp/wr" && install -m 0755 "$tmp/wr/wr" "$dest/wr"; then
+  echo "installed wr to $dest/wr"
+else
+  echo "wr: not installed (download failed); retry: mw update"
+fi
 case ":$PATH:" in *":$dest:"*) ;; *) echo "add $dest to PATH: export PATH=\"$dest:\$PATH\"" ;; esac
 
 # Fanfare defaults (on, set all) only where the user has not chosen; MW_NO_FANFARE=1 or MW_NO_PLUGINS=1 skips.

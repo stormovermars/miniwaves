@@ -18,7 +18,7 @@ if ($Action -eq "clean") {
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 Push-Location $root
 try {
-    go build -trimpath -o $binary .
+    go build -trimpath -o $binary ./cmd/mw
 } finally {
     Pop-Location
 }

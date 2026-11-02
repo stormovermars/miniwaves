@@ -80,3 +80,9 @@ New optional job keys, all in schema 9 (an older mw drops unknown index keys whe
 - New optional job keys `ceremonies` and `ready_min`; a job that sets neither prints as before.
 - `mw jobs show -j` has a new `news_path` field.
 - `mw log --follow` is new (an alerts runner for `alerts.exec`); nothing runs unless you pass `--exec`.
+
+## 0.3.19
+
+No schema change, no migration step. mw and wr now install, update and uninstall together, each at its latest release: `install.sh`/`install.ps1` also install wr, `mw update` also installs or updates wr next to mw (a wr failure is a note; mw's exit status is its own), and the uninstallers remove both. wr 0.2.5 accepts schema 9 boards (wr 0.2.4 refused them); use it with any mw 0.3.x.
+
+mw no longer shows any banner or notification (task, milestone, wave close) and the finale Stop dialog is gone: sound only. The `stop_dialog` key (and `MW_FANFARE_STOP_CONTROL`, `MW_FANFARE_NOTIFY`) is ignored, so old boards load unchanged; stop a finale with `mw fanfare stop`. A milestone or finale needs a batch of 2 or more items; a lone task gets only the task beep, at most one per 15 s across boards.
