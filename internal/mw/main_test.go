@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -1177,7 +1178,7 @@ func TestShowPrintsEverythingWithoutV(t *testing.T) {
 			t.Fatalf("missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "T") && strings.Contains(out, "Z ") {
+	if regexp.MustCompile(`T\d\d:\d\d:\d\d`).MatchString(out) {
 		t.Fatalf("raw timestamps without -v:\n%s", out)
 	}
 	out = captureOutput(t, func() { runAll(t, []string{"show", "STR-001"}) })
