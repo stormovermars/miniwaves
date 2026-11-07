@@ -1086,6 +1086,9 @@ func TestMain(m *testing.M) {
 		}
 	}
 	beepStampPath = func() string { return "" } // no coalescing stamp unless a test sets one
+	// t.TempDir lives under %LOCALAPPDATA%\Temp on Windows, which discovery never scans; CI hides this
+	// behind an 8.3 short temp path. TestBoardsSkipsAppDataEnv sets its own list.
+	boardsAppData = func() []string { return nil }
 	code := m.Run()
 	if err == nil {
 		os.RemoveAll(d)
