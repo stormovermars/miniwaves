@@ -526,24 +526,24 @@ totals (`DONE (n, +N archived)` with `-v`, `archived` in `board -j`); IDs are ne
 `mw drive` records a session-to-session drive on both boards: a driver session works through a remote session, on the same computer or another. mw sends nothing; the one-line messages travel over SendMessage (Remote Control between computers) and mw formats and parses them so the two records agree. A member is the tenant a session belongs to; a session does the work.
 
 ```
-mw drive send open GOAL... --to MEMBER [--id SLUG]
+mw drive send open --to MEMBER [--id SLUG] GOAL...
 mw drive send task|steer|note ID N TEXT...      (note N: 0 is the drive itself)
 mw drive send result ID N pass|fail [TEXT...]   (remote)
 mw drive send stop|close ID                     (driver)
 mw drive send pause ID                          (remote: pauses when the driver is idle)
-mw drive recv "mw-drive ID SEQ EVENT [N] [TEXT]"
+mw drive recv [LINE]                            (no LINE: reads it from stdin)
 mw drive resume ID
 mw drive status [-j]
 mw drive check --idle DUR [--at RFC3339] [-j]
 ```
 
-- Every send prints the wire line to send; `recv` prints the reply line when there is one (`busy`, `closed`, `dup`) and exits 0. A malformed line exits 1 (`USAGE`); an event that does not fit the drive's state exits 2 (`DRIVE_STATE`). Put `--` before TEXT that starts with a dash.
-- `send`, `recv` and `resume` need a named session (`-s NAME` or `MW_SESSION`, a valid mw name such as `mac-a`), else `USAGE`. A tenant whose job has a tracker refuses drive.
+- Every send prints the wire line to send; `recv` prints the reply line when there is one (`busy`, `closed`, `dup`) and exits 0. A malformed line exits 1 (`USAGE`); an event that does not fit the drive's state exits 2 (`DRIVE_STATE`). Options (`-s`, `--to`, `--id`, `-j`) come before the event, the id or the goal; everything after `ID N` (and once the goal starts) is literal TEXT, so TEXT may contain `-j` or `--to`. `recv` without a LINE reads the line from stdin: pass a peer's line through a quoted heredoc (`<<'EOF'` in bash, `@'...'@ | mw drive recv` in PowerShell), never inside a shell-quoted argument. TEXT may not contain `[` or `]`. The open line names the remote member (`mw-drive ID 1 open MEMBER GOAL`); `recv open` refuses a line addressed to another tenant.
+- Every drive command except `status` needs a named, registered and not stopped session (`-s NAME` or `MW_SESSION`, a valid mw name such as `mac-a`), else `USAGE`. A tenant whose job has a tracker refuses drive.
 - The id is `<driver tenant>.<slug>`, at most 30 characters from `a-z 0-9 . -`; the ticket is `drive.<id>`. The driver's story is `drive>MEMBER: ID`, the remote's `drive by MEMBER: ID`, both claimed by the session; each task is a child titled `drive N`. TEXT is never a title: it lives only in notes `mw-drive SEQ EVENT [N] [data from MEMBER] TEXT`, which stay labelled wherever notes are shown again (`mw show`, the SessionStart context).
-- One drive per remote session: `recv open` for a session that already holds a remote drive prints `busy <driver>`. A session that holds a drive as the remote cannot open one (`DRIVE_STATE`). A `result N pass` closes child N (`--no-evidence "drive result"`); `fail` only notes it. `stop` and `pause` put the open children back to ready; `close` marks the story done and notes children left open; `busy` and `closed` close the driver's story.
-- `seq` counts per sender and drive from 1; a line with seq at or below the last applied one prints `dup`. Questions and answers travel as `note N`; mw never writes an answer from a line.
-- If a session dies, `mw session reap` releases its claim; another session of the same member runs `mw drive resume ID`, which re-claims the story and prints a `resumed` line for the peer. A story held by a live session is refused.
-- `status` lists open drives (id, role, peer, holding session, last seq each way, age of the last event); `check --idle 30m` lists drives whose last driver event is older than the limit (`--at` sets the clock, for tests).
+- One drive per remote session: `recv open` for a session that already holds a remote drive prints `busy <driver>`. `recv open` also prints `busy` when the session holds a drive as the driver. A session that holds a drive as the remote cannot open one, and `resume` cannot take a remote drive into a driving session or the reverse (`DRIVE_STATE`). The driver's task children are created `blocked` ("waiting on MEMBER") and the remote's `ready`; `mw next` never serves the children of a drive, take them by id. `result N pass` is sent only after the remote finished task N with a normal `mw done` (gates apply there); on the driver the mirror child closes as no-evidence ("drive result from MEMBER", Judged empty when the judge gate is on); `fail` only notes it. `stop` and `pause` put the open children back to ready; `close`, `closed` and `busy` mark the story done as no-evidence (with the judge gate on it waits for review) and block the children left open ("left open at close").
+- `seq` counts per sender and drive from 1; a line with seq at or below the last applied one prints `dup`; a line past the next one is refused (`DRIVE_STATE`, "missing seq K"): deliver the lines in order. Questions and answers travel as `note N`; mw never writes an answer from a line.
+- If a session dies, `mw session reap` releases its claim; another session of the same member runs `mw drive resume ID`, which re-claims the story and prints a `resumed` line for the peer. A story held by a live session is refused; a holder that is stopped or no longer registered counts as dead.
+- `status` lists open drives (id, role, peer, holding session, last seq each way, age of the last event); `check --idle 30m` lists the remote drives held by the calling session whose last driver event is older than the limit (`--at` sets the clock, for tests).
 
 ## Error codes (`-j`)
 
