@@ -16,6 +16,9 @@ import (
 	toon "github.com/toon-format/toon-go"
 )
 
+// writeRun is true while a command that writes runs (set by run).
+var writeRun bool
+
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 var flagAliases = map[string]string{
@@ -162,9 +165,59 @@ func oneLine(s string) string {
 	return s
 }
 
+// qualifiedID is TENANT:ID, the cross-tenant form of an item id.
+var qualifiedID = regexp.MustCompile(`^([a-z0-9]+(?:-[a-z0-9]+)*):([A-Za-z]+-[0-9]+)$`)
+
+// normalizeArgs lets the global flags (-t SLUG, -A, -j) lead the command, makes --version/-V mean
+// "version", and turns a qualified id (tenant:ID) into ID plus -t tenant.
+func normalizeArgs(args []string) []string {
+	if len(args) > 0 && (args[0] == "--version" || args[0] == "-V") {
+		args = append([]string{"version"}, args[1:]...)
+	}
+	i := 0
+	for i < len(args) {
+		a := args[i]
+		if a == "-A" || a == "--all" || a == "-j" || a == "--json" {
+			i++
+		} else if (a == "-t" || a == "--tenant") && i+1 < len(args) {
+			i += 2
+		} else {
+			break
+		}
+	}
+	if i > 0 && i < len(args) {
+		pre, rest := args[:i], append([]string(nil), args[i+1:]...)
+		cut := len(rest)
+		for k, a := range rest {
+			if a == "--" {
+				cut = k
+				break
+			}
+		}
+		out := append([]string{args[i]}, rest[:cut]...)
+		out = append(out, pre...)
+		args = append(out, rest[cut:]...)
+	}
+	if len(args) > 1 {
+		switch args[0] {
+		case "show", "note", "done", "start", "ready", "block", "reopen", "edit", "accept", "reject", "judge", "ask", "answer":
+			if m := qualifiedID.FindStringSubmatch(args[1]); m != nil {
+				out := append([]string{args[0], m[2]}, args[2:]...)
+				if !hasFlag(args[2:], "-t") && !hasFlag(args[2:], "--tenant") {
+					out = append(out, "-t", m[1])
+				}
+				args = out
+			}
+		}
+	}
+	return args
+}
+
 func run(args []string) error {
 	resetRunState()
 	savedCount, lastSaved = 0, nil
+	args = normalizeArgs(args)
+	writeRun = len(args) > 0 && !readOnly(args)
 	if len(args) == 0 {
 		return usage("")
 	}
@@ -336,6 +389,8 @@ func dispatch(path string, w *Workspace, args []string) error {
 		return gateCommand(path, w, args[1:])
 	case "edit":
 		return editCommand(path, w, args[1:])
+	case "check":
+		return checkCommand(w, args[1:])
 	case "review":
 		return reviewCommand(w, args[1:])
 	case "judge":
@@ -381,7 +436,7 @@ func readOnly(args []string) bool {
 		sub = args[1]
 	}
 	switch args[0] {
-	case "list", "ls", "show", "log", "board", "review", "judge", "context", "get-prompt":
+	case "list", "ls", "show", "log", "board", "review", "judge", "context", "get-prompt", "check":
 		return true
 	case "next":
 		return !has("--claim")
@@ -739,6 +794,7 @@ Usage:
   mw ask ID QUESTION... [-s NAME] | mw answer ID TEXT... --by NAME | mw decide TEXT... [--by NAME] [-b WHY] [-p ID]
   mw gate [-t SLUG] [-j] | gate level trust|proof|spec|judged | gate evidence|acceptance|judge on|off|auto [--by NAME]
   mw review [-t SLUG] [-j]
+  mw check [-t SLUG] [-j]               parents in inbox/ready with children doing or done
   mw judge ID [-t SLUG]
   mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]
   mw list [-t SLUG | -A [-s SESSION]] [-k KIND] [-S STATUS] [-n N] [-j] [-v]

@@ -218,7 +218,7 @@ func TestFolderDefaultTenant(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if !strings.Contains(listed, "tenant,items,selected") || !strings.Contains(listed, "api,0,true") {
+	if !strings.Contains(listed, "* api  0 items") {
 		t.Fatalf("folder-selected tenant not visible:\n%s", listed)
 	}
 	if err := os.Chdir(child); err != nil {
@@ -1131,7 +1131,7 @@ func TestBoardWithoutActiveTenantField(t *testing.T) { // F11
 }
 
 func TestVersion051(t *testing.T) {
-	if version != "0.3.19" || currentSchema != 9 {
+	if version != "0.3.20" || currentSchema != 9 {
 		t.Fatal(version, currentSchema)
 	}
 }

@@ -109,7 +109,7 @@ an initialized workspace.
 mw description [-j]
 mw init [workspace name] | mw init --kit coordinated --job ID   # the kit writes files only (see "Kit")
 mw tenant add SLUG [NAME...] [-d DIR]   # on an existing slug with -d: updates the path
-mw tenant list [-j] [-v] | default [SLUG|-]
+mw tenant list [-j] [-v] | default [SLUG|-]   # one line per tenant
 mw boards [DIR] [--depth N] [--up] [-j]   # discover boards below DIR (read-only, index files only)
 mw migrate [--dry-run] [PATH]   # upgrade a schema 5/6 workspace file to 7 (MIGRATION.md)
 mw dirs [init] [-j] | set NAME PATH   # NAME: datalake docs data tools templates builds evidence scratch (all eight shown by mw dirs)
@@ -122,7 +122,8 @@ mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
 mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [--ticket KEY]
 mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY]   # -c under a session only while acceptance is empty
 mw gate [-t SLUG] [-j] | mw gate level trust|proof|spec|judged [-t SLUG] [--workspace] [--by NAME] | mw gate evidence|acceptance|judge on|off|auto [--by NAME] [--workspace]
-mw version [-j]   # {version, schema, board_schema, board}: nearest workspace and its schema (null if none)
+mw check [-t SLUG] [-j]   # parents in inbox/ready with children doing or done
+mw version [-j] | --version | -V   # {version, schema, board_schema, board}: nearest workspace and its schema (null if none)
 mw ask ID QUESTION... [-t SLUG] [-s NAME]   # a question for a human, as an event (see "Needs you and decisions")
 mw answer ID TEXT... --by NAME [-t SLUG]   # human only; closes the item's open ask
 mw answer ID --accept --by NAME [-t SLUG]   # human only; takes the open ask as asked: a decide "accepted: ASK", then the answer "accepted"
@@ -685,3 +686,5 @@ The first working release after 0.1.0 (the v0.2.0 tag never produced release ass
 - `mw update [--check] [--plugins]` replaces the binary with the latest GitHub release (checksum verified, exit 2 when current); `mw version` and `mw help` print the releases URL, `version -j` adds `repo` and `releases_url`.
 - Windows: rename retry for writes over an open board file, `~\` paths, `install.ps1` adds mw to the user PATH, the plugin hook installs the Windows asset from Git Bash, CI on windows-latest is a gate (see [Windows](#windows)).
 - Removed since 0.1.0: `mw tenant use` (folder default, tenant path, `MW_TENANT` and the first tenant select the tenant; `tenant default` stays).
+
+- Global flags `-t SLUG`, `-A`, `-j` work before or after the command; `tenant:ID` (for example `redact-win:STR-104`) names an item in another tenant for show, note, done and the other id commands.

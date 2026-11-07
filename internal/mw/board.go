@@ -471,15 +471,24 @@ func tenantByFolder(w *Workspace, cwd string) (*Tenant, error) {
 	}
 	best := -1
 	var match *Tenant
+	var tied []string
 	for i := range w.Tenants {
-		if w.Tenants[i].Path == "" {
+		if w.Tenants[i].Path == "" || w.Tenants[i].Hidden {
 			continue
 		}
 		p, _ := filepath.Abs(w.Tenants[i].Path)
 		p = matchDir(p)
-		if (cwd == p || strings.HasPrefix(cwd, p+string(os.PathSeparator))) && len(p) > best {
-			match, best = &w.Tenants[i], len(p)
+		if cwd == p || strings.HasPrefix(cwd, p+string(os.PathSeparator)) {
+			if len(p) > best {
+				match, best, tied = &w.Tenants[i], len(p), nil
+			}
+			if len(p) == best {
+				tied = append(tied, w.Tenants[i].Slug)
+			}
 		}
+	}
+	if len(tied) > 1 && writeRun {
+		fmt.Fprintf(os.Stderr, "mw: warning: this folder maps to %d tenants (%s); using %s. Pass -t SLUG or set MW_TENANT.\n", len(tied), strings.Join(tied, ", "), match.Slug)
 	}
 	return match, nil
 }

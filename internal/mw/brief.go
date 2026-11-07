@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -38,13 +39,13 @@ func parseTS(s string) time.Time {
 	return t
 }
 
-// shortTS renders an RFC3339 stamp as local "MM-DD HH:MM"; unparsable input is returned as is.
+// shortTS renders an RFC3339 stamp as local ISO-like "YYYY-MM-DDTHH:MM+TZ"; unparsable input is returned as is.
 func shortTS(s string) string {
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {
 		return s
 	}
-	return t.Local().Format("01-02 15:04")
+	return t.Local().Format("2006-01-02T15:04Z07:00")
 }
 
 // ago renders the age of a stamp compactly: 5m, 3h, 2d.
@@ -222,6 +223,7 @@ type briefDoc struct {
 	AcceptanceFrom string      `json:"acceptance_from,omitempty"`
 	EvidenceDir    string      `json:"evidence_dir"`
 	EvidenceFiles  int         `json:"evidence_files"`
+	Cited          string      `json:"evidence_cited,omitempty"`
 	Evidence       []string    `json:"evidence,omitempty"`
 	Children       []itemBrief `json:"children"`
 	Note           string      `json:"note,omitempty"`
@@ -300,6 +302,7 @@ func briefOf(w *Workspace, t *Tenant, it Item, verbose bool) briefDoc {
 	}
 	d.EvidenceDir = evidenceFolder(w, t, it.ID)
 	d.EvidenceFiles = countEvidence(d.EvidenceDir)
+	d.Cited = citedEvidence(it.Notes)
 	for _, c := range t.Items {
 		if c.Parent == it.ID || (it.Kind == "wave" && c.Wave == it.ID) {
 			d.Children = append(d.Children, itemBrief{c.ID, c.Kind, c.Status, compactText(c.Title, 72), c.Ticket})
@@ -350,7 +353,11 @@ func printBriefFull(d briefDoc, verbose, full bool) {
 	} else {
 		fmt.Println("acceptance: none")
 	}
-	fmt.Printf("evidence: %s (%d files)\n", d.EvidenceDir, d.EvidenceFiles)
+	cited := ""
+	if d.Cited != "" {
+		cited = "; notes cite " + d.Cited
+	}
+	fmt.Printf("evidence: %s (%d files%s)\n", d.EvidenceDir, d.EvidenceFiles, cited)
 	for _, f := range d.Evidence {
 		fmt.Println("  " + f)
 	}
@@ -596,4 +603,35 @@ func logSinceCommand(w *Workspace, o map[string]string) error {
 	}
 	fmt.Println("next: " + next)
 	return nil
+}
+
+var (
+	commitRe  = regexp.MustCompile(`\b[0-9a-f]{7,40}\b`)
+	digitRe   = regexp.MustCompile(`[0-9]`)
+	letterRe  = regexp.MustCompile(`[a-f]`)
+	testRunRe = regexp.MustCompile(`(?i)\b(go test|tests? (pass|ok|green)|pass(ed|ing) tests?|tests? passed|all tests)\b`)
+)
+
+// citedEvidence summarizes the commit hashes and test runs the notes name ("" when none), so show
+// does not claim zero evidence for work whose proof lives in free text.
+func citedEvidence(notes []string) string {
+	commits, tests := map[string]bool{}, 0
+	for _, n := range notes {
+		for _, h := range commitRe.FindAllString(n, -1) {
+			if digitRe.MatchString(h) && letterRe.MatchString(h) {
+				commits[h] = true
+			}
+		}
+		if testRunRe.MatchString(n) {
+			tests++
+		}
+	}
+	var parts []string
+	if len(commits) > 0 {
+		parts = append(parts, fmt.Sprintf("%d commits", len(commits)))
+	}
+	if tests > 0 {
+		parts = append(parts, fmt.Sprintf("%d test runs", tests))
+	}
+	return strings.Join(parts, ", ")
 }

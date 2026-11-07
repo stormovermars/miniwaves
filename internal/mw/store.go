@@ -385,7 +385,7 @@ func scopeOf(w *Workspace, args []string) scope {
 	single := false
 	idx := false
 	switch args[0] {
-	case "add", "ready", "start", "block", "done", "reopen", "show", "edit", "ask", "answer", "decide", "next", "accept", "reject", "wave", "review", "judge", "log", "list", "ls", "board", "context":
+	case "add", "ready", "start", "block", "done", "reopen", "show", "edit", "ask", "answer", "decide", "next", "accept", "reject", "wave", "review", "judge", "log", "list", "ls", "board", "context", "check":
 		single = true
 	case "archive":
 		single = o["tenant"] != ""

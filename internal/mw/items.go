@@ -47,6 +47,20 @@ func tenantCommand(path string, w *Workspace, args []string) error {
 		for _, t := range shown(w, o) {
 			out = append(out, tenantBrief{t.Slug, len(t.Items), t.Slug == selected.Slug, t.Tags})
 		}
+		if o["json"] != "true" { // one line per tenant: "* slug  N items  tag,tag" (* marks the selected one)
+			for _, b := range out {
+				mark := " "
+				if b.Selected {
+					mark = "*"
+				}
+				fmt.Printf("%s %s  %d items", mark, b.Tenant, b.Items)
+				if len(b.Tags) > 0 {
+					fmt.Print("  " + strings.Join(b.Tags, ","))
+				}
+				fmt.Println()
+			}
+			return nil
+		}
 		return printData(out, o)
 	case "default":
 		cwd, err := filepath.Abs(workDir())

@@ -157,7 +157,11 @@ func ticketShown(cfg JobConfig, raw string) (ticket, label, link string) {
 func ticketForItem(w *Workspace, t *Tenant, raw string) (string, error) {
 	cfg, ok := w.Jobs[t.Job]
 	if t.Job == "" || !ok || cfg.Tracker == "" {
-		return "", errors.New("ticket needs a tracker on the item's job: mw jobs set JOB tracker=KIND [tracker_url=URL] (kinds: " + strings.Join(trackerKinds, ", ") + ")")
+		p := strings.TrimSpace(raw) // no tracker: keep the key as plain text
+		if p == "" || len(p) > 40 || ticketPlainRe.MatchString(p) {
+			return "", errors.New("ticket without a tracker must be 1-40 letters, digits, # _ . -")
+		}
+		return p, nil
 	}
 	return canonTicket(cfg.Tracker, raw)
 }

@@ -10,7 +10,7 @@ import (
 // goldenBoard builds a fixed board whose outputs must not change while every
 // gate is off (byte for byte with the pre-gate binary).
 var (
-	tsRe       = regexp.MustCompile(`\d\d-\d\d \d\d:\d\d`)
+	tsRe       = regexp.MustCompile(`\d{4}-\d\d-\d\dT\d\d:\d\d(?:Z|[+-]\d\d:\d\d)`)
 	agoRe      = regexp.MustCompile(`last: (now|\d+m ago)`)
 	ageFieldRe = regexp.MustCompile(`("age": ?)"\d+[mhd]"`)
 	ageRe      = regexp.MustCompile(`doing \d+[mhd]\b`)

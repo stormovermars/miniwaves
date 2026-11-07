@@ -74,7 +74,6 @@ func TestTicketCommands(t *testing.T) {
 	inTempDir(t)
 	t.Setenv("MW_SESSION", "")
 	runAll(t, []string{"init", "T"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"}, []string{"jobs", "enable", "j", "-t", "t"})
-	wantErr(t, "ticket needs a tracker", "add", "task", "X", "--ticket", "MOB-1")
 	runAll(t, []string{"jobs", "set", "j", "tracker=jira", "tracker_url=https://acme.atlassian.net"})
 	wantErr(t, "not a valid jira ticket", "add", "task", "X", "--ticket", "nope")
 	wantErr(t, "not a valid jira ticket", "add", "task", "X", "--ticket", "MOB-1; rm -rf")
@@ -247,4 +246,15 @@ func TestTicketEscapingAndUnknownTracker(t *testing.T) {
 		t.Errorf("hostile url linked in html")
 	}
 	_ = filepath.Join
+}
+
+func TestTicketWithoutTracker(t *testing.T) {
+	inTempDir(t)
+	t.Setenv("MW_SESSION", "")
+	runAll(t, []string{"init", "T"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"})
+	runAll(t, []string{"add", "task", "X", "--ticket", "MOB-1"})
+	if out := captureOutput(t, func() { runAll(t, []string{"show", "TSK-001", "-j"}) }); !strings.Contains(out, `"ticket": "MOB-1"`) {
+		t.Fatalf("plain ticket not stored:\n%s", out)
+	}
+	wantErr(t, "ticket without a tracker", "add", "task", "Y", "--ticket", "a b!")
 }
