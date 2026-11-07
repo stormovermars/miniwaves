@@ -1,0 +1,19 @@
+mw drive send open GOAL... --to MEMBER [--id SLUG]
+mw drive send task|steer|note ID N TEXT...   (note N: 0 = the drive itself)
+mw drive send result ID N pass|fail [TEXT...]   (remote)
+mw drive send stop|close ID   (driver) | mw drive send pause ID   (remote)
+mw drive recv "mw-drive ID SEQ EVENT [N] [TEXT]"
+mw drive resume ID
+mw drive status [-j]
+mw drive check --idle DUR [--at RFC3339] [-j]
+Records a session-to-session drive on both boards; mw sends nothing (the line travels over SendMessage).
+Wire line: mw-drive ID SEQ EVENT [N] [TEXT], ASCII, TEXT at most 400 characters. ID is MEMBER.SLUG (at most 30 characters
+from a-z 0-9 . -), the ticket is drive.ID. SEQ counts per sender and drive; a line with seq at or below the last applied one prints dup.
+send, recv and resume need a named session (-s NAME or MW_SESSION); a tenant with a tracker refuses drive.
+One drive per remote session (a second open prints a busy line); a driven session cannot drive.
+recv prints the reply line when there is one (busy, closed, dup), exit 0. A malformed line exits 1 (USAGE); an event that does not
+fit the drive's state exits 2 (DRIVE_STATE). TEXT is stored only in notes labelled [data from MEMBER], never in titles.
+Put -- before TEXT that starts with a dash. See USAGE.md, "Drive".
+
+Common names when shown: -t/--tenant, -s/--session, -j/--json, -v/--verbose.
+Run `mw help` for all commands and flag mappings.

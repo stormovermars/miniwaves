@@ -34,6 +34,9 @@ func TestErrorCodesContract(t *testing.T) {
 		{[]string{"frobnicate"}, 1, "mw: unknown command \"frobnicate\" (try mw help)\n", "USAGE"},
 		{[]string{"done", "TSK-001", "ok", "-s", "w1"}, 1, "", "GATE_REFUSED"},
 		{[]string{"gate", "evidence", "off", "-s", "w1"}, 1, "mw: mw gate is for humans: unset MW_SESSION and drop -s\n", "HUMAN_ONLY"},
+		{[]string{"drive", "recv", "junk", "-s", "w1"}, 1, "", "USAGE"},
+		{[]string{"drive", "send", "open", "x", "--to", "other"}, 1, "mw: drive needs a named session: use -s NAME or MW_SESSION (for example mac-a)\n", "USAGE"},
+		{[]string{"drive", "resume", "app.nope", "-s", "w1"}, 2, "", "DRIVE_STATE"},
 		{[]string{"get-prompt", "session", "dup"}, 3, "mw: session dup already exists\n", "SESSION_EXISTS"},
 	}
 	for _, c := range cases {
