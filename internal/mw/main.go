@@ -33,7 +33,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "accept": true, "action": true, "grep": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -407,6 +407,8 @@ func dispatch(path string, w *Workspace, args []string) error {
 		return archiveCommand(path, w, args[1:])
 	case "context":
 		return contextCommand(w, args[1:])
+	case "drive":
+		return driveCommand(path, w, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q (try mw help)", args[0])
 	}
@@ -447,6 +449,8 @@ func readOnly(args []string) bool {
 		return sub == "list"
 	case "session":
 		return sub == "list"
+	case "drive":
+		return sub == "status" || sub == "check"
 	case "wave":
 		return sub == "show" || sub == "list"
 	case "dirs":
@@ -524,6 +528,22 @@ Show the eight folders: datalake (inputs), docs (examples/specs), data (outputs)
 tools, templates, builds, evidence, scratch; defaults ~/<name>. "init" creates missing folders; "set"
 stores a path (relative = under home, ~/ expanded) in the board.
 Example: mw dirs set data D:\out`,
+		"drive": `mw drive send open GOAL... --to MEMBER [--id SLUG]
+mw drive send task|steer|note ID N TEXT...   (note N: 0 = the drive itself)
+mw drive send result ID N pass|fail [TEXT...]   (remote)
+mw drive send stop|close ID   (driver) | mw drive send pause ID   (remote)
+mw drive recv "mw-drive ID SEQ EVENT [N] [TEXT]"
+mw drive resume ID
+mw drive status [-j]
+mw drive check --idle DUR [--at RFC3339] [-j]
+Records a session-to-session drive on both boards; mw sends nothing (the line travels over SendMessage).
+Wire line: mw-drive ID SEQ EVENT [N] [TEXT], ASCII, TEXT at most 400 characters. ID is MEMBER.SLUG (at most 30 characters
+from a-z 0-9 . -), the ticket is drive.ID. SEQ counts per sender and drive; a line with seq at or below the last applied one prints dup.
+send, recv and resume need a named session (-s NAME or MW_SESSION); a tenant with a tracker refuses drive.
+One drive per remote session (a second open prints a busy line); a driven session cannot drive.
+recv prints the reply line when there is one (busy, closed, dup), exit 0. A malformed line exits 1 (USAGE); an event that does not
+fit the drive's state exits 2 (DRIVE_STATE). TEXT is stored only in notes labelled [data from MEMBER], never in titles.
+Put -- before TEXT that starts with a dash. See USAGE.md, "Drive".`,
 		"note": `mw note ID TEXT... [-t SLUG] [-s NAME]
 Append a timestamped note to any item or wave; shown by mw show.`,
 		"session": `mw session start NAME [-t SLUG] [-a ROLE] [--claude-session ID] [--answerer PARENT]
@@ -811,6 +831,7 @@ Usage:
   mw fanfare [on|off|stop|test|use NAME|set KEY=VALUE...]   sounds when a wave closes or a tenant is finished
   mw archive [--days N] [-t SLUG] [--dry-run]
   mw context [-t SLUG] [-s NAME] [-j]
+  mw drive send|recv|resume|status|check ...   session-to-session drives (mw help drive)
 
 Kinds: prompt, story, task, spike, bug, chore (+ wave via mw wave create)
 States: inbox, ready, doing, blocked, done
