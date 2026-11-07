@@ -13,7 +13,7 @@ while ! mkdir "$lock" 2>/dev/null; do
   # or no pid file and the folder is older than a minute (a live owner writes the pid within milliseconds of the mkdir)
   stale=0
   if [ -n "$owner" ]; then
-    ps -p "$owner" >/dev/null 2>&1 || stale=1
+    if command -v ps >/dev/null 2>&1; then ps -p "$owner" >/dev/null 2>&1 || stale=1; else kill -0 "$owner" 2>/dev/null || stale=1; fi
   elif [ -d "$lock" ] && [ -z "$(find "$lock" -maxdepth 0 -mmin -1 2>/dev/null)" ]; then
     stale=1
   fi
