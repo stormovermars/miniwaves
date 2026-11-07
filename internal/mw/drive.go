@@ -464,24 +464,23 @@ func closeDone(it *Item, now, session, reason string, judge bool) {
 	emit(it, now, "done", session, reason)
 }
 
-// blockOpenChildren blocks the children that are not done ("left open at close"), so none stays ready.
-func blockOpenChildren(w *Workspace, d *drive, now, session string) {
+// finishOpenChildren closes the children that are not done through the normal no-evidence path, on both boards.
+func finishOpenChildren(w *Workspace, d *drive, now, session string) {
+	judge := judgeOn(w, d.t)
 	for i := range d.t.Items {
 		c := &d.t.Items[i]
 		if c.Parent != d.story.ID || c.Status == "done" {
 			continue
 		}
 		releaseOwner(w, c)
-		c.Status, c.Updated, c.Note = "blocked", now, "left open at close"
-		emit(c, now, "block", session, c.Note)
 		driveNote(c, now, session, "left open at close")
+		closeDone(c, now, session, "not done: left open at drive close", judge)
 	}
 }
 
-// closeStory blocks the open children, then marks the story done as a no-evidence close with the reason.
-// This is the one place a story is done while children are blocked: a closed drive has no one to finish them.
+// closeStory finishes the open children, then marks the story done as a no-evidence close with the reason.
 func closeStory(w *Workspace, d *drive, now, session, reason string) {
-	blockOpenChildren(w, d, now, session)
+	finishOpenChildren(w, d, now, session)
 	closeDone(d.story, now, session, reason, judgeOn(w, d.t))
 }
 
@@ -527,13 +526,8 @@ func applyEvent(w *Workspace, d *drive, m driveMsg, sender, session, now string,
 		}
 		c := newDriveItem(d.t, "task", "drive "+strconv.Itoa(m.N), story.ID, "", "", now)
 		d.story, _ = itemByID(d.t, story.ID) // the append may have moved the items
-		if d.driverSide() {                  // a mirror of work the remote does: never picked up on the driver's board
-			c.Status, c.Note = "blocked", "waiting on "+d.info.Remote
-			emit(c, now, "block", session, c.Note)
-		} else {
-			c.Status = "ready"
-			emit(c, now, "ready", session, "")
-		}
+		c.Status = "ready"                   // on the driver's board a mirror: pickNext skips drive children
+		emit(c, now, "ready", session, "")
 		driveNote(c, now, session, rec)
 	case "steer":
 		c, err := childFor(m.N)

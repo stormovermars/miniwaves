@@ -672,7 +672,7 @@ func TestDriveGatesJudgeAndEvidence(t *testing.T) {
 			t.Fatalf("%s story: %+v", side.tn, st)
 		}
 		c2 := itemWith(items, "task", "drive 2")
-		if c2.Status != "blocked" || c2.Note != "left open at close" || c2.Assignee != "" {
+		if c2.Status != "done" || c2.Judged != "" || c2.Assignee != "" || !strings.Contains(allNotes(c2), "no-evidence: not done: left open at drive close") {
 			t.Fatalf("%s child 2 after close: %+v", side.tn, c2)
 		}
 	}
@@ -702,8 +702,8 @@ func TestDriveCloseUngatedWithoutJudge(t *testing.T) {
 		t.Fatalf("%+v", st)
 	}
 	c := itemWith(driveItems(t, path, "win"), "task", "drive 1")
-	if c.Status != "blocked" || c.Assignee != "" {
-		t.Fatalf("a doing child must be blocked and released at close: %+v", c)
+	if c.Status != "done" || c.Assignee != "" {
+		t.Fatalf("a doing child must be finished and released at close: %+v", c)
 	}
 }
 
@@ -741,7 +741,7 @@ func TestDriveDriverChildrenBlocked(t *testing.T) {
 	dvOK(t, "win-w1", "recv", l)
 	dvPair(t, "mac-a", "win-w1", "task", "mac.m", "1", "a")
 	mc := itemWith(driveItems(t, path, "mac"), "task", "drive 1")
-	if mc.Status != "blocked" || mc.Note != "waiting on win" {
+	if mc.Status != "ready" || mc.Note != "" {
 		t.Fatalf("driver mirror: %+v", mc)
 	}
 	if wc := itemWith(driveItems(t, path, "win"), "task", "drive 1"); wc.Status != "ready" {
@@ -897,5 +897,59 @@ func TestDriveStatusJSONGolden(t *testing.T) {
 	out := dvOK(t, "mac-a", "status", "-j")
 	if !strings.Contains(out, `"id":"mac.z","tenant":"mac","role":"driver","peer":"win","session":"mac-a","seq_in":0,"seq_out":1,"age":"?","last":""`) || strings.Contains(out, "0001-") {
 		t.Fatalf("no last event: %s", out)
+	}
+}
+
+func needsCount(t *testing.T, path, tenant string) int {
+	t.Helper()
+	w, err := load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tn, _ := tenantBySlug(w, tenant)
+	return len(needsOf(w.allSessions(), tn))
+}
+
+// A drive adds nothing to "needs you" (N), during or after close.
+func TestDriveNeedsCountUnchanged(t *testing.T) {
+	path := driveBoard(t)
+	l := dvOK(t, "mac-a", "send", "open", "--to", "win", "--id", "n", "x")
+	dvOK(t, "win-w1", "recv", l)
+	dvPair(t, "mac-a", "win-w1", "task", "mac.n", "1", "a")
+	dvPair(t, "mac-a", "win-w1", "task", "mac.n", "2", "b")
+	for _, tn := range []string{"mac", "win"} {
+		if n := needsCount(t, path, tn); n != 0 {
+			t.Fatalf("%s needs %d during the drive", tn, n)
+		}
+	}
+	dvPair(t, "mac-a", "win-w1", "close", "mac.n")
+	for _, tn := range []string{"mac", "win"} {
+		if n := needsCount(t, path, tn); n != 0 {
+			t.Fatalf("%s needs %d after close", tn, n)
+		}
+	}
+}
+
+// With the judge gate on, a closed drive story reaches the judge queue and mw accept works.
+func TestDriveJudgeQueueAndAccept(t *testing.T) {
+	path := driveBoard(t)
+	runAll(t, []string{"gate", "judge", "on", "--workspace", "--by", "t"})
+	l := dvOK(t, "mac-a", "send", "open", "--to", "win", "--id", "q", "x")
+	dvOK(t, "win-w1", "recv", l)
+	dvPair(t, "mac-a", "win-w1", "task", "mac.q", "1", "a")
+	dvPair(t, "mac-a", "win-w1", "close", "mac.q")
+	for _, c := range [][2]string{{"mac", "drive>win: mac.q"}, {"win", "drive by mac: mac.q"}} {
+		w, _ := load(path)
+		tn, _ := tenantBySlug(w, c[0])
+		st := itemWith(tn.Items, "story", c[1])
+		if !awaitingJudgement(tn, *st) {
+			t.Fatalf("%s story not in the judge queue: %+v", c[0], st)
+		}
+		runAll(t, []string{"accept", st.ID, "-t", c[0], "--by", "t"})
+		w, _ = load(path)
+		tn, _ = tenantBySlug(w, c[0])
+		if got := itemWith(tn.Items, "story", c[1]); got.Judged == "" {
+			t.Fatalf("%s story after accept: %+v", c[0], got)
+		}
 	}
 }

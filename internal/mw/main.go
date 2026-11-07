@@ -542,7 +542,7 @@ mw-drive ID 1 open MEMBER GOAL (MEMBER = the remote tenant). ID is MEMBER.SLUG (
 the ticket is drive.ID. SEQ counts per sender and drive: at or below the last applied one prints dup, a gap is DRIVE_STATE.
 Options come before the event, the id or the goal; everything after ID N (or after the goal starts) is literal TEXT.
 Every drive command needs a registered, running named session (-s NAME or MW_SESSION); a tenant with a tracker refuses drive.
-One drive per session as remote (a second open prints a busy line, also when the session is driving); a driven session cannot drive.
+One drive per session as remote (a second open prints busy PEER, the peer of the drive that keeps it busy, also when the session is driving); a driven session cannot drive.
 result N pass needs task N already done with mw done on the remote's board; the driver's mirror closes as no-evidence.
 check lists only the remote drives held by the calling session.
 recv prints the reply line when there is one (busy, closed, dup), exit 0. A malformed line exits 1 (USAGE); an event that does not
