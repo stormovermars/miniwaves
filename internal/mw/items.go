@@ -709,7 +709,7 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 	}
 	if command == "start" && sessionID != "" && wipSessionOn() {
 		for _, other := range t.Items {
-			if other.Status == "doing" && other.Assignee == sessionID && other.ID != it.ID && other.Kind != "wave" {
+			if other.Status == "doing" && other.Assignee == sessionID && other.ID != it.ID && other.Kind != "wave" && !isDriveStory(other) {
 				return nil, nil, coded("WIP_LIMIT", fmt.Errorf("wip.session is on: session %s already has %s doing (finish or block it first)", displayName(sessionID), other.ID))
 			}
 		}
@@ -866,6 +866,9 @@ func pickNext(w *Workspace, t *Tenant, o map[string]string) (*Item, int, []gateI
 			continue
 		}
 		if o["kind"] == "" && (it.Kind == "prompt" || it.Kind == "story") {
+			continue
+		}
+		if inDrive(t, it) { // drive tasks are taken by id, never served by next
 			continue
 		}
 		if byName(gs, "acceptance").Effective && !isWorkKind(it.Kind) && strings.TrimSpace(effectiveAcceptance(t, it)) == "" {

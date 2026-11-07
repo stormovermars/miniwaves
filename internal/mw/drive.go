@@ -3,6 +3,7 @@ package mw
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"sort"
@@ -23,6 +24,9 @@ const (
 	driveTicketPf = "drive."
 )
 
+// driveIn is where `drive recv` reads the line from when no argument is given (a test seam).
+var driveIn io.Reader = os.Stdin
+
 // nowFn is the clock of drive status and check. Only `drive check --at` overrides it.
 var nowFn = func() time.Time { return time.Now().UTC() }
 
@@ -37,6 +41,7 @@ type driveMsg struct {
 	Seq     int
 	Event   string
 	N       int
+	To      string // open: the remote member the line is addressed to
 	Verdict string // result: pass|fail
 	Text    string // open goal, task/steer/note/result text, pause "idle", resumed session, busy member
 }
@@ -67,6 +72,9 @@ func checkDriveText(text string, required bool) error {
 		if c := text[i]; c < 0x20 || c > 0x7e {
 			return driveUsage("drive: text must be printable ASCII on one line (no newline, control or non-ASCII characters)")
 		}
+		if c := text[i]; c == '[' || c == ']' {
+			return driveUsage("drive: text must not contain [ or ] (they delimit the [data from MEMBER] label)")
+		}
 	}
 	if text != strings.TrimSpace(text) {
 		return driveUsage("drive: text must not start or end with a space")
@@ -95,6 +103,9 @@ func (m driveMsg) validate() error {
 	needN, textReq, textOK := false, false, false
 	switch m.Event {
 	case "open":
+		if !slugPattern.MatchString(m.To) {
+			return driveUsage("drive: open needs the remote member name")
+		}
 		textReq, textOK = true, true
 	case "task", "steer":
 		needN, textReq, textOK = true, true, true
@@ -148,6 +159,8 @@ func (m driveMsg) validate() error {
 func (m driveMsg) head() string {
 	h := m.Event
 	switch m.Event {
+	case "open":
+		h += " " + m.To
 	case "task", "steer", "note":
 		h += " " + strconv.Itoa(m.N)
 	case "result":
@@ -211,7 +224,8 @@ func parseDriveLine(line string) (driveMsg, error) {
 	}
 	switch m.Event {
 	case "open":
-		m.Text = rest
+		to, goal, _ := strings.Cut(rest, " ")
+		m.To, m.Text = to, goal
 	case "task", "steer", "note", "result":
 		// rest = N [verdict] [TEXT]
 		parts := strings.SplitN(rest, " ", 2)
@@ -358,6 +372,30 @@ func remoteHeld(t *Tenant, session string) *drive {
 	return nil
 }
 
+// driverHeld returns the open drive the session holds as a driver, or nil.
+func driverHeld(t *Tenant, session string) *drive {
+	for _, d := range drivesOf(t) {
+		if d.open() && d.driverSide() && d.story.Assignee == session && d.story.Status == "doing" {
+			return d
+		}
+	}
+	return nil
+}
+
+// isDriveStory reports whether the item is the story of a drive (its ticket starts with drive.).
+func isDriveStory(it Item) bool {
+	return it.Kind == "story" && strings.HasPrefix(it.Ticket, driveTicketPf)
+}
+
+// inDrive reports whether the item is a child of a drive story.
+func inDrive(t *Tenant, it Item) bool {
+	if it.Parent == "" {
+		return false
+	}
+	p, err := itemByID(t, it.Parent)
+	return err == nil && isDriveStory(*p)
+}
+
 func driveChild(d *drive, n int) *Item {
 	title := "drive " + strconv.Itoa(n)
 	for i := range d.t.Items {
@@ -411,18 +449,40 @@ func claimStory(w *Workspace, it *Item, session, now string) {
 	// the story claim leaves the session's own item free, so the session can still start the drive's tasks
 }
 
-// closeStory notes the open children, then marks the story done.
-func closeStory(d *drive, now, session string) {
+// judgeOn reports whether the tenant's judge gate is on.
+func judgeOn(w *Workspace, t *Tenant) bool { return byName(gateStates(w, t), "judge").Effective }
+
+// closeDone marks an item done without evidence, the way `mw done --no-evidence REASON` does: the reason is
+// recorded, and with the judge gate on the item waits for review (Judged stays empty).
+func closeDone(it *Item, now, session, reason string, judge bool) {
+	it.Status, it.Assignee, it.Updated = "done", "", now
+	it.By, it.JudgedBy, it.Evidence, it.Judged = displayName(session), "", nil, ""
+	if !judge {
+		it.Judged = "ungated"
+	}
+	it.Notes = append(it.Notes, now+" no-evidence: "+reason)
+	emit(it, now, "done", session, reason)
+}
+
+// blockOpenChildren blocks the children that are not done ("left open at close"), so none stays ready.
+func blockOpenChildren(w *Workspace, d *drive, now, session string) {
 	for i := range d.t.Items {
 		c := &d.t.Items[i]
-		if c.Parent == d.story.ID && c.Status != "done" {
-			driveNote(c, now, session, "left open at close")
+		if c.Parent != d.story.ID || c.Status == "done" {
+			continue
 		}
+		releaseOwner(w, c)
+		c.Status, c.Updated, c.Note = "blocked", now, "left open at close"
+		emit(c, now, "block", session, c.Note)
+		driveNote(c, now, session, "left open at close")
 	}
-	it := d.story
-	it.Status, it.Assignee, it.Updated = "done", "", now
-	it.By, it.Judged, it.JudgedBy, it.Evidence = displayName(session), "ungated", "", nil
-	emit(it, now, "done", session, "drive closed")
+}
+
+// closeStory blocks the open children, then marks the story done as a no-evidence close with the reason.
+// This is the one place a story is done while children are blocked: a closed drive has no one to finish them.
+func closeStory(w *Workspace, d *drive, now, session, reason string) {
+	blockOpenChildren(w, d, now, session)
+	closeDone(d.story, now, session, reason, judgeOn(w, d.t))
 }
 
 // unclaimChildren puts the doing children of the story back to ready.
@@ -439,11 +499,11 @@ func unclaimChildren(w *Workspace, d *drive, now, session string) {
 	}
 }
 
-func finishChildPass(c *Item, now, session string) {
-	c.Status, c.Assignee, c.Updated = "done", "", now
-	c.By, c.Judged, c.JudgedBy, c.Evidence = displayName(session), "ungated", "", nil
-	c.Notes = append(c.Notes, now+" no-evidence: drive result")
-	emit(c, now, "done", session, "drive result")
+func finishChildPass(w *Workspace, d *drive, c *Item, now, session, from string) {
+	closeDone(c, now, session, "drive result from "+from, judgeOn(w, d.t))
+	if !judgeOn(w, d.t) {
+		unblockDependents(d.t, c.ID, now, displayName(session))
+	}
 }
 
 // ---- applying events ----
@@ -467,8 +527,13 @@ func applyEvent(w *Workspace, d *drive, m driveMsg, sender, session, now string,
 		}
 		c := newDriveItem(d.t, "task", "drive "+strconv.Itoa(m.N), story.ID, "", "", now)
 		d.story, _ = itemByID(d.t, story.ID) // the append may have moved the items
-		c.Status = "ready"
-		emit(c, now, "ready", session, "")
+		if d.driverSide() {                  // a mirror of work the remote does: never picked up on the driver's board
+			c.Status, c.Note = "blocked", "waiting on "+d.info.Remote
+			emit(c, now, "block", session, c.Note)
+		} else {
+			c.Status = "ready"
+			emit(c, now, "ready", session, "")
+		}
 		driveNote(c, now, session, rec)
 	case "steer":
 		c, err := childFor(m.N)
@@ -495,19 +560,29 @@ func applyEvent(w *Workspace, d *drive, m driveMsg, sender, session, now string,
 	case "close", "closed", "busy":
 		driveNote(story, now, session, rec)
 		if story.Status != "done" {
-			closeStory(d, now, session)
+			reason := "drive closed by " + sender
+			if m.Event == "busy" {
+				reason = "drive refused: busy"
+			}
+			closeStory(w, d, now, session, reason)
 		}
 	case "result":
 		c, err := childFor(m.N)
 		if err != nil {
 			return err
 		}
-		if c.Status == "done" {
+		pass := m.Verdict == "pass"
+		if local && pass {
+			// the remote's own board decides: the task must already be done through mw done (gates apply there)
+			if c.Status != "done" {
+				return driveState("drive %s task %d is %s: finish it with mw done first, then send result pass", d.id, m.N, c.Status)
+			}
+		} else if c.Status == "done" {
 			return driveState("drive %s task %d is already done", d.id, m.N)
 		}
 		driveNote(c, now, session, rec)
-		if m.Verdict == "pass" {
-			finishChildPass(c, now, session)
+		if pass && !local { // the driver's mirror closes as no-evidence
+			finishChildPass(w, d, c, now, session, sender)
 		}
 	case "resumed":
 		driveNote(story, now, session, rec)
@@ -530,7 +605,45 @@ func applyEvent(w *Workspace, d *drive, m driveMsg, sender, session, now string,
 
 // ---- command ----
 
-// driveOpts parses the drive options (the generic parser: put -- before text that starts with a dash).
+// driveLead splits the leading option tokens from the rest; the rest is literal (TEXT may contain -j, -s, --to).
+// Options therefore come before the first non-option token (the event, the id or the goal); -- ends them early.
+func driveLead(args []string, allowed ...string) (map[string]string, []string, error) {
+	i := 0
+	for i < len(args) {
+		a := args[i]
+		if a == "--" {
+			i++
+			break
+		}
+		if len(a) < 2 || a[0] != '-' {
+			break
+		}
+		key := ""
+		if strings.HasPrefix(a, "--") {
+			key = a[2:]
+		} else if len(a) == 2 {
+			key = flagAliases[a[1:]]
+		}
+		if key == "json" {
+			i++
+		} else {
+			i += 2
+		}
+	}
+	if i > len(args) {
+		i = len(args)
+	}
+	o, _, err := options(args[:i])
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := allowOptions(o, append(allowed, "json")...); err != nil {
+		return nil, nil, err
+	}
+	return o, args[i:], nil
+}
+
+// driveOpts parses the drive options (the generic parser, for the commands without TEXT).
 func driveOpts(args []string, allowed ...string) (map[string]string, []string, error) {
 	o, pos, err := options(args)
 	if err != nil {
@@ -570,6 +683,13 @@ func driveSession(w *Workspace, o map[string]string) (string, *Tenant, error) {
 	if session == localName || !validID(session) {
 		return "", nil, driveUsage("drive: session name must be at most 64 lowercase letters, numbers, and single dashes")
 	}
+	sess, err := sessionByID(w, session)
+	if err != nil {
+		return "", nil, driveUsage("drive: session %s is not registered: run mw session start %s -t TENANT first", session, session)
+	}
+	if sess.State == "stopped" {
+		return "", nil, driveUsage("drive: session %s is stopped: start a new session (mw session start NAME -t TENANT)", session)
+	}
 	t, err := selectTenant(w, o)
 	if err != nil {
 		return "", nil, err
@@ -591,8 +711,8 @@ func (d *drive) holder(w *Workspace, session string) error {
 	case a == "":
 		return driveState("drive %s is not held by any session: run mw drive resume %s", d.id, d.id)
 	}
-	if s, err := sessionByID(w, a); err == nil && s.State == "stopped" {
-		return driveState("drive %s is held by stopped session %s: run mw drive resume %s", d.id, a, d.id)
+	if s, err := sessionByID(w, a); err != nil || s.State == "stopped" {
+		return driveState("drive %s is held by dead session %s (stopped or unregistered): run mw drive resume %s", d.id, a, d.id)
 	}
 	return driveState("drive %s is held by session %s", d.id, a)
 }
@@ -608,12 +728,22 @@ func (d *drive) bump(out bool, seq int) {
 
 func driveSend(path string, w *Workspace, args []string) error {
 	if len(args) == 0 {
-		return driveUsage("usage: mw drive send open GOAL --to MEMBER | task|steer|note ID N TEXT | result ID N pass|fail [TEXT] | stop|close|pause ID")
+		return driveUsage("usage: mw drive send open --to MEMBER GOAL | task|steer|note ID N TEXT | result ID N pass|fail [TEXT] | stop|close|pause ID")
 	}
-	ev := args[0]
-	o, pos, err := driveOpts(args[1:], "tenant", "session", "to", "id")
+	o, rest0, err := driveLead(args, "tenant", "session", "to", "id")
 	if err != nil {
 		return err
+	}
+	if len(rest0) == 0 {
+		return driveUsage("usage: mw drive send [options] EVENT ... (mw help drive)")
+	}
+	ev := rest0[0]
+	o2, pos, err := driveLead(rest0[1:], "tenant", "session", "to", "id")
+	if err != nil {
+		return err
+	}
+	for k, v := range o2 {
+		o[k] = v
 	}
 	if ev != "open" && (o["to"] != "" || o["id"] != "") {
 		return driveUsage("--to and --id are only for open")
@@ -634,7 +764,7 @@ func driveSend(path string, w *Workspace, args []string) error {
 	}
 	id := pos[0]
 	m := driveMsg{ID: id, Event: ev}
-	rest := pos[1:]
+	rest := pos[1:] // literal: everything after ID N is TEXT, whatever it looks like
 	num := func() error {
 		if len(rest) == 0 {
 			return driveUsage("usage: mw drive send %s ID N ...", ev)
@@ -710,7 +840,7 @@ func driveSend(path string, w *Workspace, args []string) error {
 func driveSendOpen(path string, w *Workspace, t *Tenant, session string, o map[string]string, pos []string, now string) error {
 	to := o["to"]
 	if to == "" || !slugPattern.MatchString(to) {
-		return driveUsage("usage: mw drive send open GOAL... --to MEMBER [--id SLUG]")
+		return driveUsage("usage: mw drive send open --to MEMBER [--id SLUG] GOAL...")
 	}
 	if to == t.Slug {
 		return driveUsage("drive: a member cannot drive itself (--to %s is this tenant)", to)
@@ -755,7 +885,7 @@ func driveSendOpen(path string, w *Workspace, t *Tenant, session string, o map[s
 	if findDrive(t, id) != nil {
 		return driveState("drive %s already exists on tenant %s", id, t.Slug)
 	}
-	m := driveMsg{ID: id, Seq: 1, Event: "open", Text: goal}
+	m := driveMsg{ID: id, Seq: 1, Event: "open", To: to, Text: goal}
 	line, err := formatDriveLine(m)
 	if err != nil {
 		return err
@@ -773,14 +903,17 @@ func driveSendOpen(path string, w *Workspace, t *Tenant, session string, o map[s
 }
 
 func driveRecv(path string, w *Workspace, args []string) error {
-	o, pos, err := driveOpts(args, "tenant", "session")
+	o, pos, err := driveLead(args, "tenant", "session")
 	if err != nil {
 		return err
 	}
-	if len(pos) == 0 {
-		return driveUsage("usage: mw drive recv \"mw-drive ID SEQ EVENT ...\"")
+	line := strings.Join(pos, " ")
+	if len(pos) == 0 || len(pos) == 1 && pos[0] == "-" {
+		if line, err = readDriveLine(); err != nil {
+			return err
+		}
 	}
-	m, err := parseDriveLine(strings.Join(pos, " "))
+	m, err := parseDriveLine(line)
 	if err != nil {
 		return err
 	}
@@ -801,6 +934,9 @@ func driveRecv(path string, w *Workspace, args []string) error {
 	if m.Seq <= d.info.SeqIn {
 		fmt.Println("dup")
 		return nil
+	}
+	if m.Seq > d.info.SeqIn+1 {
+		return driveState("drive %s: missing seq %d (got %d): deliver the lines in order", m.ID, d.info.SeqIn+1, m.Seq)
 	}
 	if d.driverSide() && !remoteEvents[m.Event] || !d.driverSide() && !driverEvents[m.Event] {
 		return driveState("%s does not come from the %s of drive %s", m.Event, map[bool]string{true: "remote", false: "driver"}[d.driverSide()], m.ID)
@@ -843,8 +979,14 @@ func driveRecvOpen(path string, w *Workspace, t *Tenant, session string, m drive
 	if driver == t.Slug {
 		return driveState("drive %s names this tenant as the driver", m.ID)
 	}
-	if h := remoteHeld(t, session); h != nil {
-		r := driveMsg{ID: m.ID, Seq: 1, Event: "busy", Text: h.info.Driver}
+	if m.To != t.Slug {
+		return driveState("drive %s is addressed to member %s, not to this tenant (%s)", m.ID, m.To, t.Slug)
+	}
+	if h := remoteHeld(t, session); h != nil || driverHeld(t, session) != nil {
+		if h == nil {
+			h = driverHeld(t, session)
+		}
+		r := driveMsg{ID: m.ID, Seq: 1, Event: "busy", Text: h.peer()}
 		line, err := formatDriveLine(r)
 		if err != nil {
 			return err
@@ -886,7 +1028,7 @@ func driveResume(path string, w *Workspace, args []string) error {
 		return driveState("drive %s is closed", d.id)
 	}
 	if a := d.story.Assignee; a != "" && a != session {
-		if s, e := sessionByID(w, a); e != nil || s.State != "stopped" {
+		if s, e := sessionByID(w, a); e == nil && s.State != "stopped" {
 			return driveState("drive %s is held by live session %s", d.id, a)
 		}
 	}
@@ -897,6 +1039,8 @@ func driveResume(path string, w *Workspace, args []string) error {
 		if h := remoteHeld(t, session); h != nil {
 			return driveState("session %s is driven (drive %s): a driven session cannot drive", session, h.id)
 		}
+	} else if h := driverHeld(t, session); h != nil {
+		return driveState("session %s drives %s: a driving session cannot be driven", session, h.id)
 	}
 	now := nowStamp()
 	m := driveMsg{ID: d.id, Seq: d.info.SeqOut + 1, Event: "resumed", Text: session}
@@ -922,17 +1066,18 @@ func driveResume(path string, w *Workspace, args []string) error {
 // ---- status and check ----
 
 type driveRow struct {
-	ID      string `json:"id"`
-	Tenant  string `json:"tenant"`
-	Role    string `json:"role"`
-	Peer    string `json:"peer"`
-	Session string `json:"session"`
-	SeqIn   int    `json:"seq_in"`
-	SeqOut  int    `json:"seq_out"`
-	Age     string `json:"age"`
-	Last    string `json:"last"`
-	last    time.Time
-	lastDrv time.Time
+	ID       string `json:"id"`
+	Tenant   string `json:"tenant"`
+	Role     string `json:"role"`
+	Peer     string `json:"peer"`
+	Session  string `json:"session"`
+	SeqIn    int    `json:"seq_in"`
+	SeqOut   int    `json:"seq_out"`
+	Age      string `json:"age"`
+	Last     string `json:"last"`
+	last     time.Time
+	lastDrv  time.Time
+	assignee string
 }
 
 // driveNotes visits the drive notes of the story and its children: the timestamp and the sender label.
@@ -1000,12 +1145,12 @@ func openDrives(w *Workspace, o map[string]string) ([]driveRow, error) {
 				sess = a
 			}
 			last, lastDrv := driveTimes(d)
-			age := "?"
+			age, lastStr := "?", ""
 			if !last.IsZero() {
-				age = shortAge(now.Sub(last))
+				age, lastStr = shortAge(now.Sub(last)), last.Format(time.RFC3339)
 			}
 			rows = append(rows, driveRow{ID: d.id, Tenant: t.Slug, Role: role, Peer: d.peer(), Session: sess,
-				SeqIn: d.info.SeqIn, SeqOut: d.info.SeqOut, Age: age, Last: last.Format(time.RFC3339), last: last, lastDrv: lastDrv})
+				SeqIn: d.info.SeqIn, SeqOut: d.info.SeqOut, Age: age, Last: lastStr, last: last, lastDrv: lastDrv, assignee: d.story.Assignee})
 		}
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Tenant+rows[i].ID < rows[j].Tenant+rows[j].ID })
@@ -1058,6 +1203,10 @@ func driveCheck(w *Workspace, args []string) error {
 	if o["idle"] == "" {
 		return driveUsage("usage: mw drive check --idle DUR [--at RFC3339] [-j]")
 	}
+	session, _, err := driveSession(w, o)
+	if err != nil {
+		return err
+	}
 	limit, err := parseAge(o["idle"])
 	if err != nil {
 		return driveUsage("%v", err)
@@ -1078,6 +1227,9 @@ func driveCheck(w *Workspace, args []string) error {
 	now := nowFn()
 	idle := []driveRow{}
 	for _, r := range rows {
+		if r.Role != "remote" || r.assignee != session { // only the remote session that holds the drive pauses it
+			continue
+		}
 		ref := r.lastDrv
 		if ref.IsZero() {
 			ref = r.last
@@ -1096,4 +1248,23 @@ func driveCheck(w *Workspace, args []string) error {
 		fmt.Printf("idle %s  %s  peer=%s  no driver event for %s\n", r.ID, r.Role, r.Peer, r.Age)
 	}
 	return nil
+}
+
+// readDriveLine reads the line of `drive recv` from stdin (no shell quoting of a peer's TEXT is involved).
+func readDriveLine() (string, error) {
+	if driveIn == io.Reader(os.Stdin) && realStdinIsTerminal() {
+		return "", driveUsage("usage: mw drive recv [LINE] (without LINE the line is read from stdin: pipe it or use a quoted heredoc)")
+	}
+	b, err := io.ReadAll(io.LimitReader(driveIn, 4096+1))
+	if err != nil {
+		return "", driveUsage("drive recv: cannot read stdin: %v", err)
+	}
+	if len(b) > 4096 {
+		return "", driveUsage("drive recv: line is over 4096 bytes")
+	}
+	line := strings.TrimRight(string(b), "\r\n")
+	if strings.TrimSpace(line) == "" {
+		return "", driveUsage("usage: mw drive recv [LINE] (no line on stdin)")
+	}
+	return line, nil
 }
