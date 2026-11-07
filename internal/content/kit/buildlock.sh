@@ -9,11 +9,11 @@ timeout="${BUILDLOCK_TIMEOUT:-1800}"
 waited=0
 while ! mkdir "$lock" 2>/dev/null; do
   owner=$(cat "$lock/pid" 2>/dev/null)
-  # stale = owner process gone (ps, not kill -0: another user's live owner makes kill -0 fail with EPERM, which is not "dead"),
+  # stale = owner process gone (kill -0, then ps: another user's live owner makes kill -0 fail with EPERM, which is not "dead"),
   # or no pid file and the folder is older than a minute (a live owner writes the pid within milliseconds of the mkdir)
   stale=0
   if [ -n "$owner" ]; then
-    if command -v ps >/dev/null 2>&1; then ps -p "$owner" >/dev/null 2>&1 || stale=1; else kill -0 "$owner" 2>/dev/null || stale=1; fi
+    kill -0 "$owner" 2>/dev/null || ps -p "$owner" >/dev/null 2>&1 || stale=1
   elif [ -d "$lock" ] && [ -z "$(find "$lock" -maxdepth 0 -mmin -1 2>/dev/null)" ]; then
     stale=1
   fi
