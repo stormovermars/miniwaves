@@ -90,3 +90,7 @@ mw no longer shows any banner or notification (task, milestone, wave close) and 
 ## 0.3.20
 
 No schema change, no migration step. `mw tenant list` default output is now one plain line per tenant (`-j` and `-v` are unchanged). Timestamps in `mw show` and `mw log` now carry year and time zone. A tenant with no job tracker accepts `--ticket` as plain text.
+
+## 0.3.21
+
+No schema change, no migration step. New `mw drive` commands record session-to-session drives on both boards (see USAGE.md "Drive").
