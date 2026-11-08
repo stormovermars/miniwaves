@@ -59,7 +59,9 @@ echo "installed miniwaves to $dest/mw"
 
 # wr (wave rider) installs with mw, always its latest release. Best effort: a failure is a note.
 wr_repo="${WR_REPO:-stormovermars/wr}"
-if fetch "$wr_repo" "wr_${os}_${arch}.tar.gz" latest "$tmp/wr" && install -m 0755 "$tmp/wr/wr" "$dest/wr"; then
+if [ "${MW_NO_WR:-}" = 1 ]; then
+  echo "wr: skipped (MW_NO_WR=1)"
+elif fetch "$wr_repo" "wr_${os}_${arch}.tar.gz" latest "$tmp/wr" && install -m 0755 "$tmp/wr/wr" "$dest/wr"; then
   echo "installed wr to $dest/wr"
 else
   echo "wr: not installed (download failed); retry: mw update"

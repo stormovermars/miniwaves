@@ -47,13 +47,15 @@ try {
     Write-Output "installed miniwaves to $(Join-Path $dest 'mw.exe')"
     # wr installs with mw, always its latest release. Best effort: a failure is a note.
     $partnerRepo = if ($env:WR_REPO) { $env:WR_REPO } else { "stormovermars/wr" }
-    try {
+    if ($env:MW_NO_WR -eq "1") {
+        Write-Output "wr: skipped (MW_NO_WR=1)"
+    } else { try {
         Fetch $partnerRepo "wr_Windows_$arch.zip" "latest" (Join-Path $temp "wr")
         Copy-Item -Force (Join-Path $temp "wr\wr.exe") (Join-Path $dest "wr.exe")
         Write-Output "installed wr to $(Join-Path $dest 'wr.exe')"
     } catch {
         Write-Output "wr: not installed (download failed); retry: mw update"
-    }
+    } }
     if ($env:MW_NO_FANFARE -ne "1" -and $env:MW_NO_PLUGINS -ne "1") {
         try { & (Join-Path $dest "mw.exe") user fanfare-defaults 2>&1 | Out-Null } catch { }
     }

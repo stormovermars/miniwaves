@@ -152,7 +152,9 @@ func updateCommand(args []string) error {
 	}
 	changed, err := updateSelf(exe, check)
 	// wr is updated with mw (latest release of each); its failure is a note, never mw's exit status.
-	if updatePartner(os.Stdout, exe, check) {
+	if os.Getenv("MW_NO_WR") == "1" {
+		fmt.Fprintln(os.Stdout, "wr: skipped (MW_NO_WR=1)")
+	} else if updatePartner(os.Stdout, exe, check) {
 		changed = true
 	}
 	if err != nil {

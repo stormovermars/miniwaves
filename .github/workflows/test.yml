@@ -68,6 +68,11 @@ jobs:
             echo "$out"
             case "$out" in "mw $want "*) ;; *) echo "unexpected version: $out (want $want)"; exit 1 ;; esac
           done
+          h="$RUNNER_TEMP/home-nowr"; d="$RUNNER_TEMP/inst-nowr"; mkdir -p "$h"
+          out="$(HOME="$h" MW_USER_CONFIG="$h/user.json" MW_NO_FANFARE=1 MW_NO_PLUGINS=1 MW_NO_WR=1 MINIWAVES_INSTALL_DIR="$d" MW_INSTALL_FILE="$RUNNER_TEMP/mwbin/mw" sh install.sh)"
+          echo "$out"
+          case "$out" in *"wr: skipped (MW_NO_WR=1)"*) ;; *) echo "MW_NO_WR not honoured"; exit 1 ;; esac
+          test ! -e "$d/wr"
       - name: Installer smoke test (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

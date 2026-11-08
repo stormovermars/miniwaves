@@ -10,7 +10,7 @@ host tool needs JSON.
 
 mw and wr (wave rider, https://github.com/stormovermars/wr) install, update and uninstall as a pair, each at its latest release (no pinned pair):
 
-- `install.sh` / `install.ps1` install mw, then the latest wr into the same folder. A failed wr download prints `wr: not installed (download failed); retry: mw update` and does not fail the install.
+- `install.sh` / `install.ps1` install mw, then the latest wr into the same folder. `MW_NO_WR=1` skips the wr step in `install.sh`, `install.ps1` and `mw update` (one line: `wr: skipped (MW_NO_WR=1)`). A failed wr download prints `wr: not installed (download failed); retry: mw update` and does not fail the install.
 - `mw update` updates mw, then installs or updates wr next to the mw binary (`wr X → Y (PATH)`, `wr (new) → Y` when it was missing, `wr Y is current`). A wr failure (no network, missing asset, checksum mismatch) is one line `wr: not updated: REASON; retry: mw update`; the exit status is mw's own: non-zero only when mw's update failed, 2 when both were already current. `mw update --check` reports both and exits 0 when either can be updated. `mw update --plugins` touches only mw's plugins, never wr.
 - `uninstall.sh` / `uninstall.ps1` remove both binaries. wr's own installer, `wr update` and uninstaller do the same from the other side.
 

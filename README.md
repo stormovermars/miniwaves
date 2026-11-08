@@ -20,6 +20,7 @@ Upgrade: `mw update` (checks GitHub releases, verifies the checksum, replaces th
 - `mw update` updates mw and wr together (each to its latest release; a failed wr download is a one-line note, the exit status is mw's own). The uninstallers remove both. See USAGE.md, "Install and update".
 - `mw update --plugins` alone (re)installs or updates just the plugins `mw` and `mw-jobs`, then removes the retired `tidewatch` and `mw-watch` (only after the install succeeded).
 - `MW_NO_PLUGINS=1` skips the plugin step in `install.sh`, `install.ps1` and `mw update`.
+- `MW_NO_WR=1` skips installing and updating wr in `install.sh`, `install.ps1` and `mw update` (prints `wr: skipped (MW_NO_WR=1)`).
 - `MW_INSTALL_FILE=<path>` makes `install.sh` / `install.ps1` install a local `mw` binary (or a `.tar.gz` / `.zip` holding it) instead of downloading a release; checksum verification is skipped (CI smoke tests).
 - No Claude Code, or the binary only: `go install github.com/stormovermars/miniwaves/cmd/mw@latest` (the binary is named `mw`). By hand: `claude plugin marketplace add stormovermars/miniwaves && claude plugin install mw@miniwaves mw-jobs@miniwaves`.
 

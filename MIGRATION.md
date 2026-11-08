@@ -94,3 +94,7 @@ No schema change, no migration step. `mw tenant list` default output is now one 
 ## 0.3.21
 
 No schema change, no migration step. New `mw drive` commands record session-to-session drives on both boards (see USAGE.md "Drive").
+
+## 0.3.22 (unreleased)
+
+No schema change, no migration step. `MW_NO_WR=1` makes `install.sh`, `install.ps1` and `mw update` skip installing and updating wr (one line: `wr: skipped (MW_NO_WR=1)`). Fix: `mw done --evidence` (and any saving command) no longer writes empty stub tenant files for index tenants that have no file; only a tenant that changed is written.

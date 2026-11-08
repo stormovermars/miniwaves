@@ -419,3 +419,19 @@ func TestUpdateClaudeConfigDirReachesClaude(t *testing.T) {
 func init() {
 	partnerAPI = "http://127.0.0.1:1/latest" // tests never reach GitHub for wr (fakePartner serves one)
 }
+
+// MW_NO_WR=1: mw update neither checks nor installs wr, and says so in one line.
+func TestUpdateNoWrSkipsPartner(t *testing.T) {
+	t.Setenv("MW_NO_WR", "1")
+	fakeRelease(t, "v"+version, []byte("x"), false)
+	fakePartner(t, "v9.9.9", []byte("wr binary"), false)
+	exe := fakeExe(t)
+	wr := filepath.Join(filepath.Dir(exe), partnerBin+filepath.Ext(exe))
+	s := captureOutput(t, func() { _ = run([]string{"update"}) })
+	if !strings.Contains(s, "wr: skipped (MW_NO_WR=1)") {
+		t.Fatalf("no skip line: %q", s)
+	}
+	if _, err := os.Stat(wr); err == nil {
+		t.Fatal("wr installed despite MW_NO_WR=1")
+	}
+}
