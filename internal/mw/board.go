@@ -134,6 +134,7 @@ type Tenant struct {
 	Hidden            bool              `json:"-"`                  // mw tenant archive (stored in the index as "archived")
 	Tags              []string          `json:"-"`                  // mw tenant tag (stored in the index)
 	loaded            bool
+	noFile            bool // loaded from an index slug with no tenant file: save writes none until it has content
 }
 
 type Session struct {

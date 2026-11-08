@@ -147,6 +147,7 @@ func loadScopedFrom(path string, minSchema int, all bool, slugs ...string) (*Wor
 				w.base[it.Slug] = sum(tb)
 			}
 			t.loaded = true
+			t.noFile = os.IsNotExist(err)
 		}
 		w.Tenants = append(w.Tenants, t)
 	}
@@ -193,6 +194,8 @@ func tenantBytes(w *Workspace, t *Tenant) []byte {
 	return append(b, '\n')
 }
 
+var emptyTenantBytes = []byte(`{"next":{},"items":[]}` + "\n")
+
 // save writes what changed: each loaded tenant whose file differs, and the index.
 func save(path string, w *Workspace) error {
 	syncLocal(w)
@@ -211,6 +214,12 @@ func save(path string, w *Workspace) error {
 			continue
 		}
 		b := tenantBytes(w, t)
+		if t.noFile {
+			if bytes.Equal(b, emptyTenantBytes) {
+				continue // never create a stub file for a tenant that has none
+			}
+			t.noFile = false
+		}
 		if s := sum(b); s != w.base[t.Slug] {
 			if err := writeFileAtomic(tenantPath(path, t.Slug), b); err != nil {
 				return err
