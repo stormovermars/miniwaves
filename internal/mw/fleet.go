@@ -179,7 +179,7 @@ func buildFleet(path string, w *Workspace, o map[string]string, now time.Time) f
 					stalled = "node silent"
 				} else if e, ok := lastLogEvent(it); ok {
 					if at := parseNano(e.At); !at.IsZero() && now.Sub(at) > stallFor {
-						stalled = "no log entry for " + ago(e.At)
+						stalled = "no log entry for " + strings.TrimSuffix(ago(e.At), " ago")
 					}
 				}
 				if stalled == "" {
@@ -219,7 +219,7 @@ func buildFleet(path string, w *Workspace, o map[string]string, now time.Time) f
 						r.Why = slug + ":" + id + " is done: unblock this row"
 					} else if at := parseNano(e.At); !at.IsZero() && now.Sub(at) > stallFor {
 						s := r
-						s.Why = "unanswered by " + target + " for " + ago(e.At)
+						s.Why = "unanswered by " + target + " for " + strings.TrimSuffix(ago(e.At), " ago")
 						n.Stalled = append(n.Stalled, s)
 					}
 				}
