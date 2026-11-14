@@ -1495,7 +1495,7 @@ func (t *Tenant) nextID(prefix string) string {
 	if t.board != "" {
 		a, err := loadArchive(t.board, t.Slug)
 		if err != nil { // a conflicted or damaged archive: no id can be trusted, refuse rather than risk a repeat
-			panic(fmt.Sprintf("archive of %s is unreadable (%v): resolve it in git before adding rows", t.Slug, err))
+			panic(&exitError{code: 1, msg: fmt.Sprintf("archive of %s is unreadable (%v): resolve it in git before adding rows", t.Slug, err), ccode: "ARCHIVE_UNREADABLE"})
 		}
 		for _, it := range a.Items {
 			if p, num, ok := idNum(it.ID); ok && p == prefix && num > n {

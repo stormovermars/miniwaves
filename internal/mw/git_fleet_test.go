@@ -314,7 +314,7 @@ func TestAllocatorRefusesConflictedArchive(t *testing.T) {
 	}
 	var code int
 	stderr := captureFile(t, &os.Stderr, func() { code = mainExit([]string{"add", "task", "x"}, os.Stderr) })
-	if code == 0 || !strings.Contains(stderr, "archive") {
+	if code != 1 || !strings.Contains(stderr, "archive of") || strings.Contains(stderr, "internal error") {
 		t.Fatalf("add went ahead with a conflicted archive: %d %q", code, stderr)
 	}
 	w, _ = load(path)

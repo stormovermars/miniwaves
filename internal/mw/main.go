@@ -57,6 +57,11 @@ func Main() {
 func mainExit(args []string, stderr io.Writer) (code int) {
 	defer func() {
 		if r := recover(); r != nil {
+			if ee, ok := r.(*exitError); ok { // a refusal raised deep in an allocator: a normal error, not an internal one
+				code = mainExitErr(ee, stderr)
+				printJSONError(ee, code, args)
+				return
+			}
 			fmt.Fprintf(stderr, "mw: internal error: %s\n", oneLine(fmt.Sprint(r)))
 			code = 70
 			printJSONError(coded("INTERNAL", errors.New("internal error")), code, args)
@@ -615,7 +620,7 @@ anyone may take) and held (ready or stalled rows pinned to a silent node: mw edi
 last --changed run of this session (state file in the user's mw config folder), else the full view. mw get-prompt fleet-coordinator prints the loop.`,
 		"merge-file": `mw merge-file BASE OURS THEIRS [PATH]
 A git merge driver for the board files (.miniwaves.json, .miniwaves/*.json, .miniwaves/nodes/*.json). It merges the JSON, not the lines:
-rows by id, fields newest-wins (later updated, then later log entry, then THEIRS), logs as a union ordered by time, notes and evidence as a union,
+rows by id, fields newest-wins (later updated, then later log entry, then the larger value: the result never depends on which side git calls ours), logs as a union ordered by time, notes and evidence as a union,
 counters as the maximum. A row added on both sides with the same id keeps both (the later one is renumbered). A same-second conflict is
 written to the row's log. Nothing is ever dropped except what one side deleted and the other left untouched. The result replaces OURS; exit 0.
 Set it up once per clone (also ignore the lock and temp files: .miniwaves/*.lock, .miniwaves/*.lock.pid, .miniwaves/*.tmp, .miniwaves/nodes/*.tmp):
