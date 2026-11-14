@@ -33,7 +33,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "resets": true, "changed": true, "cost": true, "item": true, "left": true, "node": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "version": true, "target": true, "row": true, "note": true, "repo": true, "resets": true, "changed": true, "cost": true, "item": true, "left": true, "node": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -417,6 +417,8 @@ func dispatch(path string, w *Workspace, args []string) error {
 		return nodeCommand(path, w, args[1:])
 	case "fleet":
 		return fleetCommand(path, w, args[1:])
+	case "history":
+		return historyCommand(path, w, args[1:])
 	case "drive":
 		return driveCommand(path, w, args[1:])
 	default:
@@ -449,6 +451,8 @@ func readOnly(args []string) bool {
 	}
 	switch args[0] {
 	case "list", "ls", "show", "log", "board", "review", "judge", "context", "get-prompt", "check", "fleet":
+		return true
+	case "history": // add appends one line to this node's own file; nothing on the board changes
 		return true
 	case "next":
 		return !has("--claim")
@@ -608,6 +612,14 @@ beat --left PCT [--resets TIME] records the budget left (0-100) and when it retu
 Routing: mw edit ID node=NAME|any|- (add: --node) names who may take a row; mw tenant node SLUG NAME|any|- sets the tenant default. mw next and mw list --node NAME
 show the rows routed to NAME or to anyone; a computer with a node name filters next by it (--node - lifts that). mw next --node skips rows with an open ask.
 list shows every node with a beat file: live, or silent when its last beat is older than the user setting node.silent (minutes, default 120).`,
+		"history": `mw history add KIND REPO REF [--version V] [--target T] [--row ID] [--note TEXT]
+mw history query [--node N] [--kind K] [--repo R] [--version V] [--since DATE] [-n N] [-j] [--changed]
+mw history last [REPO] [-j]
+An append-only ledger of pushes, releases, store uploads and publishes (KIND: push|release|upload|publish). add appends one JSON line to this node's
+own file .miniwaves/nodes/NODE.history.jsonl (needs mw node set); fields are checked and refuse anything that looks like a key, token or password.
+query reads every node's file, newest first (default 50 lines); last shows the newest line per repo, or the newest of REPO. --changed prints "no change"
+when the result is the same as the last --changed run of this session. mw done on a row whose title says "release" warns on stderr when no line
+carries its id (--row ID); done still succeeds. mw merge-file unions two versions of a ledger file (.gitattributes line in USAGE.md, "Fleets").`,
 		"fleet": `mw fleet [-t SLUG] [-j] [--changed]
 The fleets view, per node: live or SILENT (no beat for node.silent minutes), what is in flight (age, last log entry), STALLED rows (in flight on a
 silent node, or no log entry for node.stall minutes), blocked rows, rows waiting on an answer (an open ask: never offered, never moved),
@@ -623,6 +635,7 @@ Set it up once per clone:
   .gitattributes:  .miniwaves.json merge=mw
                    .miniwaves/*.json merge=mw
                    .miniwaves/nodes/*.json merge=mw
+                   .miniwaves/nodes/*.history.jsonl merge=mw
   git config merge.mw.driver "mw merge-file %O %A %B %P"
 mw runs no git command itself.`,
 		"fanfare": `mw fanfare [-j]
@@ -854,6 +867,7 @@ Usage:
   mw get-prompt dispatcher|coach|newsdesk|fleet-coordinator [NAME] [--job ID] [-j]
   mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [--ticket KEY]
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY] [node=NAME|any|-] [cost=N|-]
+  mw history add KIND REPO REF [--version V] [--target T] [--row ID] [--note TEXT] | query [...] | last [REPO]
   mw fleet [-t SLUG] [-j] [--changed]  per-node view of a shared board
   mw merge-file BASE OURS THEIRS [PATH]  git merge driver for shared boards (USAGE.md, "Fleets")
   mw node set NAME | beat [STATE] [--item ID] [-m TEXT] [--left PCT] [--resets TIME] | list [-j]

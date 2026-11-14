@@ -58,6 +58,7 @@ All off until you turn them on. Details in [USAGE.md](USAGE.md).
 | Fanfare, per board | `mw fanfare set enabled=true` | `mw fanfare set enabled=false` |
 | Fanfare, just for you | `mw user set fanfare.enabled=true` | `mw user set fanfare.enabled=false` |
 | Fleet of computers (nodes) sharing one board | `mw node set NAME`, `mw node beat`, `mw fleet [--changed]`, `mw edit ID node=NAME`, `mw merge-file` as a git merge driver (USAGE.md, "Fleets") | don't set a node name |
+| Release, push and publish ledger across nodes | `mw history add release REPO REF`, `mw history query`, `mw history last` | don't add lines |
 | Find boards | `mw boards [DIR] [--depth N] [--up] [-j]` | read-only, nothing to turn off |
 | Uncapped news lists | `mw news --job ID --full -o FILE` (or `-o -`, `--format json\|text`) | leave `--full` off |
 | Personal settings (fanfare, chat bar, discovery) | `mw configure` (or `mw configure KEY=VALUE...`) | `mw user set KEY=` resets a key |
