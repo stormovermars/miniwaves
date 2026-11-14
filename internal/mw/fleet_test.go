@@ -75,7 +75,7 @@ func TestFleetView(t *testing.T) {
 	if v.Any.Ready != 1 || v.Any.Cost != 5 || v.Any.Next == nil || v.Any.Next.Item != "fleet:TSK-006" {
 		t.Fatalf("any: %+v", v.Any)
 	}
-	if a.Next != nil || bt.Next == nil || bt.Next.Item != "fleet:TSK-001" {
+	if a.Next != nil || bt.Next != nil { // alpha is nearly out, beta is silent: neither is offered a row
 		t.Fatalf("next: %+v / %+v", a.Next, bt.Next)
 	}
 	text := captureOutput(t, func() { runAll(t, []string{"fleet"}) })
@@ -126,7 +126,7 @@ func TestFleetChanged(t *testing.T) {
 	if out := strings.TrimSpace(captureOutput(t, func() { runAll(t, []string{"fleet", "--changed"}) })); out == "no change" {
 		t.Fatal("a new ready row went unnoticed")
 	}
-	runAll(t, []string{"node", "beat", "limit"})
+	runAll(t, []string{"node", "beat", "blocked"})
 	if out := strings.TrimSpace(captureOutput(t, func() { runAll(t, []string{"fleet", "--changed"}) })); out == "no change" {
 		t.Fatal("a state change went unnoticed")
 	}
@@ -166,7 +166,7 @@ func TestFleetOutAndDependency(t *testing.T) {
 	left0, until := 0, time.Now().Add(3*time.Hour).UTC().Format(time.RFC3339)
 	_ = os.MkdirAll(filepath.Dir(nodePath(path, "x")), 0o755)
 	for _, nb := range []nodeBeat{
-		{Node: "alpha", At: time.Now().Add(-5 * time.Hour).UTC().Format(time.RFC3339), State: "limit", Left: &left0, Resets: until, Version: "x"},
+		{Node: "alpha", At: time.Now().Add(-5 * time.Hour).UTC().Format(time.RFC3339), State: "working", Left: &left0, Resets: until, Version: "x"},
 		{Node: "beta", At: time.Now().UTC().Format(time.RFC3339), State: "idle", Version: "x"},
 	} {
 		b, _ := json.Marshal(nb)
@@ -185,7 +185,7 @@ func TestFleetOutAndDependency(t *testing.T) {
 	if len(a.Blocked) != 1 || a.Blocked[0].Why != "waiting on beta help:CHR-001" {
 		t.Fatalf("dependency: %+v", a.Blocked)
 	}
-	if b.Next == nil || b.Next.Item != "help:CHR-001" && b.Next.Item != "fleet:TSK-001" {
+	if b.Next == nil || b.Next.Item != "help:CHR-001" && b.Next.Item != "fleet:TSK-001" { // beta is live and has budget
 		t.Fatalf("beta next: %+v", b.Next)
 	}
 	// a beta that is out: its pinned ready rows are queued, not held, and it is offered nothing
@@ -220,11 +220,47 @@ func TestFleetOutAndDependency(t *testing.T) {
 		t.Fatalf("done target: %+v", a.Blocked)
 	}
 	// beats: --resets takes a wait or a time
-	runAll(t, []string{"node", "set", "alpha"}, []string{"node", "beat", "limit", "--left", "0", "--resets", "2h"})
+	runAll(t, []string{"node", "set", "alpha"}, []string{"node", "beat", "--left", "0", "--resets", "2h"})
 	if rb := readBeat(t, path, "alpha"); rb.Resets == "" || !beatOut(rb, time.Now()) {
 		t.Fatalf("%+v", rb)
 	}
 	if err := run([]string{"node", "beat", "--resets", "soon"}); err == nil {
 		t.Fatal("bad --resets accepted")
+	}
+}
+
+func TestFleetSwappedReadyRowAndDoubleClaim(t *testing.T) {
+	path := inTempDir(t)
+	t.Setenv("MW_SESSION", "")
+	t.Setenv("MW_TENANT", "")
+	runAll(t, []string{"init", "Fleet"}, []string{"gate", "level", "trust", "--workspace", "--by", "t"},
+		[]string{"node", "set", "alpha"}, []string{"add", "task", "A", "-S", "ready", "--node", "alpha"}, []string{"node", "beat"})
+	captureOutput(t, func() { runAll(t, []string{"fleet", "--changed"}) })
+	// the ready row is swapped for another one: same count, same next row title? the ids differ
+	runAll(t, []string{"start", "TSK-001", "-s", "s1"}, []string{"done", "TSK-001", "x", "--no-evidence", "t"},
+		[]string{"add", "task", "A", "-S", "ready", "--node", "alpha"}, []string{"node", "beat"})
+	if out := strings.TrimSpace(captureOutput(t, func() { runAll(t, []string{"fleet", "--changed"}) })); out == "no change" {
+		t.Fatal("a swapped ready row went unnoticed")
+	}
+	// a merge entry that says clash makes the row show a double claim
+	w, err := load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runAll(t, []string{"start", "TSK-002", "-s", "s2"})
+	w, _ = load(path)
+	it, _ := itemByID(&w.Tenants[0], "TSK-002")
+	emit(it, "", "merge", "", "clash, later writer kept: session: kept \"s2\", dropped \"s9\"")
+	if err := save(path, w); err != nil {
+		t.Fatal(err)
+	}
+	a := fleetNodeOf(fleetJSON(t), "alpha")
+	if len(a.InFlight) != 1 || !strings.Contains(a.InFlight[0].Why, "double claim") {
+		t.Fatalf("double claim not shown: %+v", a.InFlight)
+	}
+	runAll(t, []string{"block", "TSK-002", "stuck"}, []string{"ready", "TSK-002"})
+	runAll(t, []string{"start", "TSK-002", "-s", "s2"})
+	if a = fleetNodeOf(fleetJSON(t), "alpha"); len(a.InFlight) != 1 || a.InFlight[0].Why != "" {
+		t.Fatalf("double claim still shown after the row moved: %+v", a.InFlight)
 	}
 }

@@ -124,3 +124,19 @@ func TestNodeBeatLeft(t *testing.T) {
 		t.Fatal("101 accepted")
 	}
 }
+
+func TestRoutingDefaultNodeSkipsAsk(t *testing.T) {
+	routingBoard(t)
+	runAll(t, []string{"node", "set", "alpha"}, []string{"ask", "TSK-002", "which one?"})
+	if id := nextID(t); id != "TSK-003" { // the default node filter skips the asked row, as --node does
+		t.Fatalf("next offered %q", id)
+	}
+	runAll(t, []string{"next", "--claim", "-s", "c1"})
+	w, _ := load(".miniwaves.json")
+	if it, _ := itemByID(&w.Tenants[0], "TSK-002"); it.Status == "doing" {
+		t.Fatalf("claimed the asked row: %+v", it)
+	}
+	if id := nextID(t, "--node", "-"); id != "TSK-001" && id != "TSK-002" {
+		t.Fatalf("--node - got %q", id)
+	}
+}

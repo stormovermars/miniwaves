@@ -969,11 +969,11 @@ func nextItem(path string, w *Workspace, args []string) error {
 	if err := allowOptions(o, allowed...); err != nil {
 		return err
 	}
-	if o["node"] != "" && o["node"] != "-" {
-		o["askskip"] = "true" // an explicit --node: rows with an open ask are never offered
-	}
 	if o["node"] == "" { // a computer with a node name serves only rows routed to it or to anyone; --node - lifts it
 		o["node"] = nodeName()
+	}
+	if o["node"] != "" && o["node"] != "-" {
+		o["askskip"] = "true" // with a node filter in effect (given or default) rows with an open ask are never offered
 	}
 	t, err := selectTenant(w, o)
 	if err != nil {

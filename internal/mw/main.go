@@ -599,15 +599,14 @@ cycles are enforced, waves are not parents: use mw wave add). A session may set 
 the acceptance is empty (drafting); changing a non-empty acceptance is humans only.
 node=NAME|any|- routes the row (see mw help node); cost=N|- sets an estimate in thousands of tokens.`,
 		"node": `mw node set NAME
-mw node beat [working|idle|blocked|limit|off] [--item ID] [-m TEXT] [--left PCT] [--resets TIME]
-mw node list [-j]
+mw node beat [working|idle|blocked|off] [--item ID] [-m TEXT] [--left PCT] [--resets TIME]
 Nodes are the computers that work one shared board. set stores this computer's name per user (setting node.name, never on the board).
 beat writes .miniwaves/nodes/NAME.json (time, state, item in flight, counts of this node's sessions and of its ready and doing rows,
 mw version): one file per node, so two computers never write the same file. The state defaults to working when a row is doing here, else idle.
-beat --left PCT [--resets TIME] records the budget left (0-100) and when it returns; left 0 or state limit = out until then.
+beat --left PCT [--resets TIME] records the budget left (0-100) and when it returns; left 0 = out of budget until then (the one way to say it).
 Routing: mw edit ID node=NAME|any|- (add: --node) names who may take a row; mw tenant node SLUG NAME|any|- sets the tenant default. mw next and mw list --node NAME
-show the rows routed to NAME or to anyone; a computer with a node name filters next by it (--node - lifts that). mw next --node skips rows with an open ask.
-list shows every node with a beat file: live, or silent when its last beat is older than the user setting node.silent (minutes, default 120).`,
+show the rows routed to NAME or to anyone; a computer with a node name filters next by it (--node - lifts that). with a node filter (given or default) mw next skips rows with an open ask.
+mw fleet lists the nodes: live, or silent when the last beat is older than the user setting node.silent (minutes, default 120).`,
 		"fleet": `mw fleet [-t SLUG] [-j] [--changed]
 The fleets view, per node: live or SILENT (no beat for node.silent minutes), what is in flight (age, last log entry), STALLED rows (in flight on a
 silent node, or no log entry for node.stall minutes), blocked rows, rows waiting on an answer (an open ask: never offered, never moved),
@@ -619,7 +618,7 @@ A git merge driver for the board files (.miniwaves.json, .miniwaves/*.json, .min
 rows by id, fields newest-wins (later updated, then later log entry, then THEIRS), logs as a union ordered by time, notes and evidence as a union,
 counters as the maximum. A row added on both sides with the same id keeps both (the later one is renumbered). A same-second conflict is
 written to the row's log. Nothing is ever dropped except what one side deleted and the other left untouched. The result replaces OURS; exit 0.
-Set it up once per clone:
+Set it up once per clone (also ignore the lock and temp files: .miniwaves/*.lock, .miniwaves/*.lock.pid, .miniwaves/*.tmp, .miniwaves/nodes/*.tmp):
   .gitattributes:  .miniwaves.json merge=mw
                    .miniwaves/*.json merge=mw
                    .miniwaves/nodes/*.json merge=mw
@@ -852,11 +851,11 @@ Usage:
   mw session list [-t SLUG] [-j] [-v] | stop NAME [--release] | reap [-t SLUG | -A] [--older-than DUR] [--except NAMES] [-n] [-j]
   mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]
   mw get-prompt dispatcher|coach|newsdesk|fleet-coordinator [NAME] [--job ID] [-j]
-  mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [--ticket KEY]
+  mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [--ticket KEY] [--node NAME|any] [--cost N]
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY] [node=NAME|any|-] [cost=N|-]
   mw fleet [-t SLUG] [-j] [--changed]  per-node view of a shared board
   mw merge-file BASE OURS THEIRS [PATH]  git merge driver for shared boards (USAGE.md, "Fleets")
-  mw node set NAME | beat [STATE] [--item ID] [-m TEXT] [--left PCT] [--resets TIME] | list [-j]
+  mw node set NAME | beat [STATE] [--item ID] [-m TEXT] [--left PCT] [--resets TIME]
   mw user show [-j] | get [KEY] [-j] | set KEY=VALUE...
   mw configure [--show [-j]] | KEY=VALUE...
   mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]

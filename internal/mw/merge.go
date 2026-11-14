@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -98,15 +99,28 @@ type merger struct {
 	shape  string // tenant | index | archive
 	oStamp time.Time
 	tStamp time.Time
-	used   map[string]bool            // item ids in use (renumbering)
-	ren    map[byte]map[string]string // side (o|t) -> old id -> new id, for rows renumbered on that side
+	used   map[string]bool            // item ids in use (renumbering), the sibling file's included
+	ren    map[byte]map[string]string // side (o|t|x) -> old id -> new id, for rows renumbered on that side
+	recs   []renRec
+	sib    map[string]map[string]any // the sibling file's rows by id (archive for a tenant file, tenant for an archive)
 }
 
+type renRec struct{ old, new, session string }
+
+// pick decides a real conflict: the later writer, and on an exact tie the larger value, so the result never depends on the side.
 func (m *merger) pick(o, t any, ot, tt time.Time) any {
-	if theirsLater(ot, tt) {
+	switch {
+	case ot.After(tt):
+		return o
+	case tt.After(ot):
 		return t
 	}
-	return o
+	ob, _ := json.Marshal(unmissing(o))
+	tb, _ := json.Marshal(unmissing(t))
+	if string(ob) >= string(tb) {
+		return o
+	}
+	return t
 }
 
 // val merges one value three ways; later is the pair of stamps deciding a real conflict.
@@ -163,31 +177,74 @@ func rowsByKey(rows []any, key string) (map[string]map[string]any, []string) {
 
 func asRows(v any) []any { r, _ := v.([]any); return r }
 
-// rows merges a list of objects keyed by key (id for items and sessions, slug for tenants).
+// originTime orders two rows by when they were created: created, then the first log entry (nanoseconds).
+func originTime(r map[string]any) string {
+	return strOf(r["created"]) + "|" + strOf(firstEventAt(r)) + "|" + strOf(r["title"])
+}
+
+// rows merges a list of objects keyed by key (id for items and sessions, slug for tenants). The order of the
+// result does not depend on the side: rows of base in base order, then the others by creation time and key.
 func (m *merger) rows(b, o, t []any, key string) []any {
-	bi, _ := rowsByKey(b, key)
-	oi, oo := rowsByKey(o, key)
-	ti, to := rowsByKey(t, key)
-	order := append([]string(nil), oo...)
-	for _, id := range to {
-		if _, ok := oi[id]; !ok {
-			order = append(order, id)
+	bi, bo := rowsByKey(b, key)
+	oi, _ := rowsByKey(o, key)
+	ti, _ := rowsByKey(t, key)
+	var order, rest []string
+	seen := map[string]bool{}
+	for _, id := range bo {
+		_, inO := oi[id]
+		_, inT := ti[id]
+		if inO || inT {
+			order, seen[id] = append(order, id), true
 		}
 	}
+	for _, mm := range []map[string]map[string]any{oi, ti} {
+		for id := range mm {
+			if !seen[id] {
+				rest, seen[id] = append(rest, id), true
+			}
+		}
+	}
+	sort.Slice(rest, func(i, j int) bool {
+		ri, rj := oi[rest[i]], oi[rest[j]]
+		if ri == nil {
+			ri = ti[rest[i]]
+		}
+		if rj == nil {
+			rj = ti[rest[j]]
+		}
+		if a, b := originTime(ri), originTime(rj); a != b {
+			return a < b
+		}
+		return rest[i] < rest[j]
+	})
+	order = append(order, rest...)
 	out := []any{}
-	var tags []byte // 'o' or 't' for a row that exists only on that side and not in base (its references may need rewriting)
+	var tags []byte // 'o', 't' or 'x' for a row that exists only on that side (its links may need rewriting)
 	for _, id := range order {
 		br, hasB := bi[id]
 		or, hasO := oi[id]
 		tr, hasT := ti[id]
 		switch {
 		case hasO && hasT:
-			if key == "id" && m.shape != "archive" && !sameRowOrigin(or, tr) { // two different rows under one id
-				if hasB && !sameRowOrigin(br, or) && sameRowOrigin(br, tr) { // ours is the newcomer
-					out, tags = append(out, m.renumber(or, tr, 'o'), tr), append(tags, 'o', 0)
-				} else {
-					out, tags = append(out, or, m.renumber(tr, or, 't')), append(tags, 0, 't')
+			if key == "id" && !sameRowOrigin(or, tr) { // two different rows under one id: both stay, one is renumbered
+				renameOurs := false
+				switch {
+				case hasB && sameRowOrigin(br, tr) && !sameRowOrigin(br, or):
+					renameOurs = true // ours is the newcomer
+				case hasB && sameRowOrigin(br, or) && !sameRowOrigin(br, tr):
+				default:
+					renameOurs = originTime(or) > originTime(tr) // the later row gets the new id, whichever side it is on
 				}
+				first, second, ft, st := or, tr, byte(0), byte(0)
+				if renameOurs {
+					first, ft = m.renumber(or, tr, 'o'), 'o'
+				} else {
+					second, st = m.renumber(tr, or, 't'), 't'
+				}
+				if originTime(or) > originTime(tr) { // the earlier row first, whichever side it came from
+					first, second, ft, st = second, first, st, ft
+				}
+				out, tags = append(out, first, second), append(tags, ft, st)
 				continue
 			}
 			if !hasB {
@@ -204,6 +261,16 @@ func (m *merger) rows(b, o, t []any, key string) []any {
 				continue
 			}
 			out, tags = append(out, tr), append(tags, map[bool]byte{true: 0, false: 't'}[hasB])
+		}
+	}
+	if key == "id" && len(m.sib) > 0 { // an id that is also a different row in the sibling file: renumber this one
+		for i, r := range out {
+			if rm, ok := asMap(r); ok {
+				if sr, ok := m.sib[strOf(rm["id"])]; ok && !sameRowOrigin(rm, sr) {
+					out[i] = m.renumber(rm, sr, 'x')
+					tags[i] = 'x'
+				}
+			}
 		}
 	}
 	if key == "id" {
@@ -284,6 +351,7 @@ func (m *merger) renumber(t, o map[string]any, side byte) map[string]any {
 	nid := fmt.Sprintf("%s-%03d", pfx, max+1)
 	m.used[nid] = true
 	m.ren[side][old] = nid
+	m.recs = append(m.recs, renRec{old, nid, strOf(t["session"])})
 	nt := map[string]any{}
 	for k, v := range t {
 		nt[k] = v
@@ -294,7 +362,7 @@ func (m *merger) renumber(t, o map[string]any, side byte) map[string]any {
 	if x := rowStamp(t); x.After(at) {
 		at = x
 	}
-	nt["events"] = append(append([]any(nil), ev...), map[string]any{"at": at.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano), "action": "merge", "note": "renumbered from " + old + ": the same id was added on two computers"})
+	nt["events"] = append(append([]any(nil), ev...), map[string]any{"at": at.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano), "action": "merge", "note": "renumbered from " + old + ": the same id was added on two computers" + map[bool]string{true: "; session " + strOf(t["session"]) + " follows it", false: ""}[strOf(t["session"]) != ""]})
 	return nt
 }
 
@@ -371,7 +439,8 @@ func (m *merger) row(b, o, t map[string]any) map[string]any {
 		}
 	}
 	var conflicts []string
-	for k := range keys {
+	clash := false
+	for _, k := range sortedKeys(keys) {
 		var v any
 		switch k {
 		case "events":
@@ -386,8 +455,15 @@ func (m *merger) row(b, o, t map[string]any) map[string]any {
 		default:
 			var c bool
 			v, c = m.val(get(b, k), get(o, k), get(t, k), ot, tt)
-			if c && ot.Unix() == tt.Unix() {
-				conflicts = append(conflicts, fmt.Sprintf("%s: ours %s, theirs %s", k, short(unmissing(get(o, k))), short(unmissing(get(t, k)))))
+			if c && (k == "status" || k == "session" || k == "started_on") { // both sides moved the row: a double claim, always logged
+				clash = true
+			}
+			if c && (clash && (k == "status" || k == "session" || k == "started_on") || ot.Unix() == tt.Unix()) {
+				lose := get(o, k)
+				if same(v, lose) {
+					lose = get(t, k)
+				}
+				conflicts = append(conflicts, fmt.Sprintf("%s: kept %s, dropped %s", k, short(unmissing(v)), short(unmissing(lose))))
 			}
 		}
 		if v != nil && v != missing {
@@ -404,7 +480,7 @@ func (m *merger) row(b, o, t map[string]any) map[string]any {
 			at = tt
 		}
 		ev, _ := out["events"].([]any)
-		out["events"] = unionEvents(ev, []any{map[string]any{"at": at.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano), "action": "merge", "note": "conflict, later writer kept: " + strings.Join(conflicts, "; ")}})
+		out["events"] = unionEvents(ev, []any{map[string]any{"at": at.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano), "action": "merge", "note": map[bool]string{true: "clash", false: "conflict"}[clash] + ", later writer kept: " + strings.Join(conflicts, "; ")}})
 	}
 	return out
 }
@@ -444,6 +520,12 @@ func shapeOf(docs ...map[string]any) string {
 
 // mergeBoardFiles merges three versions of one board file and returns the bytes to store.
 func mergeBoardFiles(base, ours, theirs []byte) ([]byte, error) {
+	return mergeBoardFilesSib(base, ours, theirs, nil)
+}
+
+// mergeBoardFilesSib is mergeBoardFiles with the sibling file of OURS (the archive of a tenant file, the tenant file
+// of an archive): its ids are in use and a different row under the same id is renumbered, so no row is lost across the two.
+func mergeBoardFilesSib(base, ours, theirs, sibling []byte) ([]byte, error) {
 	bd, err := decodeDoc(base)
 	if err != nil {
 		return nil, fmt.Errorf("base: %w", err)
@@ -456,7 +538,13 @@ func mergeBoardFiles(base, ours, theirs []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("theirs: %w", err)
 	}
-	m := &merger{shape: shapeOf(bd, od, td), oStamp: docStamp(od), tStamp: docStamp(td), used: map[string]bool{}, ren: map[byte]map[string]string{'o': {}, 't': {}}}
+	m := &merger{shape: shapeOf(bd, od, td), oStamp: docStamp(od), tStamp: docStamp(td), used: map[string]bool{}, ren: map[byte]map[string]string{'o': {}, 't': {}, 'x': {}}}
+	if sd, err := decodeDoc(sibling); err == nil && len(sibling) > 0 {
+		m.sib, _ = rowsByKey(asRows(sd["items"]), "id")
+		for id := range m.sib {
+			m.used[id] = true
+		}
+	}
 	var merged map[string]any
 	switch m.shape {
 	case "node": // one writer per file: the newer beat wins
@@ -481,7 +569,7 @@ func mergeBoardFiles(base, ours, theirs []byte) ([]byte, error) {
 				keys[k] = true
 			}
 		}
-		for k := range keys {
+		for _, k := range sortedKeys(keys) { // items before sessions: a renumbered row's owner is fixed up after both
 			var v any
 			switch k {
 			case "items":
@@ -501,6 +589,16 @@ func mergeBoardFiles(base, ours, theirs []byte) ([]byte, error) {
 			}
 			if v != nil && v != missing {
 				merged[k] = v
+			}
+		}
+		for _, rc := range m.recs { // the session that owns a renumbered row keeps it
+			if rc.session == "" {
+				continue
+			}
+			for _, r := range asRows(merged["sessions"]) {
+				if sm, ok := asMap(r); ok && strOf(sm["id"]) == rc.session && strOf(sm["item"]) == rc.old {
+					sm["item"] = rc.new
+				}
 			}
 		}
 		if next, ok := merged["next"].(map[string]any); ok { // counters: never behind an id in use
@@ -546,7 +644,80 @@ func mergeBoardFiles(base, ours, theirs []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if out, err = graftUnknown(out, merged, typed); err != nil {
+		return nil, err
+	}
 	return append(out, '\n'), nil
+}
+
+// jsonKeys is the set of JSON names a struct knows.
+func jsonKeys(v any) map[string]bool {
+	k := map[string]bool{}
+	t := reflect.TypeOf(v)
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	for i := 0; i < t.NumField(); i++ {
+		if n := strings.Split(t.Field(i).Tag.Get("json"), ",")[0]; n != "" && n != "-" {
+			k[n] = true
+		}
+	}
+	return k
+}
+
+// graftUnknown puts back the fields this build does not know (a newer mw's), at the top level and in sessions and
+// index tenants; the typed copy is returned untouched, byte for byte as save writes it, when there are none.
+func graftUnknown(typedJSON []byte, merged map[string]any, typed any) ([]byte, error) {
+	known := jsonKeys(typed)
+	rowKnown := map[string]map[string]bool{"sessions": jsonKeys(Session{}), "tenants": jsonKeys(indexTenant{})}
+	found := false
+	for k := range merged {
+		if !known[k] {
+			found = true
+		}
+	}
+	for list, kk := range rowKnown {
+		for _, r := range asRows(merged[list]) {
+			if rm, ok := asMap(r); ok {
+				for k := range rm {
+					if !kk[k] {
+						found = true
+					}
+				}
+			}
+		}
+	}
+	if !found {
+		return typedJSON, nil
+	}
+	tm, err := decodeDoc(typedJSON)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range merged {
+		if !known[k] {
+			tm[k] = v
+		}
+	}
+	for list, kk := range rowKnown {
+		mr, tr := asRows(merged[list]), asRows(tm[list])
+		if len(mr) != len(tr) {
+			continue
+		}
+		for i := range mr {
+			mm, ok1 := asMap(mr[i])
+			tt, ok2 := asMap(tr[i])
+			if !ok1 || !ok2 {
+				continue
+			}
+			for k, v := range mm {
+				if !kk[k] {
+					tt[k] = v
+				}
+			}
+		}
+	}
+	return json.Marshal(tm)
 }
 
 // mergeFileCommand is mw merge-file BASE OURS THEIRS [PATH]: the result replaces OURS.
@@ -569,7 +740,11 @@ func mergeFileCommand(args []string) error {
 		}
 		in[i] = b
 	}
-	out, err := mergeBoardFiles(in[0], in[1], in[2])
+	var sib []byte
+	if len(args) == 4 { // the sibling file in the work tree: archive <-> tenant file
+		sib, _ = os.ReadFile(siblingPath(args[3]))
+	}
+	out, err := mergeBoardFilesSib(in[0], in[1], in[2], sib)
 	if err != nil {
 		return fmt.Errorf("merge-file: %w", err)
 	}
@@ -579,4 +754,25 @@ func mergeFileCommand(args []string) error {
 func numOf(v any) int {
 	n, _ := strconv.Atoi(fmt.Sprint(v))
 	return n
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// siblingPath maps NAME.json to NAME.archive.json and back ("" for the index and node files).
+func siblingPath(p string) string {
+	dir, f := filepath.Split(filepath.ToSlash(p))
+	switch {
+	case strings.HasSuffix(f, ".archive.json"):
+		return filepath.FromSlash(dir + strings.TrimSuffix(f, ".archive.json") + ".json")
+	case strings.HasSuffix(f, ".json") && strings.Contains(dir, ".miniwaves/") && !strings.Contains(dir, "nodes/"):
+		return filepath.FromSlash(dir + strings.TrimSuffix(f, ".json") + ".archive.json")
+	}
+	return ""
 }

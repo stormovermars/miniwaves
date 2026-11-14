@@ -21,7 +21,7 @@ func readBeat(t *testing.T, path, name string) nodeBeat {
 	return nb
 }
 
-func TestNodeBeatAndList(t *testing.T) {
+func TestNodeBeat(t *testing.T) {
 	path := inTempDir(t)
 	t.Setenv("MW_SESSION", "")
 	t.Setenv("MW_TENANT", "")
@@ -40,19 +40,26 @@ func TestNodeBeatAndList(t *testing.T) {
 	if nb.State != "working" || nb.Item != "TSK-001" || nb.Sessions != 1 || nb.Doing != 1 || nb.Msg != "hello" || nb.Version != version {
 		t.Fatalf("beat: %+v", nb)
 	}
-	runAll(t, []string{"node", "beat", "limit", "--item", "tsk-009"})
-	if nb = readBeat(t, path, "alpha"); nb.State != "limit" || nb.Item != "TSK-009" {
+	runAll(t, []string{"node", "beat", "blocked", "--item", "tsk-009"})
+	if nb = readBeat(t, path, "alpha"); nb.State != "blocked" || nb.Item != "TSK-009" {
 		t.Fatalf("beat: %+v", nb)
 	}
-	if err := run([]string{"node", "beat", "sleepy"}); err == nil {
-		t.Fatal("unknown state accepted")
+	for _, bad := range []string{"sleepy", "limit"} {
+		if err := run([]string{"node", "beat", bad}); err == nil {
+			t.Fatalf("state %q accepted", bad)
+		}
 	}
-	out := captureOutput(t, func() { runAll(t, []string{"node", "list", "-j"}) })
-	var rows []nodeRow
-	if err := json.Unmarshal([]byte(out), &rows); err != nil || len(rows) != 1 || !rows[0].Live || rows[0].Node != "alpha" {
-		t.Fatalf("list: %s %v", out, err)
+	if err := run([]string{"node", "list"}); err == nil {
+		t.Fatal("node list still exists: the fleet view shows nodes")
 	}
-	// an old beat is silent
+	if err := run([]string{"node", "set", "any"}); err == nil {
+		t.Fatal("node name any accepted")
+	}
+	v := fleetJSON(t)
+	if a := fleetNodeOf(v, "alpha"); !a.Live || a.State != "blocked" || a.Sessions != 1 {
+		t.Fatalf("fleet: %+v", a)
+	}
+	// an old beat is silent; node.silent moves the line
 	old := nb
 	old.At = time.Now().Add(-3 * time.Hour).UTC().Format(time.RFC3339)
 	old.Node = "beta"
@@ -60,15 +67,11 @@ func TestNodeBeatAndList(t *testing.T) {
 	if err := os.WriteFile(nodePath(path, "beta"), append(b, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out = captureOutput(t, func() { runAll(t, []string{"node", "list"}) })
-	if !strings.Contains(out, "alpha") || !strings.Contains(out, "silent") {
-		t.Fatalf("list text: %s", out)
+	if fleetNodeOf(fleetJSON(t), "beta").Live {
+		t.Fatal("a 3 h old beat is live")
 	}
 	runAll(t, []string{"user", "set", "node.silent=300"})
-	rows = nil
-	out = captureOutput(t, func() { runAll(t, []string{"node", "list", "-j"}) })
-	_ = json.Unmarshal([]byte(out), &rows)
-	if len(rows) != 2 || !rows[1].Live {
-		t.Fatalf("node.silent ignored: %s", out)
+	if !fleetNodeOf(fleetJSON(t), "beta").Live {
+		t.Fatal("node.silent ignored")
 	}
 }

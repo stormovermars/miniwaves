@@ -56,6 +56,7 @@ type fleetView struct {
 	Movable []fleetRow  `json:"movable" toon:"movable"` // stalled rows anyone may take
 	Held    []fleetRow  `json:"held" toon:"held"`       // ready or stalled rows pinned to a silent node
 	Any     fleetAny    `json:"any" toon:"any"`         // ready rows routed to anyone
+	ready   string      // the ready rows by node, for the --changed signature (a swapped row has the same count)
 }
 
 type fleetAny struct {
@@ -150,6 +151,7 @@ func buildFleet(path string, w *Workspace, o map[string]string, now time.Time) f
 		return r
 	}
 	var view fleetView
+	var readyIDs []string
 	view.Movable, view.Held = []fleetRow{}, []fleetRow{}
 	for _, t := range ts {
 		for _, it := range t.Items {
@@ -182,11 +184,16 @@ func buildFleet(path string, w *Workspace, o map[string]string, now time.Time) f
 						stalled = "no log entry for " + strings.TrimSuffix(ago(e.At), " ago")
 					}
 				}
+				claim := doubleClaim(it)
 				if stalled == "" {
+					r.Why = claim
 					n.InFlight = append(n.InFlight, r)
 					continue
 				}
 				r.Why = stalled
+				if claim != "" {
+					r.Why += "; " + claim
+				}
 				n.Stalled = append(n.Stalled, r)
 				switch rt := routeOf(t, it); {
 				case rt == "any":
@@ -229,6 +236,7 @@ func buildFleet(path string, w *Workspace, o map[string]string, now time.Time) f
 					continue
 				}
 				rt := routeOf(t, it)
+				readyIDs = append(readyIDs, rt+"/"+t.Slug+":"+it.ID)
 				if rt == "any" {
 					view.Any.Ready++
 					view.Any.Cost += it.Cost
@@ -247,6 +255,8 @@ func buildFleet(path string, w *Workspace, o map[string]string, now time.Time) f
 			}
 		}
 	}
+	sort.Strings(readyIDs)
+	view.ready = strings.Join(readyIDs, ",")
 	names := make([]string, 0, len(nodes))
 	for k := range nodes {
 		names = append(names, k)
@@ -254,7 +264,7 @@ func buildFleet(path string, w *Workspace, o map[string]string, now time.Time) f
 	sort.Strings(names)
 	for _, name := range names {
 		n := nodes[name]
-		if name != unknownNode && !n.Out && !n.Low { // out or nearly out: finish what is in flight, take nothing new
+		if name != unknownNode && n.Live && !n.Out && !n.Low { // silent, out or nearly out: finish what is in flight, take nothing new
 			if it := nextFor(w, ts, name); it != nil {
 				t, _ := tenantBySlug(w, it.Parent)
 				orig, _ := itemByID(t, it.ID)
@@ -313,7 +323,7 @@ func (v fleetView) signature() string {
 		c.Any.Next = &x
 	}
 	b, _ := json.Marshal(c)
-	h := sha256.Sum256(b)
+	h := sha256.Sum256(append(b, v.ready...))
 	return hex.EncodeToString(h[:])
 }
 
@@ -440,4 +450,24 @@ func orDefault(s, d string) string {
 		return d
 	}
 	return s
+}
+
+// doubleClaim says so when a merge found two computers on the same row and nobody has moved it since.
+func doubleClaim(it Item) string {
+	at := -1
+	for i, e := range it.Events {
+		if e.Action == "merge" && strings.HasPrefix(e.Note, "clash") {
+			at = i
+		}
+	}
+	if at < 0 {
+		return ""
+	}
+	for _, e := range it.Events[at+1:] {
+		switch e.Action {
+		case "ready", "reopen", "done", "block":
+			return ""
+		}
+	}
+	return "double claim (see the merge entry in the log)"
 }

@@ -547,30 +547,26 @@ mw drive check --idle DUR [--at RFC3339] [-j]
 
 ## Fleets
 
-One board can be worked by several computers (nodes), each with its own sessions. Everything here is optional; a board that never names a node behaves as before.
+The model in one line: a session is one agent; a fleet is the sessions on one computer (a node); a fleet of fleets is several nodes sharing one board through git. Everything here is optional; a board that never names a node behaves as before. Run mw 0.3.23 or later on every computer of a shared board (an older mw drops the new `node` fields of sessions and tenants when it saves).
 
 ```
 mw node set NAME                 this computer's name (per user setting node.name, never on the board)
-mw node beat [STATE] [--item ID] [-m TEXT]   STATE: working|idle|blocked|limit|off
-mw node list [-j]
-```
-
-- `beat` writes one small file per node, `.miniwaves/nodes/NAME.json`: time, state, the row in flight, the count of this node's sessions and of its ready and doing rows, the mw version. Two computers never write the same file. STATE defaults to `working` when a row is doing here, else `idle`.
-- A node with no beat for `node.silent` minutes (user setting, default 120) is silent. `node.stall` (default 240) is the minutes without a log entry after which a row in progress counts as stalled.
-- Routing: `mw edit ID node=NAME|any|-` (and `mw add ... --node NAME|any`) names who may take a row; `-` clears it, so the tenant default (`mw tenant node SLUG NAME|any|-`) applies; no default means anyone. `mw next --node NAME` and `mw list --node NAME` show the rows routed to NAME or to anyone. On a computer with a node name `mw next` filters by it (`--node -` lifts that); with a node filter, rows with an open ask are never offered.
-- Budget and cost: `mw node beat --left PCT [--resets TIME]` records the budget the node has left (0..100) and when it comes back (RFC3339 or a wait such as `3h`). Left 0, or state `limit`, means out until the reset time: `mw fleet` shows `OUT until TIME`, does not count the node as silent, offers it nothing, lists its pinned ready rows as queued and makes its stalled `any` rows movable. At 10% or less (LOW) it is offered nothing new either. `mw edit ID cost=N|-` (add: `--cost N`) is a row's estimate in thousands of tokens.
-- `mw start` records the node on the row (`started_on`) and `mw session start` on the session when `node.name` is set. Older mw versions keep these optional fields; the schema stays 9.
-
-### The fleets view: `mw fleet`
-
-```
-mw fleet [-t SLUG] [-j] [--changed]
+mw node beat [STATE] [--item ID] [-m TEXT] [--left PCT] [--resets TIME]   STATE: working|idle|blocked|off
+mw fleet [-t SLUG] [-j] [--changed] [-s SESSION]
 mw get-prompt fleet-coordinator [NAME] [-j]
 ```
 
-Per node: live or SILENT, state, budget left (LOW at 10% or less), sessions, ready rows and their cost, and the rows by kind: in flight (age, last log entry), STALLED (in flight on a silent node, or no log entry for `node.stall` minutes), blocked, waiting on an answer (an open ask: never offered for dispatch, never listed as movable), and `next`, the row `mw next --node NAME` would serve. Rows in flight with no node known sit under `?`. Below the nodes: ready rows for anyone, `movable` (stalled rows routed to anyone) and `held` (ready or stalled rows pinned to a silent node: `mw edit ID node=any` frees them). `mw reopen ID` puts a stalled row back to ready. A help row for another node: add it with `--node NAME`, then `mw block ID --on TENANT:ROW` (a row of another tenant is accepted); `mw fleet` shows the blocked row as `waiting on NODE TENANT:ROW`, lists it as stalled when unanswered past `node.stall`, and says when the target is done.
+- `beat` writes one small file per node, `.miniwaves/nodes/NAME.json`: time, state, the row in flight, the count of this node's sessions and of its ready and doing rows, the budget left, the mw version. Two computers never write the same file. STATE defaults to `working` when a row is doing here, else `idle`. `mw fleet` is the one place that lists nodes.
+- A node with no beat for `node.silent` minutes (user setting, default 120) is silent. `node.stall` (default 240) is the minutes without a log entry after which a row in progress counts as stalled. Silence compares the beat's time with the reader's clock: keep the computers' clocks right (see the clock rule below).
+- Routing: `mw edit ID node=NAME|any|-` (and `mw add ... --node NAME|any`) names who may take a row; `-` clears it, so the tenant default (`mw tenant node SLUG NAME|any|-`) applies; no default means anyone. `mw next --node NAME` and `mw list --node NAME` show the rows routed to NAME or to anyone. On a computer with a node name, `mw next` filters by it (`--node -` lifts that). With a node filter in effect, given or default, rows with an open ask are never offered.
+- Budget and cost: `--left PCT` records the budget the node has left (0..100); `--resets TIME` (RFC3339 or a wait such as `3h`) says when it comes back. That is the one way to say a node is out: `--left 0`. `mw fleet` then shows `OUT until TIME`, does not count the node as silent, offers it nothing, lists its pinned ready rows as queued and makes its stalled `any` rows movable. At 10% or less (LOW), and when silent, a node is offered nothing new either. `mw edit ID cost=N|-` (add: `--cost N`) is a row's estimate in thousands of tokens; without any cost the view works the same.
+- `mw start` records the node on the row (`started_on`) and `mw session start` on the session when `node.name` is set. The fields are optional; the schema stays 9.
 
-`--changed` compares the view (ages and beat times left out) with the last `--changed` run of the same session (`-s NAME` or `MW_SESSION`; name your coordinator session, or all runs share one state) and prints the single line `no change` when nothing differs, else the full view. The state is `fleet-<hash>.json` next to `mw-user.json`, one per board and `MW_SESSION`, so two coordinators on one computer never swallow each other's changes. The prompt `fleet-coordinator` tells a session how to run that loop.
+### The fleets view: `mw fleet`
+
+Per node: live or SILENT, state, budget left (LOW at 10% or less), sessions, ready rows and their cost, and the rows by kind: in flight (age, last log entry; `double claim` when a merge found two computers on the row), STALLED (in flight on a silent or out node, or no log entry for `node.stall` minutes), blocked, waiting on an answer (an open ask: never offered for dispatch, never listed as movable), and `next`, the row `mw next --node NAME` would serve (none for a silent, out or LOW node). Rows in flight with no node known sit under `?`. Below the nodes: ready rows for anyone, `movable` (stalled rows routed to anyone) and `held` (ready or stalled rows pinned to a silent node: `mw edit ID node=any` frees them). `mw reopen ID` puts a stalled row back to ready. A help row for another node: add it with `--node NAME`, then `mw block ID --on TENANT:ROW` (a row of another tenant is accepted); `mw fleet` shows the blocked row as `waiting on NODE TENANT:ROW`, lists it as stalled when unanswered past `node.stall`, and says when the target is done. A cross-tenant wait does not unblock by itself: whoever sees `is done` runs `mw ready ID`. `-t SLUG` shows one tenant; a wait whose target is in another tenant reads `waiting on any` there.
+
+`--changed` compares the view (ages and beat times left out; the ready rows by id) with the last `--changed` run of the same session and prints the single line `no change` when nothing differs, else the full view. Name your coordinator session (`-s NAME` or `MW_SESSION`), or all runs share one state. The state is `fleet-<hash>.json` next to `mw-user.json`, one per board and session. The prompt `fleet-coordinator` tells a session how to run that loop.
 
 ### Shared boards: `mw merge-file`
 
@@ -581,15 +577,22 @@ Computers that commit `.miniwaves.json` and `.miniwaves/` to one git repo collid
 .miniwaves.json merge=mw
 .miniwaves/*.json merge=mw
 .miniwaves/nodes/*.json merge=mw
+# .gitignore (committed): lock and temp files are per computer
+.miniwaves/*.lock
+.miniwaves/*.lock.pid
+.miniwaves/*.tmp
+.miniwaves/nodes/*.tmp
+.miniwaves.json.lock
+.miniwaves.json.lock.pid
 # per clone
 git config merge.mw.driver "mw merge-file %O %A %B %P"
 ```
 
-- Rows merge by id (tenants by slug, sessions by id). A field changed on one side only is taken; changed on both, the later writer wins: the later `updated`, then the later log entry (nanosecond stamps), then THEIRS. Changed in the same second, the row also gets a `merge` log entry holding both values.
-- `events` are a union ordered by time; `notes` and `evidence` a union; `next` counters the maximum, never behind an id in use.
-- A row added on both sides with the same id keeps both: the later one is renumbered (`parent`, `wave` and `--on` links of the rows added on the renumbered side follow it; links of rows that exist on both sides are not rewritten; the `merge` log entry names the old id). A row deleted on one side and untouched on the other stays deleted (archive moves), one that was edited is kept.
-- `archived` and `accept_streak` add up both sides' changes; a cleared `evidence` list stays cleared. The driver rewrites only the fields this build knows, and an older mw drops the new `node` fields of sessions and tenants when it saves: run mw 0.3.23 or later on every computer of a shared board.
-- Node beat files take the newer beat. Anything that is not a board file, or that does not parse, makes the driver exit 1 and git reports a normal conflict.
+- Rows merge by id (tenants by slug, sessions by id). A field changed on one side only is taken; changed on both, the later writer wins: the later `updated`, then the later log entry (log entries carry nanosecond times; `updated` and `created` are whole seconds), then the larger value, so the result is the same whichever side git calls ours (a rebase swaps them; a test merges one state both ways and compares the bytes). When both sides changed `status`, `session` or `started_on` (two computers on one row) the row always gets a `merge` log entry starting `clash` that names what was kept and what was dropped, and `mw fleet` shows `double claim` until the row moves. Other same-second conflicts get a `conflict` entry.
+- `events` are a union ordered by time (same instant: by content); `notes` and `evidence` a union (a cleared `evidence` list stays cleared); `next` counters the maximum, never behind an id in use; `archived` and `accept_streak` add both sides' changes. Rows come out in a fixed order: base order, then the new rows by creation time.
+- A row added on both sides with the same id keeps both: the later one is renumbered, in the archive file too (the driver reads the sibling file next to PATH, tenant file and archive, so an id is never two rows). `parent`, `wave` and `--on` links of the rows added on the renumbered side follow it, and the session that owns the renumbered row keeps it (the `merge` entry names the old id and the session). Links of rows that exist on both sides are not rewritten. A row deleted on one side and untouched on the other stays deleted (archive moves), one that was edited is kept.
+- Unknown fields of a newer mw are kept at the top level and in sessions, tenants and rows. Node beat files take the newer beat. Anything that is not a board file, or that does not parse, makes the driver exit 1 and git reports a normal conflict.
+- Clock rule: "newest wins" trusts the computers' clocks. A computer whose clock runs ahead wins conflicts it should lose, and sees silent nodes as live. Keep clocks synced (NTP); the `merge` entries make a wrong pick visible.
 
 ## Error codes (`-j`)
 
