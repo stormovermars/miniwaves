@@ -858,7 +858,7 @@ func unblockDependents(t *Tenant, id, stamp, actor string) {
 			continue
 		}
 		if e, ok := lastEvent(*b, "block"); ok && e.On == id {
-			b.Status, b.Updated, b.Note = "ready", stamp, ""
+			b.Status, b.Updated, b.Note, b.StartedOn = "ready", stamp, "", ""
 			emit(b, stamp, "ready", actor, "unblocked: "+id+" done")
 		}
 	}
@@ -884,7 +884,7 @@ func startStoryAbove(t *Tenant, it *Item, now, by string) {
 		}
 		if p.Kind == "story" {
 			if p.Status == "inbox" || p.Status == "ready" {
-				p.Status, p.Updated = "doing", now
+				p.Status, p.Updated, p.StartedOn = "doing", now, nodeName()
 				emit(p, now, "start", by, "via "+it.ID)
 			}
 			return
@@ -911,7 +911,7 @@ func pickNext(w *Workspace, t *Tenant, o map[string]string) (*Item, int, []gateI
 		if inDrive(t, it) { // drive tasks are taken by id, never served by next
 			continue
 		}
-		if o["node"] != "" && o["node"] != "-" {
+		if o["askskip"] != "" {
 			if _, asked := openAsk(it); asked { // waits for an answer: never offered for dispatch
 				continue
 			}
@@ -968,6 +968,9 @@ func nextItem(path string, w *Workspace, args []string) error {
 	}
 	if err := allowOptions(o, allowed...); err != nil {
 		return err
+	}
+	if o["node"] != "" && o["node"] != "-" {
+		o["askskip"] = "true" // an explicit --node: rows with an open ask are never offered
 	}
 	if o["node"] == "" { // a computer with a node name serves only rows routed to it or to anyone; --node - lifts it
 		o["node"] = nodeName()

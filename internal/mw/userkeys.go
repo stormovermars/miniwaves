@@ -105,7 +105,7 @@ func (k *userKey) normalize(val string) (string, error) {
 		}
 		return strconv.Itoa(n), nil
 	case "name":
-		if !validID(v) {
+		if !validID(v) || v == "any" {
 			return bad()
 		}
 		return v, nil

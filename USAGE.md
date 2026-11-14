@@ -570,7 +570,7 @@ mw get-prompt fleet-coordinator [NAME] [-j]
 
 Per node: live or SILENT, state, budget left (LOW at 10% or less), sessions, ready rows and their cost, and the rows by kind: in flight (age, last log entry), STALLED (in flight on a silent node, or no log entry for `node.stall` minutes), blocked, waiting on an answer (an open ask: never offered for dispatch, never listed as movable), and `next`, the row `mw next --node NAME` would serve. Rows in flight with no node known sit under `?`. Below the nodes: ready rows for anyone, `movable` (stalled rows routed to anyone) and `held` (ready or stalled rows pinned to a silent node: `mw edit ID node=any` frees them). `mw reopen ID` puts a stalled row back to ready. A help row for another node: add it with `--node NAME`, then `mw block ID --on TENANT:ROW` (a row of another tenant is accepted); `mw fleet` shows the blocked row as `waiting on NODE TENANT:ROW`, lists it as stalled when unanswered past `node.stall`, and says when the target is done.
 
-`--changed` compares the view (ages and beat times left out) with the last `--changed` run of the same session and prints the single line `no change` when nothing differs, else the full view. The state is `fleet-<hash>.json` next to `mw-user.json`, one per board and `MW_SESSION`, so two coordinators on one computer never swallow each other's changes. The prompt `fleet-coordinator` tells a session how to run that loop.
+`--changed` compares the view (ages and beat times left out) with the last `--changed` run of the same session (`-s NAME` or `MW_SESSION`; name your coordinator session, or all runs share one state) and prints the single line `no change` when nothing differs, else the full view. The state is `fleet-<hash>.json` next to `mw-user.json`, one per board and `MW_SESSION`, so two coordinators on one computer never swallow each other's changes. The prompt `fleet-coordinator` tells a session how to run that loop.
 
 ### Shared boards: `mw merge-file`
 
@@ -587,7 +587,8 @@ git config merge.mw.driver "mw merge-file %O %A %B %P"
 
 - Rows merge by id (tenants by slug, sessions by id). A field changed on one side only is taken; changed on both, the later writer wins: the later `updated`, then the later log entry (nanosecond stamps), then THEIRS. Changed in the same second, the row also gets a `merge` log entry holding both values.
 - `events` are a union ordered by time; `notes` and `evidence` a union; `next` counters the maximum, never behind an id in use.
-- A row added on both sides with the same id keeps both: the later one is renumbered (references to it in `parent`/`wave` are not rewritten; the `merge` log entry names the old id). A row deleted on one side and untouched on the other stays deleted (archive moves), one that was edited is kept.
+- A row added on both sides with the same id keeps both: the later one is renumbered (`parent`, `wave` and `--on` links of the rows added on the renumbered side follow it; links of rows that exist on both sides are not rewritten; the `merge` log entry names the old id). A row deleted on one side and untouched on the other stays deleted (archive moves), one that was edited is kept.
+- `archived` and `accept_streak` add up both sides' changes; a cleared `evidence` list stays cleared. The driver rewrites only the fields this build knows, and an older mw drops the new `node` fields of sessions and tenants when it saves: run mw 0.3.23 or later on every computer of a shared board.
 - Node beat files take the newer beat. Anything that is not a board file, or that does not parse, makes the driver exit 1 and git reports a normal conflict.
 
 ## Error codes (`-j`)

@@ -127,7 +127,7 @@ func nodeCommand(path string, w *Workspace, args []string) error {
 	}
 	switch args[0] {
 	case "set":
-		if len(pos) != 1 || !validID(pos[0]) {
+		if len(pos) != 1 || !validID(pos[0]) || pos[0] == "any" {
 			return errors.New("usage: mw node set NAME (at most 64 lowercase letters, numbers, and single dashes)")
 		}
 		p, err := userConfigPath()

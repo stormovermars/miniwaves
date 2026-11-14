@@ -85,7 +85,7 @@ func startedAt(it Item) string {
 // readyForNode is the row mw next --node NAME would serve in tenant t ("" when none).
 func nextFor(w *Workspace, ts []*Tenant, node string) *Item {
 	for _, t := range ts {
-		if it, _, _ := pickNext(w, t, map[string]string{"node": node}); it != nil {
+		if it, _, _ := pickNext(w, t, map[string]string{"node": node, "askskip": "true"}); it != nil {
 			c := *it
 			c.Parent = t.Slug // carried to the caller: the tenant of the row
 			return &c
@@ -292,9 +292,7 @@ func (v fleetView) signature() string {
 			if i := strings.Index(r.Why, " for "); i > 0 { // the age in a reason changes by itself
 				r.Why = r.Why[:i]
 			}
-			if k := strings.LastIndex(r.Last, " "); k > 0 {
-				r.Last = r.Last[:k]
-			}
+			r.Last = "" // text with an age in it; the entry's own time (At) says whether it changed
 			out[i] = r
 		}
 		return out
@@ -310,18 +308,22 @@ func (v fleetView) signature() string {
 		c.Nodes[i] = n
 	}
 	c.Movable, c.Held = clean(v.Movable), clean(v.Held)
+	if v.Any.Next != nil {
+		x := clean([]fleetRow{*v.Any.Next})[0]
+		c.Any.Next = &x
+	}
 	b, _ := json.Marshal(c)
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
 }
 
-func fleetStatePath(path string) (string, error) {
+func fleetStatePath(path, session string) (string, error) {
 	p, err := userConfigPath()
 	if err != nil {
 		return "", err
 	}
 	abs, _ := filepath.Abs(path)
-	h := sha256.Sum256([]byte(abs + "\x00" + os.Getenv("MW_SESSION"))) // one state per coordinator session
+	h := sha256.Sum256([]byte(abs + "\x00" + session)) // one state per coordinator session
 	return filepath.Join(filepath.Dir(p), "fleet-"+hex.EncodeToString(h[:6])+".json"), nil
 }
 
@@ -333,7 +335,7 @@ func fleetCommand(path string, w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "json", "tenant", "changed"); err != nil {
+	if err := allowOptions(o, "json", "tenant", "changed", "session"); err != nil {
 		return err
 	}
 	if o["tenant"] != "" {
@@ -343,7 +345,7 @@ func fleetCommand(path string, w *Workspace, args []string) error {
 	}
 	v := buildFleet(path, w, o, nowFn())
 	if o["changed"] == "true" {
-		sp, err := fleetStatePath(path)
+		sp, err := fleetStatePath(path, value(o, "session", os.Getenv("MW_SESSION")))
 		if err != nil {
 			return err
 		}

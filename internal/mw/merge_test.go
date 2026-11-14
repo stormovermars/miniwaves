@@ -72,8 +72,8 @@ func TestMergeRowsAndCounters(t *testing.T) {
 	e0 := ev("2026-01-01T00:00:00Z", "created", "")
 	base := doc("1", item("TSK-001", "A", "done", "2026-01-01T00:00:00Z", e0))
 	// both add TSK-002 (different rows), ours also edits A; theirs archived-deleted A untouched? no: A edited on ours, deleted on theirs
-	ours := doc("2", item("TSK-001", "A!", "done", "2026-01-02T00:00:00Z", e0), item("TSK-002", "from ours", "ready", "2026-01-02T00:00:00Z", e0))
-	theirs := doc("2", item("TSK-002", "from theirs", "ready", "2026-01-02T00:00:01Z", e0))
+	ours := doc("2", item("TSK-001", "A!", "done", "2026-01-02T00:00:00Z", e0), item("TSK-002", "from ours", "ready", "2026-01-02T00:00:00Z", ev("2026-01-02T00:00:00Z", "created", "")))
+	theirs := doc("2", item("TSK-002", "from theirs", "ready", "2026-01-02T00:00:01Z", ev("2026-01-02T00:00:01Z", "created", "")))
 	td := mrg(t, base, ours, theirs)
 	ids := map[string]string{}
 	for _, it := range td.Items {
@@ -233,4 +233,63 @@ func mustMarshal(v any) []byte {
 		panic(err)
 	}
 	return append(b, '\n')
+}
+
+func TestMergeAuditCases(t *testing.T) {
+	e0 := ev("2026-01-01T00:00:00Z", "created", "")
+	mk := func(id, title, created string) string {
+		return strings.Replace(item(id, title, "ready", "2026-01-02T00:00:00Z", ev(created, "created", "")), "2026-01-01T00:00:00Z\"}", created+"\"}", 1)
+	}
+	// A's T-005 was renumbered to T-006 on an earlier merge; now A (base T-005 = A's row, doing) meets B's T-005
+	baseA := doc("5", strings.Replace(mk("TSK-005", "A row", "2026-01-01T01:00:00Z"), `"id":"TSK-005"`, `"id":"TSK-005"`, 1))
+	ours := doc("5", strings.Replace(mk("TSK-005", "A row", "2026-01-01T01:00:00Z"), `"status":"ready"`, `"status":"doing"`, 1))
+	theirs := doc("5", mk("TSK-005", "B row", "2026-01-01T02:00:00Z"))
+	td := mrg(t, baseA, ours, theirs)
+	got := map[string]string{}
+	for _, it := range td.Items {
+		got[it.ID] = it.Title + "/" + it.Status
+	}
+	if got["TSK-005"] != "A row/doing" || got["TSK-006"] != "B row/ready" || len(got) != 2 {
+		t.Fatalf("corrupted a row: %v", got)
+	}
+	// the renumbered side's own links follow: a child of B's T-005 added on B
+	child := strings.Replace(item("TSK-007", "child of B", "ready", "2026-01-02T00:00:00Z", e0), `"title"`, `"parent":"TSK-005","title"`, 1)
+	td = mrg(t, baseA, ours, doc("7", mk("TSK-005", "B row", "2026-01-01T02:00:00Z"), child))
+	newID := ""
+	for _, it := range td.Items {
+		if it.Title == "B row" {
+			newID = it.ID
+		}
+	}
+	for _, it := range td.Items {
+		if it.ID == "TSK-007" && (newID == "TSK-005" || it.Parent != newID) {
+			t.Fatalf("link not rewritten (B row is %s): %+v", newID, it)
+		}
+	}
+	// a cleared evidence list stays cleared when the other side did not touch the row
+	withEv := strings.Replace(item("TSK-001", "A", "done", "2026-01-01T00:00:00Z", e0), `"events"`, `"evidence":["e1 3"],"events"`, 1)
+	cleared := item("TSK-001", "A", "ready", "2026-01-03T00:00:00Z", e0)
+	other := strings.Replace(withEv, `"A"`, `"A2"`, 1)
+	if it := mrg(t, doc("1", withEv), doc("1", cleared), doc("1", other)).Items[0]; len(it.Evidence) != 0 {
+		t.Fatalf("evidence came back: %+v", it.Evidence)
+	}
+	// counters add up; empty lists stay lists; merging A,B equals B,A
+	cnt := func(n string) string { return `{"next":{},"items":[],"archived":` + n + `}` }
+	if td = mrg(t, cnt("2"), cnt("5"), cnt("3")); td.Archived != 6 {
+		t.Fatalf("archived %d", td.Archived)
+	}
+	out, _ := mergeBoardFiles([]byte(cnt("0")), []byte(cnt("0")), []byte(cnt("0")))
+	if !strings.Contains(string(out), `"items":[]`) {
+		t.Fatalf("%s", out)
+	}
+	same1 := ev("2026-01-05T00:00:00Z", "ask", "q")
+	same2 := ev("2026-01-05T00:00:00Z", "answer", "a")
+	b0 := doc("1", item("TSK-001", "A", "ready", "2026-01-01T00:00:00Z", e0))
+	sa := doc("1", item("TSK-001", "A", "ready", "2026-01-05T00:00:00Z", e0+","+same1))
+	sb := doc("1", item("TSK-001", "A", "ready", "2026-01-05T00:00:00Z", e0+","+same2))
+	x, _ := mergeBoardFiles([]byte(b0), []byte(sa), []byte(sb))
+	y, _ := mergeBoardFiles([]byte(b0), []byte(sb), []byte(sa))
+	if string(x) != string(y) {
+		t.Fatalf("order dependent:\n%s\n%s", x, y)
+	}
 }

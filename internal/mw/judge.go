@@ -524,7 +524,7 @@ func rejectCommand(path string, w *Workspace, args []string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	reset := func(x *Item) {
 		releaseOwner(w, x)
-		x.Status, x.Updated, x.Note = "ready", now, "rejected: "+reason
+		x.Status, x.Updated, x.Note, x.StartedOn = "ready", now, "rejected: "+reason, ""
 		x.Attempts++
 		x.Notes = append(x.Notes, now+" rejected by "+by+": "+reason)
 		emit(x, now, "reject", by, reason)

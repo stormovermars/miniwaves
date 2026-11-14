@@ -105,7 +105,7 @@ func releaseSession(w *Workspace, s *Session, note, by string) []string {
 	text := note
 	ids := []string{}
 	for _, it := range ownedDoing(w, s) {
-		it.Status, it.Assignee, it.Updated, it.Note = "ready", "", now, ""
+		it.Status, it.Assignee, it.Updated, it.Note, it.StartedOn = "ready", "", now, "", ""
 		it.Judged, it.JudgedBy, it.Evidence = "", "", nil
 		it.Notes = append(it.Notes, now+" "+text)
 		emit(it, now, "ready", by, text)

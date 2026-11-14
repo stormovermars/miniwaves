@@ -99,6 +99,7 @@ type merger struct {
 	oStamp time.Time
 	tStamp time.Time
 	used   map[string]bool // item ids in use (renumbering)
+	ren    map[byte]map[string]string // side (o|t) -> old id -> new id, for rows renumbered on that side
 }
 
 func (m *merger) pick(o, t any, ot, tt time.Time) any {
@@ -173,39 +174,89 @@ func (m *merger) rows(b, o, t []any, key string) []any {
 			order = append(order, id)
 		}
 	}
-	var out []any
+	out := []any{}
+	var tags []byte // 'o' or 't' for a row that exists only on that side and not in base (its references may need rewriting)
 	for _, id := range order {
 		br, hasB := bi[id]
 		or, hasO := oi[id]
 		tr, hasT := ti[id]
 		switch {
 		case hasO && hasT:
-			if !hasB && key == "id" && m.shape != "archive" && !sameRowOrigin(or, tr) {
-				tr = m.renumber(tr, or)
-				out = append(out, or, tr)
+			if key == "id" && m.shape != "archive" && !sameRowOrigin(or, tr) { // two different rows under one id
+				if hasB && !sameRowOrigin(br, or) && sameRowOrigin(br, tr) { // ours is the newcomer
+					out, tags = append(out, m.renumber(or, tr, 'o'), tr), append(tags, 'o', 0)
+				} else {
+					out, tags = append(out, or, m.renumber(tr, or, 't')), append(tags, 0, 't')
+				}
 				continue
 			}
 			if !hasB {
 				br = nil
 			}
-			out = append(out, m.row(br, or, tr))
+			out, tags = append(out, m.row(br, or, tr)), append(tags, 0)
 		case hasO:
 			if hasB && same(or, br) {
 				continue // deleted on their side, untouched on ours
 			}
-			out = append(out, or)
+			out, tags = append(out, or), append(tags, map[bool]byte{true: 0, false: 'o'}[hasB])
 		default:
 			if hasB && same(tr, br) {
 				continue
 			}
-			out = append(out, tr)
+			out, tags = append(out, tr), append(tags, map[bool]byte{true: 0, false: 't'}[hasB])
+		}
+	}
+	if key == "id" {
+		for i, r := range out { // a renumbered row's links: rows of the same side that pointed at the old id now point at the new one
+			if rm, ok := asMap(r); ok && tags[i] != 0 && len(m.ren[tags[i]]) > 0 {
+				out[i] = rewriteRefs(rm, m.ren[tags[i]])
+			}
 		}
 	}
 	return out
 }
 
+func rewriteRefs(r map[string]any, ren map[string]string) map[string]any {
+	c := map[string]any{}
+	for k, v := range r {
+		c[k] = v
+	}
+	for _, k := range []string{"parent", "wave"} {
+		if n, ok := ren[strOf(c[k])]; ok {
+			c[k] = n
+		}
+	}
+	if ev, ok := c["events"].([]any); ok {
+		ne := make([]any, len(ev))
+		for i, e := range ev {
+			if em, ok := asMap(e); ok {
+				if n, ok := ren[strOf(em["on"])]; ok {
+					cp := map[string]any{}
+					for k, v := range em {
+						cp[k] = v
+					}
+					cp["on"] = n
+					e = cp
+				}
+			}
+			ne[i] = e
+		}
+		c["events"] = ne
+	}
+	return c
+}
+
 func sameRowOrigin(a, b map[string]any) bool {
-	return same(a["created"], b["created"]) && same(a["title"], b["title"]) && same(a["kind"], b["kind"])
+	return same(a["created"], b["created"]) && same(a["kind"], b["kind"]) && same(firstEventAt(a), firstEventAt(b)) // the title can be edited: it is no part of the origin
+}
+
+func firstEventAt(r map[string]any) any {
+	if ev, ok := r["events"].([]any); ok && len(ev) > 0 {
+		if em, ok := asMap(ev[0]); ok {
+			return em["at"]
+		}
+	}
+	return nil
 }
 
 var idNum = func(id string) (string, int, bool) {
@@ -218,7 +269,7 @@ var idNum = func(id string) (string, int, bool) {
 }
 
 // renumber gives theirs, which collided with ours on a new id, the next free id of its prefix.
-func (m *merger) renumber(t, o map[string]any) map[string]any {
+func (m *merger) renumber(t, o map[string]any, side byte) map[string]any {
 	old := strOf(t["id"])
 	pfx, _, ok := idNum(old)
 	if !ok {
@@ -232,6 +283,7 @@ func (m *merger) renumber(t, o map[string]any) map[string]any {
 	}
 	nid := fmt.Sprintf("%s-%03d", pfx, max+1)
 	m.used[nid] = true
+	m.ren[side][old] = nid
 	nt := map[string]any{}
 	for k, v := range t {
 		nt[k] = v
@@ -264,21 +316,36 @@ func unionEvents(lists ...[]any) []any {
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := parseNano(strOf(out[i].(map[string]any)["at"])), parseNano(strOf(out[j].(map[string]any)["at"]))
-		return a.Before(b)
+		if !a.Equal(b) {
+			return a.Before(b)
+		}
+		return evKey(out[i]) < evKey(out[j]) // same instant: by content, so merging A,B or B,A gives the same log
 	})
 	return out
 }
 
-func unionStrings(lists ...[]any) []any {
+// unionStrings3 is ours then theirs without repeats, minus what was in base and one side then removed
+// (a reopen clears evidence: the other side's untouched copy must not bring it back).
+func unionStrings3(base, ours, theirs []any) []any {
+	key := func(e any) string { k, _ := json.Marshal(e); return string(k) }
+	has := func(l []any) map[string]bool {
+		m := map[string]bool{}
+		for _, e := range l {
+			m[key(e)] = true
+		}
+		return m
+	}
+	b, o, t := has(base), has(ours), has(theirs)
 	seen := map[string]bool{}
 	var out []any
-	for _, l := range lists {
+	for _, l := range [][]any{ours, theirs} {
 		for _, e := range l {
-			k, _ := json.Marshal(e)
-			if !seen[string(k)] {
-				seen[string(k)] = true
-				out = append(out, e)
+			k := key(e)
+			if seen[k] || b[k] && (!o[k] || !t[k]) {
+				continue
 			}
+			seen[k] = true
+			out = append(out, e)
 		}
 	}
 	return out
@@ -310,7 +377,7 @@ func (m *merger) row(b, o, t map[string]any) map[string]any {
 		case "events":
 			v = unionEvents(asRows(o[k]), asRows(t[k]))
 		case "notes", "evidence":
-			v = unionStrings(asRows(o[k]), asRows(t[k]))
+			v = unionStrings3(asRows(b[k]), asRows(o[k]), asRows(t[k]))
 		case "updated":
 			v = o[k]
 			if parseNano(strOf(t[k])).After(parseNano(strOf(o[k]))) {
@@ -389,7 +456,7 @@ func mergeBoardFiles(base, ours, theirs []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("theirs: %w", err)
 	}
-	m := &merger{shape: shapeOf(bd, od, td), oStamp: docStamp(od), tStamp: docStamp(td), used: map[string]bool{}}
+	m := &merger{shape: shapeOf(bd, od, td), oStamp: docStamp(od), tStamp: docStamp(td), used: map[string]bool{}, ren: map[byte]map[string]string{'o': {}, 't': {}}}
 	var merged map[string]any
 	switch m.shape {
 	case "node": // one writer per file: the newer beat wins
@@ -423,6 +490,12 @@ func mergeBoardFiles(base, ours, theirs []byte) ([]byte, error) {
 				v = m.rows(asRows(bd[k]), asRows(od[k]), asRows(td[k]), "id")
 			case "tenants":
 				v = m.rows(asRows(bd[k]), asRows(od[k]), asRows(td[k]), "slug")
+			case "archived", "accept_streak": // counters: both sides' increments count
+				bn, on, tn := numOf(bd[k]), numOf(od[k]), numOf(td[k])
+				v = json.Number(strconv.Itoa(on))
+				if on != tn {
+					v = json.Number(strconv.Itoa(max(0, bn+(on-bn)+(tn-bn))))
+				}
 			default:
 				v, _ = m.val(get(bd, k), get(od, k), get(td, k), m.oStamp, m.tStamp)
 			}
@@ -501,4 +574,9 @@ func mergeFileCommand(args []string) error {
 		return fmt.Errorf("merge-file: %w", err)
 	}
 	return os.WriteFile(args[1], out, 0o600)
+}
+
+func numOf(v any) int {
+	n, _ := strconv.Atoi(fmt.Sprint(v))
+	return n
 }

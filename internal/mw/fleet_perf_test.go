@@ -96,7 +96,7 @@ func TestFleetPerformance(t *testing.T) {
 				td.Items[i].Updated = at.Format(time.RFC3339)
 			}
 		}
-		td.Items = append(td.Items, Item{ID: "TSK-900", Kind: "task", Title: "added by " + who, Status: "ready", Created: at.Format(time.RFC3339), Updated: at.Format(time.RFC3339)})
+		td.Items = append(td.Items, Item{ID: "TSK-900", Kind: "task", Title: "added by " + who, Status: "ready", Created: at.Format(time.RFC3339), Updated: at.Format(time.RFC3339), Events: []Event{{At: at.Format(time.RFC3339Nano), Action: "created", By: who}}})
 		return mustMarshal(td)
 	}
 	ours, theirs := side("ours"), side("theirs")
