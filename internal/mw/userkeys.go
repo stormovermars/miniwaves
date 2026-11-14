@@ -22,7 +22,7 @@ type userKey struct {
 }
 
 var userGroups = []struct{ ID, Label string }{
-	{"fanfare", "Fanfare"}, {"status", "Chat bar"}, {"discover", "Discovery"}, {"wip", "Work in progress"},
+	{"fanfare", "Fanfare"}, {"status", "Chat bar"}, {"discover", "Discovery"}, {"wip", "Work in progress"}, {"node", "Fleet"},
 }
 
 var userKeys = []userKey{
@@ -32,6 +32,9 @@ var userKeys = []userKey{
 	{Name: "discover.home", Group: "discover", Kind: "bool", Default: "true", Help: "Also look for boards under your home folder."},
 	{Name: "discover.depth", Group: "discover", Kind: "int", lo: 1, hi: 6, Default: "4", Help: "How many folder levels deep to look for boards."},
 	{Name: "wip.session", Group: "wip", Kind: "bool", Default: "false", Help: "Refuse mw start by a session that already has a doing item (one task per session)."},
+	{Name: "node.name", Group: "node", Kind: "name", Default: "", Help: "This computer's node name on a shared board (mw node set NAME)."},
+	{Name: "node.silent", Group: "node", Kind: "int", lo: 5, hi: 1440, Default: "120", Help: "Minutes without a node beat before the node counts as silent."},
+	{Name: "node.stall", Group: "node", Kind: "int", lo: 5, hi: 1440, Default: "240", Help: "Minutes without a log entry before a row in progress counts as stalled."},
 }
 
 func init() {
@@ -74,6 +77,8 @@ func (k *userKey) allowed() string {
 		return "a comma list of " + strings.Join(k.Choices, ", ") + ", all, or none"
 	case "text":
 		return "a set name or all"
+	case "name":
+		return "at most 64 lowercase letters, numbers and single dashes"
 	}
 	return strings.Join(k.Choices, ", ")
 }
@@ -99,6 +104,11 @@ func (k *userKey) normalize(val string) (string, error) {
 			return bad()
 		}
 		return strconv.Itoa(n), nil
+	case "name":
+		if !validID(v) || v == "any" {
+			return bad()
+		}
+		return v, nil
 	case "list":
 		if strings.ToLower(v) == "all" {
 			return k.Default, nil

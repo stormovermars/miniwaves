@@ -1,6 +1,7 @@
 package mw
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/stormovermars/miniwaves/internal/fsx"
 )
 
 func tenantCommand(path string, w *Workspace, args []string) error {
@@ -20,6 +23,8 @@ func tenantCommand(path string, w *Workspace, args []string) error {
 		return tenantMeta(path, w, args)
 	case "protocol":
 		return tenantProtocol(path, w, args[1:])
+	case "node":
+		return tenantNode(path, w, args[1:])
 	case "list":
 		o, pos, err := options(args[1:])
 		if err != nil {
@@ -247,7 +252,7 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 				return fmt.Errorf("session %s already exists", id)
 			}
 			existing.Tenant, existing.Agent, existing.State, existing.Updated = t.Slug, role, "idle", now
-			existing.ClaudeSession, existing.Answerer, existing.AnswererAt = cs, ans, answererStamp(ans, now)
+			existing.ClaudeSession, existing.Answerer, existing.AnswererAt, existing.Node = cs, ans, answererStamp(ans, now), nodeName()
 			if err := save(path, w); err != nil {
 				return err
 			}
@@ -257,7 +262,7 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 		if err := sessionElsewhere(path, w, id, t.Slug); err != nil {
 			return err
 		}
-		w.Sessions = append(w.Sessions, Session{ID: id, Tenant: t.Slug, Agent: role, State: "idle", Updated: now, ClaudeSession: cs, Answerer: ans, AnswererAt: answererStamp(ans, now)})
+		w.Sessions = append(w.Sessions, Session{ID: id, Tenant: t.Slug, Agent: role, State: "idle", Updated: now, ClaudeSession: cs, Answerer: ans, AnswererAt: answererStamp(ans, now), Node: nodeName()})
 		if err := save(path, w); err != nil {
 			return err
 		}
@@ -307,7 +312,7 @@ func addItem(path string, w *Workspace, args []string) error {
 	if len(pos) < 2 {
 		return errors.New("usage: mw add KIND TITLE...")
 	}
-	if err := allowOptions(o, "tenant", "session", "parent", "wave", "body", "acceptance", "status", "ticket"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "parent", "wave", "body", "acceptance", "status", "ticket", "node", "cost"); err != nil {
 		return err
 	}
 	t, err := selectTenant(w, o)
@@ -349,11 +354,21 @@ func addItem(path string, w *Workspace, args []string) error {
 			return err
 		}
 	}
-	t.Next[prefix]++
+	route, costN := "", 0
+	if o["node"] != "" {
+		if route, err = checkRoute(o["node"]); err != nil {
+			return err
+		}
+	}
+	if o["cost"] != "" {
+		if costN, err = parseCost(o["cost"]); err != nil {
+			return err
+		}
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	it := Item{Ticket: ticket, ID: fmt.Sprintf("%s-%03d", prefix, t.Next[prefix]), Kind: kind,
+	it := Item{Ticket: ticket, ID: t.nextID(prefix), Kind: kind,
 		Title: strings.Join(pos[1:], " "), Status: status, Parent: parent,
-		Body: o["body"], Acceptance: o["acceptance"], Created: now, Updated: now}
+		Body: o["body"], Acceptance: o["acceptance"], Node: route, Cost: costN, Created: now, Updated: now}
 	if status == "done" && kind != "prompt" {
 		it.Judged = "ungated"
 	}
@@ -398,6 +413,9 @@ func filtered(t *Tenant, o map[string]string) []Item {
 		if o["status"] != "" && it.Status != o["status"] {
 			continue
 		}
+		if !routesTo(t, it, o["node"]) {
+			continue
+		}
 		out = append(out, it)
 	}
 	return out
@@ -411,7 +429,7 @@ func listItems(w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "tenant", "session", "kind", "status", "json", "verbose", "all", "limit", "tag", "archived"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "kind", "status", "json", "verbose", "all", "limit", "tag", "archived", "node"); err != nil {
 		return err
 	}
 	limit := 0
@@ -653,7 +671,7 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 			if err := sessionElsewhere(path, w, sessionID, t.Slug); err != nil {
 				return nil, nil, err
 			}
-			w.Sessions = append(w.Sessions, Session{ID: sessionID, Tenant: t.Slug, Agent: agent, State: "idle", Updated: time.Now().UTC().Format(time.RFC3339)})
+			w.Sessions = append(w.Sessions, Session{ID: sessionID, Tenant: t.Slug, Agent: agent, State: "idle", Updated: time.Now().UTC().Format(time.RFC3339), Node: nodeName()})
 			s = &w.Sessions[len(w.Sessions)-1]
 		case err != nil:
 			s = nil
@@ -715,7 +733,22 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 		}
 	}
 	dep := ""
-	if o["on"] != "" {
+	if m := qualifiedID.FindStringSubmatch(o["on"]); m != nil && m[1] != t.Slug { // a row of another tenant: a help row for another node
+		if _, e := tenantBySlug(w, m[1]); e != nil {
+			return nil, nil, fmt.Errorf("--on: %v", e)
+		}
+		d, ok := foreignItem(path, m[1], m[2])
+		if !ok {
+			return nil, nil, fmt.Errorf("--on: item %s not found in tenant %s", strings.ToUpper(m[2]), m[1])
+		}
+		if d.Status == "done" {
+			return nil, nil, fmt.Errorf("--on: %s is already done; nothing to wait on", d.ID)
+		}
+		dep = m[1] + ":" + d.ID
+	} else if o["on"] != "" {
+		if m != nil {
+			o["on"] = m[2]
+		}
 		d, e := itemByID(t, o["on"])
 		if e != nil {
 			return nil, nil, fmt.Errorf("--on: %v", e)
@@ -763,6 +796,12 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 		releaseOwner(w, it)
 	}
 	it.Status, it.Updated = to, stamp
+	switch command {
+	case "start":
+		it.StartedOn = nodeName()
+	case "ready", "reopen":
+		it.StartedOn = ""
+	}
 	if command == "ready" || command == "start" || command == "reopen" {
 		it.Judged, it.JudgedBy, it.Evidence = "", "", nil
 	}
@@ -818,7 +857,7 @@ func unblockDependents(t *Tenant, id, stamp, actor string) {
 			continue
 		}
 		if e, ok := lastEvent(*b, "block"); ok && e.On == id {
-			b.Status, b.Updated, b.Note = "ready", stamp, ""
+			b.Status, b.Updated, b.Note, b.StartedOn = "ready", stamp, "", ""
 			emit(b, stamp, "ready", actor, "unblocked: "+id+" done")
 		}
 	}
@@ -844,7 +883,7 @@ func startStoryAbove(t *Tenant, it *Item, now, by string) {
 		}
 		if p.Kind == "story" {
 			if p.Status == "inbox" || p.Status == "ready" {
-				p.Status, p.Updated = "doing", now
+				p.Status, p.Updated, p.StartedOn = "doing", now, nodeName()
 				emit(p, now, "start", by, "via "+it.ID)
 			}
 			return
@@ -870,6 +909,11 @@ func pickNext(w *Workspace, t *Tenant, o map[string]string) (*Item, int, []gateI
 		}
 		if inDrive(t, it) { // drive tasks are taken by id, never served by next
 			continue
+		}
+		if o["askskip"] != "" {
+			if _, asked := openAsk(it); asked { // waits for an answer: never offered for dispatch
+				continue
+			}
 		}
 		if byName(gs, "acceptance").Effective && !isWorkKind(it.Kind) && strings.TrimSpace(effectiveAcceptance(t, it)) == "" {
 			skipped++
@@ -917,12 +961,18 @@ func nextItem(path string, w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	allowed := []string{"tenant", "session", "kind", "json", "verbose", "claim"}
+	allowed := []string{"tenant", "session", "kind", "json", "verbose", "claim", "node"}
 	if o["claim"] == "true" {
 		allowed = append(allowed, "agent", "prompt")
 	}
 	if err := allowOptions(o, allowed...); err != nil {
 		return err
+	}
+	if o["node"] == "" { // a computer with a node name serves only rows routed to it or to anyone; --node - lifts it
+		o["node"] = nodeName()
+	}
+	if o["node"] != "" && o["node"] != "-" {
+		o["askskip"] = "true" // with a node filter in effect (given or default) rows with an open ask are never offered
 	}
 	t, err := selectTenant(w, o)
 	if err != nil {
@@ -1417,4 +1467,43 @@ func wipSessionOn() bool {
 	}
 	v, _ := userValue(c, userKeyByName("wip.session"))
 	return v == "true"
+}
+
+// foreignItem reads one item of another tenant lock-free (a cross-tenant --on reference).
+func foreignItem(board, slug, id string) (Item, bool) {
+	b, err := fsx.ReadFile(tenantPath(board, slug))
+	if err != nil {
+		return Item{}, false
+	}
+	var td tenantDoc
+	if json.Unmarshal(b, &td) != nil {
+		return Item{}, false
+	}
+	id = strings.ToUpper(id)
+	for _, it := range td.Items {
+		if it.ID == id {
+			return it, true
+		}
+	}
+	return Item{}, false
+}
+
+// nextID hands out the next id of a prefix. The counter lives in the tenant file and the archive is merged separately,
+// so after a pull the archive may hold a higher id: the counter is raised to it first, and an id is never given twice.
+func (t *Tenant) nextID(prefix string) string {
+	n := t.Next[prefix]
+	if t.board != "" {
+		a, err := loadArchive(t.board, t.Slug)
+		if err != nil { // a conflicted or damaged archive: no id can be trusted, refuse rather than risk a repeat
+			panic(&exitError{code: 1, msg: fmt.Sprintf("archive of %s is unreadable (%v): resolve it in git before adding rows", t.Slug, err), ccode: "ARCHIVE_UNREADABLE"})
+		}
+		for _, it := range a.Items {
+			if p, num, ok := idNum(it.ID); ok && p == prefix && num > n {
+				n = num
+			}
+		}
+	}
+	n++
+	t.Next[prefix] = n
+	return fmt.Sprintf("%s-%03d", prefix, n)
 }

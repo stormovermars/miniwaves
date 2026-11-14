@@ -33,7 +33,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "resets": true, "changed": true, "cost": true, "item": true, "left": true, "node": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -57,6 +57,11 @@ func Main() {
 func mainExit(args []string, stderr io.Writer) (code int) {
 	defer func() {
 		if r := recover(); r != nil {
+			if ee, ok := r.(*exitError); ok { // a refusal raised deep in an allocator: a normal error, not an internal one
+				code = mainExitErr(ee, stderr)
+				printJSONError(ee, code, args)
+				return
+			}
 			fmt.Fprintf(stderr, "mw: internal error: %s\n", oneLine(fmt.Sprint(r)))
 			code = 70
 			printJSONError(coded("INTERNAL", errors.New("internal error")), code, args)
@@ -252,6 +257,12 @@ func run(args []string) error {
 	if args[0] == "user" {
 		return userCommand(args[1:])
 	}
+	if args[0] == "node" && len(args) > 1 && args[1] == "set" { // a per-user setting: needs no board
+		return nodeCommand("", nil, args[1:])
+	}
+	if args[0] == "merge-file" { // a git merge driver: it runs inside a merge, before any board can be read
+		return mergeFileCommand(args[1:])
+	}
 	if args[0] == "configure" {
 		return configureCommand(args[1:])
 	}
@@ -407,6 +418,10 @@ func dispatch(path string, w *Workspace, args []string) error {
 		return archiveCommand(path, w, args[1:])
 	case "context":
 		return contextCommand(w, args[1:])
+	case "node":
+		return nodeCommand(path, w, args[1:])
+	case "fleet":
+		return fleetCommand(path, w, args[1:])
 	case "drive":
 		return driveCommand(path, w, args[1:])
 	default:
@@ -438,17 +453,22 @@ func readOnly(args []string) bool {
 		sub = args[1]
 	}
 	switch args[0] {
-	case "list", "ls", "show", "log", "board", "review", "judge", "context", "get-prompt", "check":
+	case "list", "ls", "show", "log", "board", "review", "judge", "context", "get-prompt", "check", "fleet":
 		return true
 	case "next":
 		return !has("--claim")
 	case "tenant":
+		if sub == "node" { // only a set writes
+			return len(args) < 4
+		}
 		if sub == "protocol" { // only set and reset write
 			return !has("set") && !has("reset")
 		}
 		return sub == "list"
 	case "session":
 		return sub == "list"
+	case "node":
+		return true // beat writes only its own file under .miniwaves/nodes
 	case "drive":
 		return sub == "status" || sub == "check"
 	case "wave":
@@ -568,12 +588,12 @@ edit it runs. The implicit local session is never reaped.
 Job roles: when the session's tenant belongs to a job that exists (mw jobs), reap also skips sessions whose role (-a) is dispatcher or newsdesk,
 with no extra flag; --except still skips any named session.`,
 		"get-prompt": `mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]
-mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
+mw get-prompt dispatcher|coach|newsdesk|fleet-coordinator [NAME] [--job ID] [-j]
 Print a minimal embedded prompt to paste into an assistant. Retrieval changes no state.
 session: exit code 3 when the session NAME already exists (-j prints {"error":"session_exists","session":NAME}).
 --headless drops the Setup block, Loop, folders hint and reply format (a runner handles those) and
 says the item is already claimed.`,
-		"add": `mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [-S STATUS] [--ticket KEY]
+		"add": `mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [-S STATUS] [--ticket KEY] [--node NAME|any] [--cost N]
 Add work in inbox. KIND: prompt, story, task, spike, bug, or chore. -c is the
 acceptance check (long form --acceptance). -S done is
 refused while the evidence or judge gate is on.
@@ -581,7 +601,34 @@ Example: mw add task "Build index" -p STR-001`,
 		"edit": `mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY] [-t SLUG]
 Change an item's acceptance (-c), body (-b) and/or parent (-p; "-" clears; kind hierarchy and
 cycles are enforced, waves are not parents: use mw wave add). A session may set -c only while
-the acceptance is empty (drafting); changing a non-empty acceptance is humans only.`,
+the acceptance is empty (drafting); changing a non-empty acceptance is humans only.
+node=NAME|any|- routes the row (see mw help node); cost=N|- sets an estimate in thousands of tokens.`,
+		"node": `mw node set NAME
+mw node beat [working|idle|blocked|off] [--item ID] [-m TEXT] [--left PCT] [--resets TIME]
+Nodes are the computers that work one shared board. set stores this computer's name per user (setting node.name, never on the board).
+beat writes .miniwaves/nodes/NAME.json (time, state, item in flight, counts of this node's sessions and of its ready and doing rows,
+mw version): one file per node, so two computers never write the same file. The state defaults to working when a row is doing here, else idle.
+beat --left PCT [--resets TIME] records the budget left (0-100) and when it returns; left 0 = out of budget until then (the one way to say it).
+Routing: mw edit ID node=NAME|any|- (add: --node) names who may take a row; mw tenant node SLUG NAME|any|- sets the tenant default. mw next and mw list --node NAME
+show the rows routed to NAME or to anyone; a computer with a node name filters next by it (--node - lifts that). with a node filter (given or default) mw next skips rows with an open ask.
+mw fleet lists the nodes: live, or silent when the last beat is older than the user setting node.silent (minutes, default 120).`,
+		"fleet": `mw fleet [-t SLUG] [-j] [--changed]
+The fleets view, per node: live or SILENT (no beat for node.silent minutes), what is in flight (age, last log entry), STALLED rows (in flight on a
+silent node, or no log entry for node.stall minutes), blocked rows, rows waiting on an answer (an open ask: never offered, never moved),
+the row mw next --node would serve, ready count and cost, the budget left (LOW at 10% or less). Below: ready rows for anyone, movable (stalled rows
+anyone may take) and held (ready or stalled rows pinned to a silent node: mw edit ID node=any). --changed prints "no change" when nothing differs from the
+last --changed run of this session (state file in the user's mw config folder), else the full view. mw get-prompt fleet-coordinator prints the loop.`,
+		"merge-file": `mw merge-file BASE OURS THEIRS [PATH]
+A git merge driver for the board files (.miniwaves.json, .miniwaves/*.json, .miniwaves/nodes/*.json). It merges the JSON, not the lines:
+rows by id, fields newest-wins (later updated, then later log entry, then the larger value: the result never depends on which side git calls ours), logs as a union ordered by time, notes and evidence as a union,
+counters as the maximum. A row added on both sides with the same id keeps both (the later one is renumbered). A same-second conflict is
+written to the row's log. Nothing is ever dropped except what one side deleted and the other left untouched. The result replaces OURS; exit 0.
+Set it up once per clone (also ignore the lock and temp files: .miniwaves/*.lock, .miniwaves/*.lock.pid, .miniwaves/*.tmp, .miniwaves/nodes/*.tmp):
+  .gitattributes:  .miniwaves.json merge=mw
+                   .miniwaves/*.json merge=mw
+                   .miniwaves/nodes/*.json merge=mw
+  git config merge.mw.driver "mw merge-file %O %A %B %P"
+mw runs no git command itself.`,
 		"fanfare": `mw fanfare [-j]
 mw fanfare on | off
 mw fanfare set enabled=true milestone_seconds=15 finale_seconds=60 volume=1 task_beep=true dir=~/fanfare-finale-songs
@@ -685,7 +732,7 @@ Print the mw version and schema; -j prints {version, schema, board_schema, board
 workspace file and its schema number (null when there is none; an old schema is reported, not an error)
 and, for a current-schema board, tenants [{slug, name, dir, tags, archived}] so a runner needs no tenant list
 call (a runner skips archived ones).`,
-		"list": `mw list [-t SLUG] [-k KIND] [-S STATUS] [-n N] [-j] [-v]
+		"list": `mw list [-t SLUG] [-k KIND] [-S STATUS] [--node NAME] [-n N] [-j] [-v]
 mw list -A [-s SESSION] [-k KIND] [-S STATUS] [-n N] [-j] [-v]
 List items as compact TOON. Use -j for JSON or -v for full fields; -n N keeps the first N.
 Waves are listed apart: text gains a waves section when any match; -j always prints {items, waves}.
@@ -747,7 +794,7 @@ list in .miniwaves.json). close refuses until all members are done and every
 step is ticked (--na ticks "not applicable" with a reason). Closed waves accept
 no new members or steps. With the evidence gate on, close also needs
 <evidence>/<tenant>/WAV-NNN/ with a file (or --no-evidence REASON).`,
-		"next": `mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v]
+		"next": `mw next [-t SLUG] [-s NAME] [-k KIND] [--node NAME] [-j] [-v]
 mw next --claim [-s NAME] [-a ROLE] [-t SLUG] [-k KIND] [-j] [--prompt]
 Show the first ready, unowned item as the full brief (same as mw show). With the
 acceptance gate on it skips work without acceptance ("skipped N without
@@ -802,15 +849,18 @@ Usage:
   mw update [--check] [--plugins]
   mw init [workspace name] | mw init --kit coordinated --job ID
   mw tenant add SLUG [NAME...] [-d DIR]
-  mw tenant list [-j] [-v] [--tag T] | default [SLUG|-] | archive|restore SLUG | tag SLUG +T -T
+  mw tenant list [-j] [-v] [--tag T] | default [SLUG|-] | archive|restore SLUG | tag SLUG +T -T | node SLUG [NAME|any|-]
   mw dirs [init] [-j] | set datalake|docs|data|tools|templates|builds|evidence|scratch PATH
   mw note ID TEXT... [-t SLUG] [-s NAME]
   mw session start NAME [-t SLUG] [-a ROLE]
   mw session list [-t SLUG] [-j] [-v] | stop NAME [--release] | reap [-t SLUG | -A] [--older-than DUR] [--except NAMES] [-n] [-j]
   mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]
-  mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
-  mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [--ticket KEY]
-  mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY]
+  mw get-prompt dispatcher|coach|newsdesk|fleet-coordinator [NAME] [--job ID] [-j]
+  mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [--ticket KEY] [--node NAME|any] [--cost N]
+  mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY] [node=NAME|any|-] [cost=N|-]
+  mw fleet [-t SLUG] [-j] [--changed]  per-node view of a shared board
+  mw merge-file BASE OURS THEIRS [PATH]  git merge driver for shared boards (USAGE.md, "Fleets")
+  mw node set NAME | beat [STATE] [--item ID] [-m TEXT] [--left PCT] [--resets TIME]
   mw user show [-j] | get [KEY] [-j] | set KEY=VALUE...
   mw configure [--show [-j]] | KEY=VALUE...
   mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]
@@ -821,7 +871,7 @@ Usage:
   mw check [-t SLUG] [-j]               parents in inbox/ready with children doing or done
   mw judge ID [-t SLUG]
   mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]
-  mw list [-t SLUG | -A [-s SESSION]] [-k KIND] [-S STATUS] [-n N] [-j] [-v]
+  mw list [-t SLUG | -A [-s SESSION]] [-k KIND] [-S STATUS] [--node NAME] [-n N] [-j] [-v]
   mw show ID [-t SLUG] [-j] [-v] [--full]
   mw ready ID [-t SLUG] [-s NAME]
   mw reopen ID [-t SLUG] [-s NAME] [-m REASON]
@@ -830,7 +880,7 @@ Usage:
   mw done ID VERIFICATION... [--evidence PATH]... [--no-evidence REASON] [-t SLUG] [-s NAME]
   mw log [-t SLUG | -A] [-n N] [-j] | mw log [-t SLUG | -A] --since CURSOR|start [-j]
   mw wave create|add|remove|step|unstep|show|list|close ...  (mw help wave)
-  mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v] | mw next --claim [-s NAME] [-a ROLE] [-j] [--prompt]
+  mw next [-t SLUG] [-s NAME] [-k KIND] [--node NAME] [-j] [-v] | mw next --claim [-s NAME] [-a ROLE] [-j] [--prompt]
   mw board [-t SLUG | -A] [-v] [-j] | mw board --html [-o PATH] | mw board --md [--job ID] [-o PATH|-]
   mw fanfare [on|off|stop|test|use NAME|set KEY=VALUE...]   sounds when a wave closes or a tenant is finished
   mw archive [--days N] [-t SLUG] [--dry-run]
@@ -1093,7 +1143,7 @@ func options(args []string) (map[string]string, []string, error) {
 		if key == "" || !validOptions[key] {
 			return nil, nil, fmt.Errorf("unknown option %s", a)
 		}
-		if key == "json" || key == "explain" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "md" || key == "archived" || key == "follow" || key == "exec" || key == "accept" {
+		if key == "json" || key == "explain" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "md" || key == "archived" || key == "follow" || key == "exec" || key == "accept" || key == "changed" {
 			o[key] = "true"
 			continue
 		}

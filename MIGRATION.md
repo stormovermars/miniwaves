@@ -98,3 +98,7 @@ No schema change, no migration step. New `mw drive` commands record session-to-s
 ## 0.3.22
 
 No schema change, no migration step. `MW_NO_WR=1` makes `install.sh`, `install.ps1` and `mw update` skip installing and updating wr (one line: `wr: skipped (MW_NO_WR=1)`). Fix: `mw done --evidence` (and any saving command) no longer writes empty stub tenant files for index tenants that have no file; only a tenant that changed is written.
+
+## 0.3.23
+
+No schema change (still 9), no migration step. Fleets: `mw node`, `mw fleet`, routing with `node=` on rows, and `mw merge-file`, a git merge driver for boards that several computers commit (setup in USAGE.md, "Fleets"). New fields are optional: an older mw keeps the item fields but drops the new session and tenant `node` fields when it saves, so run 0.3.23 on every computer that shares a board.

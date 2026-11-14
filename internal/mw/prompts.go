@@ -128,7 +128,7 @@ func getPromptCommand(path string, w *Workspace, args []string) error {
 		return err
 	}
 	if len(pos) == 0 {
-		return errors.New("usage: mw get-prompt session NAME | dispatcher|coach|newsdesk [NAME] [--job ID]")
+		return errors.New("usage: mw get-prompt session NAME | dispatcher|coach|newsdesk|fleet-coordinator [NAME] [--job ID]")
 	}
 	kind, name := pos[0], ""
 	var prompt string
@@ -189,6 +189,18 @@ func getPromptCommand(path string, w *Workspace, args []string) error {
 		if o["job"] != "" {
 			result["job"] = o["job"]
 		}
+	case "fleet-coordinator":
+		if err := allowOptions(o, "json"); err != nil {
+			return err
+		}
+		if len(pos) > 2 {
+			return errors.New("usage: mw get-prompt fleet-coordinator [NAME] [-j]")
+		}
+		name = "fleet-coordinator"
+		if len(pos) == 2 {
+			name = pos[1]
+		}
+		prompt = promptWith(w, "fleet-coordinator", promptData{Name: name, Workspace: compactText(w.Name, 72), Root: compactText(filepath.Dir(path), 120)})
 	case "coach":
 		if err := allowOptions(o, "json"); err != nil {
 			return err
@@ -202,7 +214,7 @@ func getPromptCommand(path string, w *Workspace, args []string) error {
 		}
 		prompt = buildCoachPrompt(path, w, name)
 	default:
-		return errors.New("usage: mw get-prompt session NAME | dispatcher|coach|newsdesk [NAME] [--job ID]")
+		return errors.New("usage: mw get-prompt session NAME | dispatcher|coach|newsdesk|fleet-coordinator [NAME] [--job ID]")
 	}
 	if !validID(name) {
 		return errors.New("prompt name must be at most 64 lowercase letters, numbers, and single dashes")

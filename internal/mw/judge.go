@@ -524,7 +524,7 @@ func rejectCommand(path string, w *Workspace, args []string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	reset := func(x *Item) {
 		releaseOwner(w, x)
-		x.Status, x.Updated, x.Note = "ready", now, "rejected: "+reason
+		x.Status, x.Updated, x.Note, x.StartedOn = "ready", now, "rejected: "+reason, ""
 		x.Attempts++
 		x.Notes = append(x.Notes, now+" rejected by "+by+": "+reason)
 		emit(x, now, "reject", by, reason)
@@ -533,8 +533,7 @@ func rejectCommand(path string, w *Workspace, args []string) error {
 	var fix *Item
 	reset(it)
 	if it.Kind == "story" {
-		t.Next["TSK"]++
-		t.Items = append(t.Items, Item{ID: fmt.Sprintf("TSK-%03d", t.Next["TSK"]), Kind: "task", Title: "Fix: " + reason,
+		t.Items = append(t.Items, Item{ID: t.nextID("TSK"), Kind: "task", Title: "Fix: " + reason,
 			Status: "ready", Parent: it.ID, Created: now, Updated: now})
 		fix = &t.Items[len(t.Items)-1]
 		emit(fix, now, "created", by, "")

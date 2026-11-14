@@ -435,8 +435,7 @@ func recordText(m driveMsg, sender string) string {
 
 func newDriveItem(t *Tenant, kind, title, parent, ticket, body, now string) *Item {
 	prefix := kinds[kind]
-	t.Next[prefix]++
-	it := Item{ID: fmt.Sprintf("%s-%03d", prefix, t.Next[prefix]), Kind: kind, Title: title, Status: "ready",
+	it := Item{ID: t.nextID(prefix), Kind: kind, Title: title, Status: "ready",
 		Parent: parent, Ticket: ticket, Body: body, Created: now, Updated: now}
 	emit(&it, now, "created", "", "")
 	t.Items = append(t.Items, it)
@@ -444,7 +443,7 @@ func newDriveItem(t *Tenant, kind, title, parent, ticket, body, now string) *Ite
 }
 
 func claimStory(w *Workspace, it *Item, session, now string) {
-	it.Status, it.Assignee, it.Updated = "doing", session, now
+	it.Status, it.Assignee, it.Updated, it.StartedOn = "doing", session, now, nodeName()
 	emit(it, now, "start", session, "")
 	// the story claim leaves the session's own item free, so the session can still start the drive's tasks
 }
@@ -492,7 +491,7 @@ func unclaimChildren(w *Workspace, d *drive, now, session string) {
 			continue
 		}
 		releaseOwner(w, c)
-		c.Status, c.Updated, c.Note = "ready", now, ""
+		c.Status, c.Updated, c.Note, c.StartedOn = "ready", now, "", ""
 		emit(c, now, "ready", session, "unclaimed: drive paused or stopped")
 		c.Notes = append(c.Notes, now+" unclaimed: drive paused or stopped")
 	}

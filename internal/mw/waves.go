@@ -262,9 +262,8 @@ func waveCommand(path string, w *Workspace, args []string) error {
 				return err
 			}
 		}
-		t.Next["WAV"]++
 		steps := protocolSteps(w, t)
-		it := Item{ID: fmt.Sprintf("WAV-%03d", t.Next["WAV"]), Kind: "wave", Title: strings.Join(pos, " "),
+		it := Item{ID: t.nextID("WAV"), Kind: "wave", Title: strings.Join(pos, " "),
 			Status: "ready", Parent: parent, Body: o["body"], Steps: steps, Created: now, Updated: now}
 		emit(&it, now, "created", os.Getenv("MW_SESSION"), "")
 		t.Items = append(t.Items, it)
