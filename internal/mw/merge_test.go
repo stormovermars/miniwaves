@@ -224,3 +224,13 @@ func TestMergeDriverTwoClones(t *testing.T) {
 		t.Fatalf("rows lost: %v", from)
 	}
 }
+
+func jsonUnmarshal(b []byte, v any) error { return json.Unmarshal(b, v) }
+
+func mustMarshal(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return append(b, '\n')
+}

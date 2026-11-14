@@ -37,6 +37,9 @@ type fleetNode struct {
 	Beat      string     `json:"beat,omitempty" toon:"beat,omitempty"`
 	Left      *int       `json:"left,omitempty" toon:"left,omitempty"`
 	Low       bool       `json:"low,omitempty" toon:"low,omitempty"` // budget left is 10% or less
+	Out       bool       `json:"out,omitempty" toon:"out,omitempty"` // out of budget (left 0 or state limit) until OutUntil
+	OutUntil  string     `json:"out_until,omitempty" toon:"out_until,omitempty"`
+	Queued    []fleetRow `json:"queued" toon:"queued"` // ready rows pinned to this node while it is out
 	Sessions  int        `json:"sessions" toon:"sessions"`
 	InFlight  []fleetRow `json:"in_flight" toon:"in_flight"`
 	Stalled   []fleetRow `json:"stalled" toon:"stalled"`
@@ -104,7 +107,7 @@ func buildFleet(path string, w *Workspace, o map[string]string, now time.Time) f
 	node := func(name string) *fleetNode {
 		n := nodes[name]
 		if n == nil {
-			n = &fleetNode{Node: name, InFlight: []fleetRow{}, Stalled: []fleetRow{}, Blocked: []fleetRow{}, Waiting: []fleetRow{}}
+			n = &fleetNode{Node: name, Queued: []fleetRow{}, InFlight: []fleetRow{}, Stalled: []fleetRow{}, Blocked: []fleetRow{}, Waiting: []fleetRow{}}
 			nodes[name] = n
 		}
 		return n
@@ -112,13 +115,25 @@ func buildFleet(path string, w *Workspace, o map[string]string, now time.Time) f
 	for _, nb := range readBeats(path) {
 		beats[nb.Node] = nb
 		n := node(nb.Node)
-		n.Live = !silentBeatAt(nb, now, silentFor)
+		n.Out = beatOut(nb, now)
+		n.OutUntil = nb.Resets
+		n.Live = n.Out || !silentBeatAt(nb, now, silentFor) // out of budget is not silent
 		n.State, n.Beat, n.Left, n.Sessions = nb.State, nb.At, nb.Left, nb.Sessions
 		n.Low = nb.Left != nil && *nb.Left <= 10
 	}
 	silent := func(name string) bool {
 		nb, ok := beats[name]
-		return name != unknownNode && name != "any" && (!ok || silentBeatAt(nb, now, silentFor))
+		return name != unknownNode && name != "any" && !(ok && beatOut(nb, now)) && (!ok || silentBeatAt(nb, now, silentFor))
+	}
+	outUntil := func(name string) (string, bool) {
+		nb, ok := beats[name]
+		if ok && beatOut(nb, now) {
+			if nb.Resets == "" {
+				return "reset time unknown", true
+			}
+			return nb.Resets, true
+		}
+		return "", false
 	}
 	row := func(t *Tenant, it Item) fleetRow {
 		r := fleetRow{Item: t.Slug + ":" + it.ID, Title: compactText(it.Title, 60), Cost: it.Cost}
@@ -158,7 +173,9 @@ func buildFleet(path string, w *Workspace, o map[string]string, now time.Time) f
 				r.Age = ago(startedAt(it))
 				n.DoingCost += it.Cost
 				stalled := ""
-				if silent(where) {
+				if until, out := outUntil(where); out {
+					stalled = "node out until " + until
+				} else if silent(where) {
 					stalled = "node silent"
 				} else if e, ok := lastLogEvent(it); ok {
 					if at := parseNano(e.At); !at.IsZero() && now.Sub(at) > stallFor {
@@ -179,6 +196,33 @@ func buildFleet(path string, w *Workspace, o map[string]string, now time.Time) f
 				}
 			case "blocked":
 				n := node(where)
+				if e, ok := lastEvent(it, "block"); ok && e.On != "" {
+					slug, id := t.Slug, e.On
+					if m := qualifiedID.FindStringSubmatch(e.On); m != nil {
+						slug, id = m[1], m[2]
+					}
+					target := ""
+					done := false
+					for _, tt := range ts {
+						if x, err := itemByID(tt, id); err == nil && tt.Slug == slug {
+							target, done = itemNode(tt, *x), x.Status == "done"
+							if target == "" {
+								target = routeOf(tt, *x)
+							}
+						}
+					}
+					if target == "" {
+						target = "any"
+					}
+					r.Why = "waiting on " + target + " " + slug + ":" + id
+					if done {
+						r.Why = slug + ":" + id + " is done: unblock this row"
+					} else if at := parseNano(e.At); !at.IsZero() && now.Sub(at) > stallFor {
+						s := r
+						s.Why = "unanswered by " + target + " for " + ago(e.At)
+						n.Stalled = append(n.Stalled, s)
+					}
+				}
 				n.Blocked = append(n.Blocked, r)
 			case "ready":
 				if it.Kind == "prompt" || it.Kind == "story" || inDrive(t, it) {
@@ -193,7 +237,10 @@ func buildFleet(path string, w *Workspace, o map[string]string, now time.Time) f
 				n := node(rt)
 				n.Ready++
 				n.ReadyCost += it.Cost
-				if silent(rt) {
+				if until, out := outUntil(rt); out {
+					r.Why = "queued for " + rt + " at " + until
+					n.Queued = append(n.Queued, r)
+				} else if silent(rt) {
 					r.Why = "node silent"
 					view.Held = append(view.Held, r)
 				}
@@ -207,7 +254,7 @@ func buildFleet(path string, w *Workspace, o map[string]string, now time.Time) f
 	sort.Strings(names)
 	for _, name := range names {
 		n := nodes[name]
-		if name != unknownNode {
+		if name != unknownNode && !n.Out && !n.Low { // out or nearly out: finish what is in flight, take nothing new
 			if it := nextFor(w, ts, name); it != nil {
 				t, _ := tenantBySlug(w, it.Parent)
 				orig, _ := itemByID(t, it.ID)
@@ -242,6 +289,9 @@ func (v fleetView) signature() string {
 		out := make([]fleetRow, len(rs))
 		for i, r := range rs {
 			r.Age = ""
+			if i := strings.Index(r.Why, " for "); i > 0 { // the age in a reason changes by itself
+				r.Why = r.Why[:i]
+			}
 			if k := strings.LastIndex(r.Last, " "); k > 0 {
 				r.Last = r.Last[:k]
 			}
@@ -252,7 +302,7 @@ func (v fleetView) signature() string {
 	for i := range c.Nodes {
 		n := c.Nodes[i]
 		n.Beat = ""
-		n.InFlight, n.Stalled, n.Blocked, n.Waiting = clean(n.InFlight), clean(n.Stalled), clean(n.Blocked), clean(n.Waiting)
+		n.InFlight, n.Stalled, n.Blocked, n.Waiting, n.Queued = clean(n.InFlight), clean(n.Stalled), clean(n.Blocked), clean(n.Waiting), clean(n.Queued)
 		if n.Next != nil {
 			x := clean([]fleetRow{*n.Next})[0]
 			n.Next = &x
@@ -359,11 +409,15 @@ func printFleet(v fleetView) {
 				fmt.Print(" LOW")
 			}
 		}
+		if n.Out {
+			fmt.Printf(" OUT until %s", orDefault(n.OutUntil, "?"))
+		}
 		fmt.Printf("  sessions %d ready %d%s doing %d%s\n", n.Sessions, n.Ready, costText(n.ReadyCost), len(n.InFlight)+len(n.Stalled), costText(n.DoingCost))
 		printFleetRows("doing", n.InFlight)
 		printFleetRows("STALLED", n.Stalled)
 		printFleetRows("blocked", n.Blocked)
 		printFleetRows("waiting", n.Waiting)
+		printFleetRows("queued", n.Queued)
 		if n.Next != nil {
 			fmt.Printf("  next     %s %s%s\n", n.Next.Item, n.Next.Title, costText(n.Next.Cost))
 		}
@@ -377,4 +431,11 @@ func printFleet(v fleetView) {
 	}
 	printFleetRows("movable", v.Movable)
 	printFleetRows("held", v.Held)
+}
+
+func orDefault(s, d string) string {
+	if s == "" {
+		return d
+	}
+	return s
 }

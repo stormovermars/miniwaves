@@ -30,7 +30,8 @@ type nodeBeat struct {
 	Sessions int    `json:"sessions"`
 	Ready    int    `json:"ready"`
 	Doing    int    `json:"doing"`
-	Left     *int   `json:"left,omitempty"` // budget left in percent, as the node reports it (mw node beat --left)
+	Left     *int   `json:"left,omitempty"`   // budget left in percent, as the node reports it (mw node beat --left)
+	Resets   string `json:"resets,omitempty"` // when the budget comes back (mw node beat --resets TIME)
 	Version  string `json:"version"`
 }
 
@@ -153,7 +154,7 @@ func nodeCommand(path string, w *Workspace, args []string) error {
 }
 
 func nodeBeatCommand(path string, w *Workspace, o map[string]string, pos []string) error {
-	if err := allowOptions(o, "item", "message", "left"); err != nil {
+	if err := allowOptions(o, "item", "message", "left", "resets"); err != nil {
 		return err
 	}
 	if len(pos) > 1 {
@@ -192,6 +193,13 @@ func nodeBeatCommand(path string, w *Workspace, o map[string]string, pos []strin
 			return errors.New("--left needs a percent from 0 to 100")
 		}
 		nb.Left = &n
+	}
+	if o["resets"] != "" {
+		r, err := parseResets(o["resets"], nowFn())
+		if err != nil {
+			return err
+		}
+		nb.Resets = r
 	}
 	if len(pos) == 1 {
 		nb.State = pos[0]
@@ -297,4 +305,28 @@ func tenantNode(path string, w *Workspace, args []string) error {
 	}
 	fmt.Printf("%s node: %s\n", t.Slug, orDash(t.Node))
 	return nil
+}
+
+// parseResets reads --resets: an RFC3339 time or a wait such as 90m, 3h, 1d (counted from now); stored as UTC RFC3339.
+func parseResets(v string, now time.Time) (string, error) {
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t.UTC().Format(time.RFC3339), nil
+	}
+	d, err := parseAge(v)
+	if err != nil || d <= 0 {
+		return "", errors.New("--resets needs an RFC3339 time or a wait such as 90m, 3h, 1d")
+	}
+	return now.Add(d).UTC().Format(time.RFC3339), nil
+}
+
+// beatOut reports whether the node says it is out of budget: left 0 or state limit, until its reset time passes.
+func beatOut(nb nodeBeat, now time.Time) bool {
+	if !(nb.State == "limit" || nb.Left != nil && *nb.Left == 0) {
+		return false
+	}
+	if nb.Resets == "" {
+		return true
+	}
+	t, err := time.Parse(time.RFC3339, nb.Resets)
+	return err != nil || now.Before(t)
 }

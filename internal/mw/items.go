@@ -1,6 +1,7 @@
 package mw
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/stormovermars/miniwaves/internal/fsx"
 )
 
 func tenantCommand(path string, w *Workspace, args []string) error {
@@ -731,7 +734,22 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 		}
 	}
 	dep := ""
-	if o["on"] != "" {
+	if m := qualifiedID.FindStringSubmatch(o["on"]); m != nil && m[1] != t.Slug { // a row of another tenant: a help row for another node
+		if _, e := tenantBySlug(w, m[1]); e != nil {
+			return nil, nil, fmt.Errorf("--on: %v", e)
+		}
+		d, ok := foreignItem(path, m[1], m[2])
+		if !ok {
+			return nil, nil, fmt.Errorf("--on: item %s not found in tenant %s", strings.ToUpper(m[2]), m[1])
+		}
+		if d.Status == "done" {
+			return nil, nil, fmt.Errorf("--on: %s is already done; nothing to wait on", d.ID)
+		}
+		dep = m[1] + ":" + d.ID
+	} else if o["on"] != "" {
+		if m != nil {
+			o["on"] = m[2]
+		}
 		d, e := itemByID(t, o["on"])
 		if e != nil {
 			return nil, nil, fmt.Errorf("--on: %v", e)
@@ -1447,4 +1465,23 @@ func wipSessionOn() bool {
 	}
 	v, _ := userValue(c, userKeyByName("wip.session"))
 	return v == "true"
+}
+
+// foreignItem reads one item of another tenant lock-free (a cross-tenant --on reference).
+func foreignItem(board, slug, id string) (Item, bool) {
+	b, err := fsx.ReadFile(tenantPath(board, slug))
+	if err != nil {
+		return Item{}, false
+	}
+	var td tenantDoc
+	if json.Unmarshal(b, &td) != nil {
+		return Item{}, false
+	}
+	id = strings.ToUpper(id)
+	for _, it := range td.Items {
+		if it.ID == id {
+			return it, true
+		}
+	}
+	return Item{}, false
 }

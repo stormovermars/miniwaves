@@ -33,7 +33,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "changed": true, "cost": true, "item": true, "left": true, "node": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "resets": true, "changed": true, "cost": true, "item": true, "left": true, "node": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -599,12 +599,12 @@ cycles are enforced, waves are not parents: use mw wave add). A session may set 
 the acceptance is empty (drafting); changing a non-empty acceptance is humans only.
 node=NAME|any|- routes the row (see mw help node); cost=N|- sets an estimate in thousands of tokens.`,
 		"node": `mw node set NAME
-mw node beat [working|idle|blocked|limit|off] [--item ID] [-m TEXT]
+mw node beat [working|idle|blocked|limit|off] [--item ID] [-m TEXT] [--left PCT] [--resets TIME]
 mw node list [-j]
 Nodes are the computers that work one shared board. set stores this computer's name per user (setting node.name, never on the board).
 beat writes .miniwaves/nodes/NAME.json (time, state, item in flight, counts of this node's sessions and of its ready and doing rows,
 mw version): one file per node, so two computers never write the same file. The state defaults to working when a row is doing here, else idle.
-beat --left PCT records the budget the node has left (0-100).
+beat --left PCT [--resets TIME] records the budget left (0-100) and when it returns; left 0 or state limit = out until then.
 Routing: mw edit ID node=NAME|any|- (add: --node) names who may take a row; mw tenant node SLUG NAME|any|- sets the tenant default. mw next and mw list --node NAME
 show the rows routed to NAME or to anyone; a computer with a node name filters next by it (--node - lifts that). mw next --node skips rows with an open ask.
 list shows every node with a beat file: live, or silent when its last beat is older than the user setting node.silent (minutes, default 120).`,
@@ -856,7 +856,7 @@ Usage:
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY] [node=NAME|any|-] [cost=N|-]
   mw fleet [-t SLUG] [-j] [--changed]  per-node view of a shared board
   mw merge-file BASE OURS THEIRS [PATH]  git merge driver for shared boards (USAGE.md, "Fleets")
-  mw node set NAME | beat [STATE] [--item ID] [-m TEXT] | list [-j]
+  mw node set NAME | beat [STATE] [--item ID] [-m TEXT] [--left PCT] [--resets TIME] | list [-j]
   mw user show [-j] | get [KEY] [-j] | set KEY=VALUE...
   mw configure [--show [-j]] | KEY=VALUE...
   mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]
