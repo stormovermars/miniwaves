@@ -20,6 +20,8 @@ func tenantCommand(path string, w *Workspace, args []string) error {
 		return tenantMeta(path, w, args)
 	case "protocol":
 		return tenantProtocol(path, w, args[1:])
+	case "node":
+		return tenantNode(path, w, args[1:])
 	case "list":
 		o, pos, err := options(args[1:])
 		if err != nil {
@@ -307,7 +309,7 @@ func addItem(path string, w *Workspace, args []string) error {
 	if len(pos) < 2 {
 		return errors.New("usage: mw add KIND TITLE...")
 	}
-	if err := allowOptions(o, "tenant", "session", "parent", "wave", "body", "acceptance", "status", "ticket"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "parent", "wave", "body", "acceptance", "status", "ticket", "node", "cost"); err != nil {
 		return err
 	}
 	t, err := selectTenant(w, o)
@@ -349,11 +351,22 @@ func addItem(path string, w *Workspace, args []string) error {
 			return err
 		}
 	}
+	route, costN := "", 0
+	if o["node"] != "" {
+		if route, err = checkRoute(o["node"]); err != nil {
+			return err
+		}
+	}
+	if o["cost"] != "" {
+		if costN, err = parseCost(o["cost"]); err != nil {
+			return err
+		}
+	}
 	t.Next[prefix]++
 	now := time.Now().UTC().Format(time.RFC3339)
 	it := Item{Ticket: ticket, ID: fmt.Sprintf("%s-%03d", prefix, t.Next[prefix]), Kind: kind,
 		Title: strings.Join(pos[1:], " "), Status: status, Parent: parent,
-		Body: o["body"], Acceptance: o["acceptance"], Created: now, Updated: now}
+		Body: o["body"], Acceptance: o["acceptance"], Node: route, Cost: costN, Created: now, Updated: now}
 	if status == "done" && kind != "prompt" {
 		it.Judged = "ungated"
 	}
@@ -398,6 +411,9 @@ func filtered(t *Tenant, o map[string]string) []Item {
 		if o["status"] != "" && it.Status != o["status"] {
 			continue
 		}
+		if !routesTo(t, it, o["node"]) {
+			continue
+		}
 		out = append(out, it)
 	}
 	return out
@@ -411,7 +427,7 @@ func listItems(w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	if err := allowOptions(o, "tenant", "session", "kind", "status", "json", "verbose", "all", "limit", "tag", "archived"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "kind", "status", "json", "verbose", "all", "limit", "tag", "archived", "node"); err != nil {
 		return err
 	}
 	limit := 0
@@ -877,6 +893,11 @@ func pickNext(w *Workspace, t *Tenant, o map[string]string) (*Item, int, []gateI
 		if inDrive(t, it) { // drive tasks are taken by id, never served by next
 			continue
 		}
+		if o["node"] != "" && o["node"] != "-" {
+			if _, asked := openAsk(it); asked { // waits for an answer: never offered for dispatch
+				continue
+			}
+		}
 		if byName(gs, "acceptance").Effective && !isWorkKind(it.Kind) && strings.TrimSpace(effectiveAcceptance(t, it)) == "" {
 			skipped++
 			continue
@@ -923,12 +944,15 @@ func nextItem(path string, w *Workspace, args []string) error {
 	if len(pos) != 0 {
 		return fmt.Errorf("unexpected argument %q", pos[0])
 	}
-	allowed := []string{"tenant", "session", "kind", "json", "verbose", "claim"}
+	allowed := []string{"tenant", "session", "kind", "json", "verbose", "claim", "node"}
 	if o["claim"] == "true" {
 		allowed = append(allowed, "agent", "prompt")
 	}
 	if err := allowOptions(o, allowed...); err != nil {
 		return err
+	}
+	if o["node"] == "" { // a computer with a node name serves only rows routed to it or to anyone; --node - lifts it
+		o["node"] = nodeName()
 	}
 	t, err := selectTenant(w, o)
 	if err != nil {

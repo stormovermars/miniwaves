@@ -33,7 +33,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "item": true, "left": true, "node": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "cost": true, "item": true, "left": true, "node": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -451,6 +451,9 @@ func readOnly(args []string) bool {
 	case "next":
 		return !has("--claim")
 	case "tenant":
+		if sub == "node" { // only a set writes
+			return len(args) < 4
+		}
 		if sub == "protocol" { // only set and reset write
 			return !has("set") && !has("reset")
 		}
@@ -583,7 +586,7 @@ Print a minimal embedded prompt to paste into an assistant. Retrieval changes no
 session: exit code 3 when the session NAME already exists (-j prints {"error":"session_exists","session":NAME}).
 --headless drops the Setup block, Loop, folders hint and reply format (a runner handles those) and
 says the item is already claimed.`,
-		"add": `mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [-S STATUS] [--ticket KEY]
+		"add": `mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [-S STATUS] [--ticket KEY] [--node NAME|any] [--cost N]
 Add work in inbox. KIND: prompt, story, task, spike, bug, or chore. -c is the
 acceptance check (long form --acceptance). -S done is
 refused while the evidence or judge gate is on.
@@ -591,13 +594,17 @@ Example: mw add task "Build index" -p STR-001`,
 		"edit": `mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY] [-t SLUG]
 Change an item's acceptance (-c), body (-b) and/or parent (-p; "-" clears; kind hierarchy and
 cycles are enforced, waves are not parents: use mw wave add). A session may set -c only while
-the acceptance is empty (drafting); changing a non-empty acceptance is humans only.`,
+the acceptance is empty (drafting); changing a non-empty acceptance is humans only.
+node=NAME|any|- routes the row (see mw help node); cost=N|- sets an estimate in thousands of tokens.`,
 		"node": `mw node set NAME
 mw node beat [working|idle|blocked|limit|off] [--item ID] [-m TEXT]
 mw node list [-j]
 Nodes are the computers that work one shared board. set stores this computer's name per user (setting node.name, never on the board).
 beat writes .miniwaves/nodes/NAME.json (time, state, item in flight, counts of this node's sessions and of its ready and doing rows,
 mw version): one file per node, so two computers never write the same file. The state defaults to working when a row is doing here, else idle.
+beat --left PCT records the budget the node has left (0-100).
+Routing: mw edit ID node=NAME|any|- (add: --node) names who may take a row; mw tenant node SLUG NAME|any|- sets the tenant default. mw next and mw list --node NAME
+show the rows routed to NAME or to anyone; a computer with a node name filters next by it (--node - lifts that). mw next --node skips rows with an open ask.
 list shows every node with a beat file: live, or silent when its last beat is older than the user setting node.silent (minutes, default 120).`,
 		"merge-file": `mw merge-file BASE OURS THEIRS [PATH]
 A git merge driver for the board files (.miniwaves.json, .miniwaves/*.json, .miniwaves/nodes/*.json). It merges the JSON, not the lines:
@@ -713,7 +720,7 @@ Print the mw version and schema; -j prints {version, schema, board_schema, board
 workspace file and its schema number (null when there is none; an old schema is reported, not an error)
 and, for a current-schema board, tenants [{slug, name, dir, tags, archived}] so a runner needs no tenant list
 call (a runner skips archived ones).`,
-		"list": `mw list [-t SLUG] [-k KIND] [-S STATUS] [-n N] [-j] [-v]
+		"list": `mw list [-t SLUG] [-k KIND] [-S STATUS] [--node NAME] [-n N] [-j] [-v]
 mw list -A [-s SESSION] [-k KIND] [-S STATUS] [-n N] [-j] [-v]
 List items as compact TOON. Use -j for JSON or -v for full fields; -n N keeps the first N.
 Waves are listed apart: text gains a waves section when any match; -j always prints {items, waves}.
@@ -775,7 +782,7 @@ list in .miniwaves.json). close refuses until all members are done and every
 step is ticked (--na ticks "not applicable" with a reason). Closed waves accept
 no new members or steps. With the evidence gate on, close also needs
 <evidence>/<tenant>/WAV-NNN/ with a file (or --no-evidence REASON).`,
-		"next": `mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v]
+		"next": `mw next [-t SLUG] [-s NAME] [-k KIND] [--node NAME] [-j] [-v]
 mw next --claim [-s NAME] [-a ROLE] [-t SLUG] [-k KIND] [-j] [--prompt]
 Show the first ready, unowned item as the full brief (same as mw show). With the
 acceptance gate on it skips work without acceptance ("skipped N without
@@ -830,7 +837,7 @@ Usage:
   mw update [--check] [--plugins]
   mw init [workspace name] | mw init --kit coordinated --job ID
   mw tenant add SLUG [NAME...] [-d DIR]
-  mw tenant list [-j] [-v] [--tag T] | default [SLUG|-] | archive|restore SLUG | tag SLUG +T -T
+  mw tenant list [-j] [-v] [--tag T] | default [SLUG|-] | archive|restore SLUG | tag SLUG +T -T | node SLUG [NAME|any|-]
   mw dirs [init] [-j] | set datalake|docs|data|tools|templates|builds|evidence|scratch PATH
   mw note ID TEXT... [-t SLUG] [-s NAME]
   mw session start NAME [-t SLUG] [-a ROLE]
@@ -838,7 +845,7 @@ Usage:
   mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]
   mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
   mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [--ticket KEY]
-  mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY]
+  mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY] [node=NAME|any|-] [cost=N|-]
   mw merge-file BASE OURS THEIRS [PATH]  git merge driver for shared boards (USAGE.md, "Fleets")
   mw node set NAME | beat [STATE] [--item ID] [-m TEXT] | list [-j]
   mw user show [-j] | get [KEY] [-j] | set KEY=VALUE...
@@ -851,7 +858,7 @@ Usage:
   mw check [-t SLUG] [-j]               parents in inbox/ready with children doing or done
   mw judge ID [-t SLUG]
   mw accept ID [--by NAME] | mw reject ID REASON... [--evidence-gap] [--by NAME]
-  mw list [-t SLUG | -A [-s SESSION]] [-k KIND] [-S STATUS] [-n N] [-j] [-v]
+  mw list [-t SLUG | -A [-s SESSION]] [-k KIND] [-S STATUS] [--node NAME] [-n N] [-j] [-v]
   mw show ID [-t SLUG] [-j] [-v] [--full]
   mw ready ID [-t SLUG] [-s NAME]
   mw reopen ID [-t SLUG] [-s NAME] [-m REASON]
@@ -860,7 +867,7 @@ Usage:
   mw done ID VERIFICATION... [--evidence PATH]... [--no-evidence REASON] [-t SLUG] [-s NAME]
   mw log [-t SLUG | -A] [-n N] [-j] | mw log [-t SLUG | -A] --since CURSOR|start [-j]
   mw wave create|add|remove|step|unstep|show|list|close ...  (mw help wave)
-  mw next [-t SLUG] [-s NAME] [-k KIND] [-j] [-v] | mw next --claim [-s NAME] [-a ROLE] [-j] [--prompt]
+  mw next [-t SLUG] [-s NAME] [-k KIND] [--node NAME] [-j] [-v] | mw next --claim [-s NAME] [-a ROLE] [-j] [--prompt]
   mw board [-t SLUG | -A] [-v] [-j] | mw board --html [-o PATH] | mw board --md [--job ID] [-o PATH|-]
   mw fanfare [on|off|stop|test|use NAME|set KEY=VALUE...]   sounds when a wave closes or a tenant is finished
   mw archive [--days N] [-t SLUG] [--dry-run]

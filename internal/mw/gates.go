@@ -483,28 +483,52 @@ func editCommand(path string, w *Workspace, args []string) error {
 		return err
 	}
 	if len(pos) < 1 {
-		return errors.New("usage: mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY] [-t SLUG]")
+		return errors.New("usage: mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY] [node=NAME|any|-] [cost=N|-] [-t SLUG]")
 	}
 	ticket, hasT := "", false
+	node, hasN, cost, hasCost := "", false, "", false
 	for _, kv := range pos[1:] {
 		k, v, ok := strings.Cut(kv, "=")
-		if !ok || k != "ticket" {
-			return fmt.Errorf("unexpected argument %q (only ticket=KEY; ticket= clears it)", kv)
+		switch {
+		case ok && k == "ticket":
+			ticket, hasT = strings.TrimSpace(v), true
+		case ok && k == "node":
+			node, hasN = strings.TrimSpace(v), true
+		case ok && k == "cost":
+			cost, hasCost = strings.TrimSpace(v), true
+		default:
+			return fmt.Errorf("unexpected argument %q (only ticket=KEY, node=NAME|any|-, cost=N|-; ticket= clears it)", kv)
 		}
-		ticket, hasT = strings.TrimSpace(v), true
 	}
 	pos = pos[:1]
 	if v, ok := o["ticket"]; ok { // --ticket KEY works like ticket=KEY
 		ticket, hasT = strings.TrimSpace(v), true
 	}
-	if err := allowOptions(o, "tenant", "session", "acceptance", "body", "parent", "ticket"); err != nil {
+	if v, ok := o["node"]; ok { // --node works like node=
+		node, hasN = strings.TrimSpace(v), true
+	}
+	if v, ok := o["cost"]; ok {
+		cost, hasCost = strings.TrimSpace(v), true
+	}
+	if err := allowOptions(o, "tenant", "session", "acceptance", "body", "parent", "ticket", "node", "cost"); err != nil {
 		return err
 	}
 	_, hasC := o["acceptance"]
 	_, hasB := o["body"]
 	_, hasP := o["parent"]
-	if !hasC && !hasB && !hasP && !hasT {
-		return errors.New("mw edit needs -c TEXT (acceptance), -b TEXT (body), -p PARENT|- (parent) and/or ticket=KEY")
+	if !hasC && !hasB && !hasP && !hasT && !hasN && !hasCost {
+		return errors.New("mw edit needs -c TEXT (acceptance), -b TEXT (body), -p PARENT|- (parent), ticket=KEY, node=NAME|any|- and/or cost=N|-")
+	}
+	if hasN {
+		if node, err = checkRoute(node); err != nil {
+			return err
+		}
+	}
+	costN := 0
+	if hasCost {
+		if costN, err = parseCost(cost); err != nil {
+			return err
+		}
 	}
 	t, err := selectTenant(w, o)
 	if err != nil {
@@ -544,6 +568,14 @@ func editCommand(path string, w *Workspace, args []string) error {
 		}
 		it.Ticket = ticket
 		what = append(what, "ticket="+orDash(ticket))
+	}
+	if hasN {
+		it.Node = node
+		what = append(what, "node="+orDash(node))
+	}
+	if hasCost {
+		it.Cost = costN
+		what = append(what, "cost="+orDash(cost))
 	}
 	if hasC {
 		it.Acceptance = o["acceptance"]

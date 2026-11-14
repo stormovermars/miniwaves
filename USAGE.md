@@ -557,6 +557,8 @@ mw node list [-j]
 
 - `beat` writes one small file per node, `.miniwaves/nodes/NAME.json`: time, state, the row in flight, the count of this node's sessions and of its ready and doing rows, the mw version. Two computers never write the same file. STATE defaults to `working` when a row is doing here, else `idle`.
 - A node with no beat for `node.silent` minutes (user setting, default 120) is silent. `node.stall` (default 240) is the minutes without a log entry after which a row in progress counts as stalled.
+- Routing: `mw edit ID node=NAME|any|-` (and `mw add ... --node NAME|any`) names who may take a row; `-` clears it, so the tenant default (`mw tenant node SLUG NAME|any|-`) applies; no default means anyone. `mw next --node NAME` and `mw list --node NAME` show the rows routed to NAME or to anyone. On a computer with a node name `mw next` filters by it (`--node -` lifts that); with a node filter, rows with an open ask are never offered.
+- Budget and cost: `mw node beat --left PCT` records the budget the node has left (0..100); `mw edit ID cost=N|-` (add: `--cost N`) is a row's estimate in thousands of tokens.
 - `mw start` records the node on the row (`started_on`) and `mw session start` on the session when `node.name` is set. Older mw versions keep these optional fields; the schema stays 9.
 
 ### Shared boards: `mw merge-file`

@@ -30,6 +30,7 @@ type nodeBeat struct {
 	Sessions int    `json:"sessions"`
 	Ready    int    `json:"ready"`
 	Doing    int    `json:"doing"`
+	Left     *int   `json:"left,omitempty"` // budget left in percent, as the node reports it (mw node beat --left)
 	Version  string `json:"version"`
 }
 
@@ -152,7 +153,7 @@ func nodeCommand(path string, w *Workspace, args []string) error {
 }
 
 func nodeBeatCommand(path string, w *Workspace, o map[string]string, pos []string) error {
-	if err := allowOptions(o, "item", "message"); err != nil {
+	if err := allowOptions(o, "item", "message", "left"); err != nil {
 		return err
 	}
 	if len(pos) > 1 {
@@ -184,6 +185,13 @@ func nodeBeatCommand(path string, w *Workspace, o map[string]string, pos []strin
 		if s.Node == name && s.State != "stopped" {
 			nb.Sessions++
 		}
+	}
+	if o["left"] != "" {
+		n, err := strconv.Atoi(strings.TrimSuffix(o["left"], "%"))
+		if err != nil || n < 0 || n > 100 {
+			return errors.New("--left needs a percent from 0 to 100")
+		}
+		nb.Left = &n
 	}
 	if len(pos) == 1 {
 		nb.State = pos[0]
@@ -243,5 +251,50 @@ func nodeList(path string, o map[string]string) error {
 		}
 		fmt.Printf("%-12s %-6s %-8s %-5s sessions %d ready %d doing %d %s\n", r.Node, st, r.State, ago(r.At), r.Sessions, r.Ready, r.Doing, r.Item)
 	}
+	return nil
+}
+
+// checkRoute validates a route: a node name, any, or - (clear; the tenant default applies again).
+func checkRoute(v string) (string, error) {
+	switch {
+	case v == "-":
+		return "", nil
+	case v == "any" || validID(v):
+		return v, nil
+	}
+	return "", errors.New("node must be a node name, any, or - (at most 64 lowercase letters, numbers, and single dashes)")
+}
+
+func parseCost(v string) (int, error) {
+	if v == "-" || v == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 || n > 100000000 {
+		return 0, errors.New("cost must be a whole number of thousands of tokens, or - to clear it")
+	}
+	return n, nil
+}
+
+// tenantNode runs mw tenant node SLUG [NAME|any|-]: the default route of the tenant's rows.
+func tenantNode(path string, w *Workspace, args []string) error {
+	if len(args) < 1 || len(args) > 2 {
+		return errors.New("usage: mw tenant node SLUG [NAME|any|-]")
+	}
+	t, err := tenantBySlug(w, args[0])
+	if err != nil {
+		return err
+	}
+	if len(args) == 1 {
+		fmt.Printf("%s node: %s\n", t.Slug, orDash(t.Node))
+		return nil
+	}
+	if t.Node, err = checkRoute(args[1]); err != nil {
+		return err
+	}
+	if err := save(path, w); err != nil {
+		return err
+	}
+	fmt.Printf("%s node: %s\n", t.Slug, orDash(t.Node))
 	return nil
 }

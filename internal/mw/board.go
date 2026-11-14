@@ -47,6 +47,7 @@ type Item struct {
 	Events     []Event  `json:"events,omitempty"`     // activity log, appended by every state-changing command
 	Ticket     string   `json:"ticket,omitempty"`     // optional tracker ticket in canonical form (see tracker.go)
 	Node       string   `json:"node,omitempty"`       // route: the node that may take it, or any (mw edit ID node=)
+	Cost       int      `json:"cost,omitempty"`       // optional estimate in thousands of tokens (mw edit ID cost=N)
 	StartedOn  string   `json:"started_on,omitempty"` // the node that started it (set by mw start when node.name is set)
 	Created    string   `json:"created"`
 	Updated    string   `json:"updated"`
@@ -76,7 +77,7 @@ func (it *Item) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-var itemJSONKeys = []string{"id", "kind", "title", "status", "parent", "wave", "session", "body", "acceptance", "note", "notes", "steps", "evidence", "judged", "by", "judged_by", "attempts", "events", "ticket", "node", "started_on", "created", "updated"}
+var itemJSONKeys = []string{"id", "kind", "title", "status", "parent", "wave", "session", "body", "acceptance", "note", "notes", "steps", "evidence", "judged", "by", "judged_by", "attempts", "events", "ticket", "node", "cost", "started_on", "created", "updated"}
 
 // MarshalJSON writes the known fields, then the kept unknown ones.
 func (it Item) MarshalJSON() ([]byte, error) {
