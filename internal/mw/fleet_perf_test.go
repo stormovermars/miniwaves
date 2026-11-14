@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// A board the size of a real one: 4 tenants, 300 rows, 100 log entries per row. The targets:
+// A board the size of a real one: 4 tenants, 300 rows, 100 log entries per row. The targets are Sir's:
 // fleet --changed unchanged < 2 s and one line, full fleet < 5 s, node beat < 1 s, merge-file < 2 s per file.
 func perfBoard(t *testing.T) string {
 	t.Helper()

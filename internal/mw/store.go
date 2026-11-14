@@ -385,9 +385,6 @@ func scopeOf(w *Workspace, args []string) scope {
 	if err != nil {
 		return all
 	}
-	if args[0] == "history" {
-		return scope{} // reads and writes only the node files
-	}
 	hasT := o["tenant"] != "" || os.Getenv("MW_TENANT") != ""
 	if o["all"] == "true" || o["html"] == "true" || o["md"] == "true" {
 		return all

@@ -572,16 +572,6 @@ Per node: live or SILENT, state, budget left (LOW at 10% or less), sessions, rea
 
 `--changed` compares the view (ages and beat times left out) with the last `--changed` run of the same session (`-s NAME` or `MW_SESSION`; name your coordinator session, or all runs share one state) and prints the single line `no change` when nothing differs, else the full view. The state is `fleet-<hash>.json` next to `mw-user.json`, one per board and `MW_SESSION`, so two coordinators on one computer never swallow each other's changes. The prompt `fleet-coordinator` tells a session how to run that loop.
 
-### The ledger: `mw history`
-
-```
-mw history add KIND REPO REF [--version V] [--target T] [--row ID] [--note TEXT]   KIND: push|release|upload|publish
-mw history query [--node N] [--kind K] [--repo R] [--version V] [--since DATE] [-n N] [-j] [--changed]
-mw history last [REPO] [-j]
-```
-
-An append-only record of what left the computers, one file per node (`.miniwaves/nodes/NODE.history.jsonl`, one JSON line per event: `at` (UTC), `node`, `kind`, `repo`, `ref`, `version`, `target`, `row`, `note`), so two computers never write the same file. `query` merges every node's file, newest first (50 lines unless `-n`); `last` is the newest line per repo (or the newest of one REPO). `--changed` prints `no change` when the result equals the last `--changed` run of the session. `add` refuses fields that look like a key, token or password, and values with control characters; put no secrets, names or serials in a field. `mw done` on a row whose title says "release" warns on stderr when no ledger line has `--row` set to its id; done still succeeds. History before the ledger existed is not backfilled.
-
 ### Shared boards: `mw merge-file`
 
 Computers that commit `.miniwaves.json` and `.miniwaves/` to one git repo collide on rebase. `mw merge-file BASE OURS THEIRS [PATH]` is a git merge driver that merges the JSON instead of the lines; mw runs no git command. Once per clone:
@@ -591,7 +581,6 @@ Computers that commit `.miniwaves.json` and `.miniwaves/` to one git repo collid
 .miniwaves.json merge=mw
 .miniwaves/*.json merge=mw
 .miniwaves/nodes/*.json merge=mw
-.miniwaves/nodes/*.history.jsonl merge=mw
 # per clone
 git config merge.mw.driver "mw merge-file %O %A %B %P"
 ```

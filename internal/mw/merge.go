@@ -569,9 +569,6 @@ func mergeFileCommand(args []string) error {
 		}
 		in[i] = b
 	}
-	if len(args) == 4 && strings.HasSuffix(args[3], ".history.jsonl") { // the append-only ledger: a line union
-		return os.WriteFile(args[1], mergeHistoryFiles(in[1], in[2]), 0o600)
-	}
 	out, err := mergeBoardFiles(in[0], in[1], in[2])
 	if err != nil {
 		return fmt.Errorf("merge-file: %w", err)
