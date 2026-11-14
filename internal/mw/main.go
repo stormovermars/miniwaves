@@ -33,7 +33,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "item": true, "left": true, "node": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -252,6 +252,9 @@ func run(args []string) error {
 	if args[0] == "user" {
 		return userCommand(args[1:])
 	}
+	if args[0] == "node" && len(args) > 1 && args[1] == "set" { // a per-user setting: needs no board
+		return nodeCommand("", nil, args[1:])
+	}
 	if args[0] == "configure" {
 		return configureCommand(args[1:])
 	}
@@ -407,6 +410,8 @@ func dispatch(path string, w *Workspace, args []string) error {
 		return archiveCommand(path, w, args[1:])
 	case "context":
 		return contextCommand(w, args[1:])
+	case "node":
+		return nodeCommand(path, w, args[1:])
 	case "drive":
 		return driveCommand(path, w, args[1:])
 	default:
@@ -449,6 +454,8 @@ func readOnly(args []string) bool {
 		return sub == "list"
 	case "session":
 		return sub == "list"
+	case "node":
+		return true // beat writes only its own file under .miniwaves/nodes
 	case "drive":
 		return sub == "status" || sub == "check"
 	case "wave":
@@ -582,6 +589,13 @@ Example: mw add task "Build index" -p STR-001`,
 Change an item's acceptance (-c), body (-b) and/or parent (-p; "-" clears; kind hierarchy and
 cycles are enforced, waves are not parents: use mw wave add). A session may set -c only while
 the acceptance is empty (drafting); changing a non-empty acceptance is humans only.`,
+		"node": `mw node set NAME
+mw node beat [working|idle|blocked|limit|off] [--item ID] [-m TEXT]
+mw node list [-j]
+Nodes are the computers that work one shared board. set stores this computer's name per user (setting node.name, never on the board).
+beat writes .miniwaves/nodes/NAME.json (time, state, item in flight, counts of this node's sessions and of its ready and doing rows,
+mw version): one file per node, so two computers never write the same file. The state defaults to working when a row is doing here, else idle.
+list shows every node with a beat file: live, or silent when its last beat is older than the user setting node.silent (minutes, default 120).`,
 		"fanfare": `mw fanfare [-j]
 mw fanfare on | off
 mw fanfare set enabled=true milestone_seconds=15 finale_seconds=60 volume=1 task_beep=true dir=~/fanfare-finale-songs
@@ -811,6 +825,7 @@ Usage:
   mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
   mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [--ticket KEY]
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY]
+  mw node set NAME | beat [STATE] [--item ID] [-m TEXT] | list [-j]
   mw user show [-j] | get [KEY] [-j] | set KEY=VALUE...
   mw configure [--show [-j]] | KEY=VALUE...
   mw jobs enable ID -t SLUG... | disable ID [-t SLUG] | set ID KEY=VALUE... | show [ID] [-j]

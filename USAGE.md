@@ -545,6 +545,20 @@ mw drive check --idle DUR [--at RFC3339] [-j]
 - If a session dies, `mw session reap` releases its claim; another session of the same member runs `mw drive resume ID`, which re-claims the story and prints a `resumed` line for the peer. A story held by a live session is refused; a holder that is stopped or no longer registered counts as dead.
 - `status` lists open drives (id, role, peer, holding session, last seq each way, age of the last event); `check --idle 30m` lists the remote drives held by the calling session whose last driver event is older than the limit (`--at` sets the clock, for tests).
 
+## Fleets
+
+One board can be worked by several computers (nodes), each with its own sessions. Everything here is optional; a board that never names a node behaves as before.
+
+```
+mw node set NAME                 this computer's name (per user setting node.name, never on the board)
+mw node beat [STATE] [--item ID] [-m TEXT]   STATE: working|idle|blocked|limit|off
+mw node list [-j]
+```
+
+- `beat` writes one small file per node, `.miniwaves/nodes/NAME.json`: time, state, the row in flight, the count of this node's sessions and of its ready and doing rows, the mw version. Two computers never write the same file. STATE defaults to `working` when a row is doing here, else `idle`.
+- A node with no beat for `node.silent` minutes (user setting, default 120) is silent. `node.stall` (default 240) is the minutes without a log entry after which a row in progress counts as stalled.
+- `mw start` records the node on the row (`started_on`) and `mw session start` on the session when `node.name` is set. Older mw versions keep these optional fields; the schema stays 9.
+
 ## Error codes (`-j`)
 
 A command that fails and was run with `-j` also prints one JSON object on stdout: `{"error":MESSAGE,"code":CODE,"exit":N}`. `error` is the text of the stderr line without `mw: `. Stderr and the exit code are exactly what they were without `-j` (wr and scripts match them), and stdout stays empty on failure without `-j`. `ready|start|block|done|reopen` accept `-j` only for this: a success prints the same line as before. `get-prompt session NAME -j` keeps its own object byte for byte (`{"error":"session_exists","session":NAME}`, exit 3): its `error` token already is the stable code, so it has no `code` field. `next -j` with nothing ready still prints `null` and exits 0 (without `-j`: `mw: nothing ready`, exit 1).

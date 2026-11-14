@@ -44,8 +44,10 @@ type Item struct {
 	By         string   `json:"by,omitempty"`        // session at done
 	JudgedBy   string   `json:"judged_by,omitempty"` // human at accept
 	Attempts   int      `json:"attempts,omitempty"`
-	Events     []Event  `json:"events,omitempty"` // activity log, appended by every state-changing command
-	Ticket     string   `json:"ticket,omitempty"` // optional tracker ticket in canonical form (see tracker.go)
+	Events     []Event  `json:"events,omitempty"`     // activity log, appended by every state-changing command
+	Ticket     string   `json:"ticket,omitempty"`     // optional tracker ticket in canonical form (see tracker.go)
+	Node       string   `json:"node,omitempty"`       // route: the node that may take it, or any (mw edit ID node=)
+	StartedOn  string   `json:"started_on,omitempty"` // the node that started it (set by mw start when node.name is set)
 	Created    string   `json:"created"`
 	Updated    string   `json:"updated"`
 
@@ -74,7 +76,7 @@ func (it *Item) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-var itemJSONKeys = []string{"id", "kind", "title", "status", "parent", "wave", "session", "body", "acceptance", "note", "notes", "steps", "evidence", "judged", "by", "judged_by", "attempts", "events", "ticket", "created", "updated"}
+var itemJSONKeys = []string{"id", "kind", "title", "status", "parent", "wave", "session", "body", "acceptance", "note", "notes", "steps", "evidence", "judged", "by", "judged_by", "attempts", "events", "ticket", "node", "started_on", "created", "updated"}
 
 // MarshalJSON writes the known fields, then the kept unknown ones.
 func (it Item) MarshalJSON() ([]byte, error) {
@@ -131,6 +133,7 @@ type Tenant struct {
 	AcceptStreak      int               `json:"accept_streak,omitempty"`
 	Archived          int               `json:"archived,omitempty"` // done items moved to .miniwaves/<slug>.archive.json (mw archive)
 	Job               string            `json:"job,omitempty"`      // coordinated job id (mw jobs enable); stored in the index
+	Node              string            `json:"-"`                  // default route of its rows (mw tenant node); stored in the index
 	Hidden            bool              `json:"-"`                  // mw tenant archive (stored in the index as "archived")
 	Tags              []string          `json:"-"`                  // mw tenant tag (stored in the index)
 	loaded            bool
@@ -152,6 +155,8 @@ type Session struct {
 	// Answerer is the session that may answer this session's asks (mw session start NAME --answerer PARENT).
 	// Also a session-record field (omitempty): an older mw drops it when it rewrites the board.
 	Answerer string `json:"answerer,omitempty"`
+	// Node is the node (computer) the session runs on, set at start when node.name is set.
+	Node string `json:"node,omitempty"`
 	// AnswererAt is when the answerer was set: it answers only asks made at or after it (no retroactive routing).
 	AnswererAt string `json:"answerer_at,omitempty"`
 }

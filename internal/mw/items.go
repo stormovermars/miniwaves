@@ -247,7 +247,7 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 				return fmt.Errorf("session %s already exists", id)
 			}
 			existing.Tenant, existing.Agent, existing.State, existing.Updated = t.Slug, role, "idle", now
-			existing.ClaudeSession, existing.Answerer, existing.AnswererAt = cs, ans, answererStamp(ans, now)
+			existing.ClaudeSession, existing.Answerer, existing.AnswererAt, existing.Node = cs, ans, answererStamp(ans, now), nodeName()
 			if err := save(path, w); err != nil {
 				return err
 			}
@@ -257,7 +257,7 @@ func sessionCommand(path string, w *Workspace, args []string) error {
 		if err := sessionElsewhere(path, w, id, t.Slug); err != nil {
 			return err
 		}
-		w.Sessions = append(w.Sessions, Session{ID: id, Tenant: t.Slug, Agent: role, State: "idle", Updated: now, ClaudeSession: cs, Answerer: ans, AnswererAt: answererStamp(ans, now)})
+		w.Sessions = append(w.Sessions, Session{ID: id, Tenant: t.Slug, Agent: role, State: "idle", Updated: now, ClaudeSession: cs, Answerer: ans, AnswererAt: answererStamp(ans, now), Node: nodeName()})
 		if err := save(path, w); err != nil {
 			return err
 		}
@@ -653,7 +653,7 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 			if err := sessionElsewhere(path, w, sessionID, t.Slug); err != nil {
 				return nil, nil, err
 			}
-			w.Sessions = append(w.Sessions, Session{ID: sessionID, Tenant: t.Slug, Agent: agent, State: "idle", Updated: time.Now().UTC().Format(time.RFC3339)})
+			w.Sessions = append(w.Sessions, Session{ID: sessionID, Tenant: t.Slug, Agent: agent, State: "idle", Updated: time.Now().UTC().Format(time.RFC3339), Node: nodeName()})
 			s = &w.Sessions[len(w.Sessions)-1]
 		case err != nil:
 			s = nil
@@ -763,6 +763,12 @@ func applyMove(path string, w *Workspace, command string, args []string) (*Tenan
 		releaseOwner(w, it)
 	}
 	it.Status, it.Updated = to, stamp
+	switch command {
+	case "start":
+		it.StartedOn = nodeName()
+	case "ready", "reopen":
+		it.StartedOn = ""
+	}
 	if command == "ready" || command == "start" || command == "reopen" {
 		it.Judged, it.JudgedBy, it.Evidence = "", "", nil
 	}

@@ -252,6 +252,7 @@ func TestConfigureInteractiveSaves(t *testing.T) {
 		"2\n" + // status
 		"\n6\n" + // discover
 		"\n" + // wip.session (TSK-082): Enter keeps
+		"\n\n\n" + // node.name, node.silent, node.stall: Enter keeps
 		"s\n"
 	out := configureScript(t, script, func() { runAll(t, []string{"configure"}) })
 	if !strings.Contains(out, "status.show: true -> false") || !strings.Contains(out, "Save or Discard") {

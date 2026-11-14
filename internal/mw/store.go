@@ -41,6 +41,7 @@ type indexTenant struct {
 	Archived bool     `json:"archived,omitempty"`
 	Tags     []string `json:"tags,omitempty"`
 	Job      string   `json:"job,omitempty"`
+	Node     string   `json:"node,omitempty"`
 }
 
 // indexDoc is the schema 9 .miniwaves.json.
@@ -131,7 +132,7 @@ func loadScopedFrom(path string, minSchema int, all bool, slugs ...string) (*Wor
 		want[s] = true
 	}
 	for _, it := range ix.Tenants {
-		t := Tenant{Slug: it.Slug, Name: it.Name, Path: it.Path, Hidden: it.Archived, Tags: it.Tags, Job: it.Job, Next: map[string]int{}, Items: []Item{}}
+		t := Tenant{Slug: it.Slug, Name: it.Name, Path: it.Path, Hidden: it.Archived, Tags: it.Tags, Job: it.Job, Node: it.Node, Next: map[string]int{}, Items: []Item{}}
 		if all || want[it.Slug] {
 			tb, err := fsx.ReadFile(tenantPath(path, it.Slug))
 			if err != nil && !os.IsNotExist(err) {
@@ -177,7 +178,7 @@ func indexBytes(w *Workspace) []byte {
 		ix.Defaults = nil
 	}
 	for _, t := range w.Tenants {
-		ix.Tenants = append(ix.Tenants, indexTenant{t.Slug, t.Name, t.Path, t.Hidden, t.Tags, t.Job})
+		ix.Tenants = append(ix.Tenants, indexTenant{t.Slug, t.Name, t.Path, t.Hidden, t.Tags, t.Job, t.Node})
 	}
 	b, _ := json.Marshal(ix)
 	return append(b, '\n')
