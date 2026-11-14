@@ -559,6 +559,24 @@ mw node list [-j]
 - A node with no beat for `node.silent` minutes (user setting, default 120) is silent. `node.stall` (default 240) is the minutes without a log entry after which a row in progress counts as stalled.
 - `mw start` records the node on the row (`started_on`) and `mw session start` on the session when `node.name` is set. Older mw versions keep these optional fields; the schema stays 9.
 
+### Shared boards: `mw merge-file`
+
+Computers that commit `.miniwaves.json` and `.miniwaves/` to one git repo collide on rebase. `mw merge-file BASE OURS THEIRS [PATH]` is a git merge driver that merges the JSON instead of the lines; mw runs no git command. Once per clone:
+
+```
+# .gitattributes (committed)
+.miniwaves.json merge=mw
+.miniwaves/*.json merge=mw
+.miniwaves/nodes/*.json merge=mw
+# per clone
+git config merge.mw.driver "mw merge-file %O %A %B %P"
+```
+
+- Rows merge by id (tenants by slug, sessions by id). A field changed on one side only is taken; changed on both, the later writer wins: the later `updated`, then the later log entry (nanosecond stamps), then THEIRS. Changed in the same second, the row also gets a `merge` log entry holding both values.
+- `events` are a union ordered by time; `notes` and `evidence` a union; `next` counters the maximum, never behind an id in use.
+- A row added on both sides with the same id keeps both: the later one is renumbered (references to it in `parent`/`wave` are not rewritten; the `merge` log entry names the old id). A row deleted on one side and untouched on the other stays deleted (archive moves), one that was edited is kept.
+- Node beat files take the newer beat. Anything that is not a board file, or that does not parse, makes the driver exit 1 and git reports a normal conflict.
+
 ## Error codes (`-j`)
 
 A command that fails and was run with `-j` also prints one JSON object on stdout: `{"error":MESSAGE,"code":CODE,"exit":N}`. `error` is the text of the stderr line without `mw: `. Stderr and the exit code are exactly what they were without `-j` (wr and scripts match them), and stdout stays empty on failure without `-j`. `ready|start|block|done|reopen` accept `-j` only for this: a success prints the same line as before. `get-prompt session NAME -j` keeps its own object byte for byte (`{"error":"session_exists","session":NAME}`, exit 3): its `error` token already is the stable code, so it has no `code` field. `next -j` with nothing ready still prints `null` and exits 0 (without `-j`: `mw: nothing ready`, exit 1).

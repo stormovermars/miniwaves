@@ -255,6 +255,9 @@ func run(args []string) error {
 	if args[0] == "node" && len(args) > 1 && args[1] == "set" { // a per-user setting: needs no board
 		return nodeCommand("", nil, args[1:])
 	}
+	if args[0] == "merge-file" { // a git merge driver: it runs inside a merge, before any board can be read
+		return mergeFileCommand(args[1:])
+	}
 	if args[0] == "configure" {
 		return configureCommand(args[1:])
 	}
@@ -596,6 +599,17 @@ Nodes are the computers that work one shared board. set stores this computer's n
 beat writes .miniwaves/nodes/NAME.json (time, state, item in flight, counts of this node's sessions and of its ready and doing rows,
 mw version): one file per node, so two computers never write the same file. The state defaults to working when a row is doing here, else idle.
 list shows every node with a beat file: live, or silent when its last beat is older than the user setting node.silent (minutes, default 120).`,
+		"merge-file": `mw merge-file BASE OURS THEIRS [PATH]
+A git merge driver for the board files (.miniwaves.json, .miniwaves/*.json, .miniwaves/nodes/*.json). It merges the JSON, not the lines:
+rows by id, fields newest-wins (later updated, then later log entry, then THEIRS), logs as a union ordered by time, notes and evidence as a union,
+counters as the maximum. A row added on both sides with the same id keeps both (the later one is renumbered). A same-second conflict is
+written to the row's log. Nothing is ever dropped except what one side deleted and the other left untouched. The result replaces OURS; exit 0.
+Set it up once per clone:
+  .gitattributes:  .miniwaves.json merge=mw
+                   .miniwaves/*.json merge=mw
+                   .miniwaves/nodes/*.json merge=mw
+  git config merge.mw.driver "mw merge-file %O %A %B %P"
+mw runs no git command itself.`,
 		"fanfare": `mw fanfare [-j]
 mw fanfare on | off
 mw fanfare set enabled=true milestone_seconds=15 finale_seconds=60 volume=1 task_beep=true dir=~/fanfare-finale-songs
@@ -825,6 +839,7 @@ Usage:
   mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
   mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [--ticket KEY]
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY]
+  mw merge-file BASE OURS THEIRS [PATH]  git merge driver for shared boards (USAGE.md, "Fleets")
   mw node set NAME | beat [STATE] [--item ID] [-m TEXT] | list [-j]
   mw user show [-j] | get [KEY] [-j] | set KEY=VALUE...
   mw configure [--show [-j]] | KEY=VALUE...
