@@ -275,7 +275,7 @@ func warnNoLedger(path string, t *Tenant, it *Item) {
 }
 
 // mergeHistoryFiles unions two versions of a ledger file line by line, oldest first, without repeats.
-func mergeHistoryFiles(parts ...[]byte) []byte {
+func mergeHistoryFiles(parts ...[]byte) ([]byte, error) {
 	seen := map[string]bool{}
 	var lines []string
 	for _, p := range parts {
@@ -287,10 +287,13 @@ func mergeHistoryFiles(parts ...[]byte) []byte {
 				lines = append(lines, s)
 			}
 		}
+		if err := sc.Err(); err != nil { // a line over 1 MB: fail loudly, never truncate the file
+			return nil, fmt.Errorf("history file: %w", err)
+		}
 	}
 	sort.Strings(lines) // every line starts with its UTC time
 	if len(lines) == 0 {
-		return nil
+		return nil, nil
 	}
-	return []byte(strings.Join(lines, "\n") + "\n")
+	return []byte(strings.Join(lines, "\n") + "\n"), nil
 }

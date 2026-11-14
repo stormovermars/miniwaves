@@ -109,7 +109,14 @@ func TestHistoryDoneWarnsOnReleaseRow(t *testing.T) {
 func TestHistoryMergeUnion(t *testing.T) {
 	a := `{"at":"2026-01-02T00:00:00Z","node":"a","kind":"push","repo":"r","ref":"1"}` + "\n"
 	b := `{"at":"2026-01-01T00:00:00Z","node":"a","kind":"push","repo":"r","ref":"0"}` + "\n" + strings.TrimSpace(a) + "\n"
-	got := string(mergeHistoryFiles([]byte(a), []byte(b)))
+	m, err := mergeHistoryFiles([]byte(a), []byte(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(m)
+	if _, err := mergeHistoryFiles([]byte(strings.Repeat("x", 2<<20))); err == nil {
+		t.Fatal("a line over the scanner limit was truncated silently")
+	}
 	if strings.Count(got, "\n") != 2 || !strings.HasPrefix(got, `{"at":"2026-01-01`) {
 		t.Fatalf("%q", got)
 	}
