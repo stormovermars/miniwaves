@@ -98,7 +98,7 @@ type merger struct {
 	shape  string // tenant | index | archive
 	oStamp time.Time
 	tStamp time.Time
-	used   map[string]bool // item ids in use (renumbering)
+	used   map[string]bool            // item ids in use (renumbering)
 	ren    map[byte]map[string]string // side (o|t) -> old id -> new id, for rows renumbered on that side
 }
 
