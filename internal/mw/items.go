@@ -365,9 +365,8 @@ func addItem(path string, w *Workspace, args []string) error {
 			return err
 		}
 	}
-	t.Next[prefix]++
 	now := time.Now().UTC().Format(time.RFC3339)
-	it := Item{Ticket: ticket, ID: fmt.Sprintf("%s-%03d", prefix, t.Next[prefix]), Kind: kind,
+	it := Item{Ticket: ticket, ID: t.nextID(prefix), Kind: kind,
 		Title: strings.Join(pos[1:], " "), Status: status, Parent: parent,
 		Body: o["body"], Acceptance: o["acceptance"], Node: route, Cost: costN, Created: now, Updated: now}
 	if status == "done" && kind != "prompt" {
@@ -1487,4 +1486,24 @@ func foreignItem(board, slug, id string) (Item, bool) {
 		}
 	}
 	return Item{}, false
+}
+
+// nextID hands out the next id of a prefix. The counter lives in the tenant file and the archive is merged separately,
+// so after a pull the archive may hold a higher id: the counter is raised to it first, and an id is never given twice.
+func (t *Tenant) nextID(prefix string) string {
+	n := t.Next[prefix]
+	if t.board != "" {
+		a, err := loadArchive(t.board, t.Slug)
+		if err != nil { // a conflicted or damaged archive: no id can be trusted, refuse rather than risk a repeat
+			panic(fmt.Sprintf("archive of %s is unreadable (%v): resolve it in git before adding rows", t.Slug, err))
+		}
+		for _, it := range a.Items {
+			if p, num, ok := idNum(it.ID); ok && p == prefix && num > n {
+				n = num
+			}
+		}
+	}
+	n++
+	t.Next[prefix] = n
+	return fmt.Sprintf("%s-%03d", prefix, n)
 }

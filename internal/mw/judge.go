@@ -533,8 +533,7 @@ func rejectCommand(path string, w *Workspace, args []string) error {
 	var fix *Item
 	reset(it)
 	if it.Kind == "story" {
-		t.Next["TSK"]++
-		t.Items = append(t.Items, Item{ID: fmt.Sprintf("TSK-%03d", t.Next["TSK"]), Kind: "task", Title: "Fix: " + reason,
+		t.Items = append(t.Items, Item{ID: t.nextID("TSK"), Kind: "task", Title: "Fix: " + reason,
 			Status: "ready", Parent: it.ID, Created: now, Updated: now})
 		fix = &t.Items[len(t.Items)-1]
 		emit(fix, now, "created", by, "")

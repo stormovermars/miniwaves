@@ -195,8 +195,7 @@ func decisionsChore(t *Tenant, now string) *Item {
 			return &t.Items[i]
 		}
 	}
-	t.Next["CHR"]++
-	it := Item{ID: fmt.Sprintf("CHR-%03d", t.Next["CHR"]), Kind: "chore", Title: "Decisions", Status: "done",
+	it := Item{ID: t.nextID("CHR"), Kind: "chore", Title: "Decisions", Status: "done",
 		Judged: "ungated", Body: "Decisions recorded with mw decide.", Created: now, Updated: now}
 	emit(&it, now, "created", "", "")
 	t.Items = append(t.Items, it)

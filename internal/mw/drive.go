@@ -435,8 +435,7 @@ func recordText(m driveMsg, sender string) string {
 
 func newDriveItem(t *Tenant, kind, title, parent, ticket, body, now string) *Item {
 	prefix := kinds[kind]
-	t.Next[prefix]++
-	it := Item{ID: fmt.Sprintf("%s-%03d", prefix, t.Next[prefix]), Kind: kind, Title: title, Status: "ready",
+	it := Item{ID: t.nextID(prefix), Kind: kind, Title: title, Status: "ready",
 		Parent: parent, Ticket: ticket, Body: body, Created: now, Updated: now}
 	emit(&it, now, "created", "", "")
 	t.Items = append(t.Items, it)

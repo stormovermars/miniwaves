@@ -137,6 +137,7 @@ type Tenant struct {
 	Node              string            `json:"-"`                  // default route of its rows (mw tenant node); stored in the index
 	Hidden            bool              `json:"-"`                  // mw tenant archive (stored in the index as "archived")
 	Tags              []string          `json:"-"`                  // mw tenant tag (stored in the index)
+	board             string            // the board file, so an allocator can look at the archive
 	loaded            bool
 	noFile            bool // loaded from an index slug with no tenant file: save writes none until it has content
 }

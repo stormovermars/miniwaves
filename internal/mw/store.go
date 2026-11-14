@@ -132,7 +132,7 @@ func loadScopedFrom(path string, minSchema int, all bool, slugs ...string) (*Wor
 		want[s] = true
 	}
 	for _, it := range ix.Tenants {
-		t := Tenant{Slug: it.Slug, Name: it.Name, Path: it.Path, Hidden: it.Archived, Tags: it.Tags, Job: it.Job, Node: it.Node, Next: map[string]int{}, Items: []Item{}}
+		t := Tenant{Slug: it.Slug, Name: it.Name, Path: it.Path, Hidden: it.Archived, Tags: it.Tags, Job: it.Job, Node: it.Node, board: path, Next: map[string]int{}, Items: []Item{}}
 		if all || want[it.Slug] {
 			tb, err := fsx.ReadFile(tenantPath(path, it.Slug))
 			if err != nil && !os.IsNotExist(err) {
