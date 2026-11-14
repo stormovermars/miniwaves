@@ -48,6 +48,7 @@ func perfBoard(t *testing.T) string {
 
 func timed(t *testing.T, name string, limit time.Duration, fn func()) time.Duration {
 	t.Helper()
+	limit *= raceFactor
 	start := time.Now()
 	fn()
 	d := time.Since(start)
