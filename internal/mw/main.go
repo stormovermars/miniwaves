@@ -33,7 +33,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "cost": true, "item": true, "left": true, "node": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "changed": true, "cost": true, "item": true, "left": true, "node": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -415,6 +415,8 @@ func dispatch(path string, w *Workspace, args []string) error {
 		return contextCommand(w, args[1:])
 	case "node":
 		return nodeCommand(path, w, args[1:])
+	case "fleet":
+		return fleetCommand(path, w, args[1:])
 	case "drive":
 		return driveCommand(path, w, args[1:])
 	default:
@@ -446,7 +448,7 @@ func readOnly(args []string) bool {
 		sub = args[1]
 	}
 	switch args[0] {
-	case "list", "ls", "show", "log", "board", "review", "judge", "context", "get-prompt", "check":
+	case "list", "ls", "show", "log", "board", "review", "judge", "context", "get-prompt", "check", "fleet":
 		return true
 	case "next":
 		return !has("--claim")
@@ -581,7 +583,7 @@ edit it runs. The implicit local session is never reaped.
 Job roles: when the session's tenant belongs to a job that exists (mw jobs), reap also skips sessions whose role (-a) is dispatcher or newsdesk,
 with no extra flag; --except still skips any named session.`,
 		"get-prompt": `mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]
-mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
+mw get-prompt dispatcher|coach|newsdesk|fleet-coordinator [NAME] [--job ID] [-j]
 Print a minimal embedded prompt to paste into an assistant. Retrieval changes no state.
 session: exit code 3 when the session NAME already exists (-j prints {"error":"session_exists","session":NAME}).
 --headless drops the Setup block, Loop, folders hint and reply format (a runner handles those) and
@@ -606,6 +608,12 @@ beat --left PCT records the budget the node has left (0-100).
 Routing: mw edit ID node=NAME|any|- (add: --node) names who may take a row; mw tenant node SLUG NAME|any|- sets the tenant default. mw next and mw list --node NAME
 show the rows routed to NAME or to anyone; a computer with a node name filters next by it (--node - lifts that). mw next --node skips rows with an open ask.
 list shows every node with a beat file: live, or silent when its last beat is older than the user setting node.silent (minutes, default 120).`,
+		"fleet": `mw fleet [-t SLUG] [-j] [--changed]
+The fleets view, per node: live or SILENT (no beat for node.silent minutes), what is in flight (age, last log entry), STALLED rows (in flight on a
+silent node, or no log entry for node.stall minutes), blocked rows, rows waiting on an answer (an open ask: never offered, never moved),
+the row mw next --node would serve, ready count and cost, the budget left (LOW at 10% or less). Below: ready rows for anyone, movable (stalled rows
+anyone may take) and held (ready or stalled rows pinned to a silent node: mw edit ID node=any). --changed prints "no change" when nothing differs from the
+last --changed run of this session (state file in the user's mw config folder), else the full view. mw get-prompt fleet-coordinator prints the loop.`,
 		"merge-file": `mw merge-file BASE OURS THEIRS [PATH]
 A git merge driver for the board files (.miniwaves.json, .miniwaves/*.json, .miniwaves/nodes/*.json). It merges the JSON, not the lines:
 rows by id, fields newest-wins (later updated, then later log entry, then THEIRS), logs as a union ordered by time, notes and evidence as a union,
@@ -843,9 +851,10 @@ Usage:
   mw session start NAME [-t SLUG] [-a ROLE]
   mw session list [-t SLUG] [-j] [-v] | stop NAME [--release] | reap [-t SLUG | -A] [--older-than DUR] [--except NAMES] [-n] [-j]
   mw get-prompt session NAME [-t SLUG] [-a ROLE] [--headless] [-j]
-  mw get-prompt dispatcher|coach|newsdesk [NAME] [--job ID] [-j]
+  mw get-prompt dispatcher|coach|newsdesk|fleet-coordinator [NAME] [--job ID] [-j]
   mw add KIND TITLE... [-t SLUG] [-p ID] [-w WAVE] [-b TEXT] [-c TEXT] [--ticket KEY]
   mw edit ID [-c TEXT] [-b TEXT] [-p PARENT|-] [ticket=KEY] [node=NAME|any|-] [cost=N|-]
+  mw fleet [-t SLUG] [-j] [--changed]  per-node view of a shared board
   mw merge-file BASE OURS THEIRS [PATH]  git merge driver for shared boards (USAGE.md, "Fleets")
   mw node set NAME | beat [STATE] [--item ID] [-m TEXT] | list [-j]
   mw user show [-j] | get [KEY] [-j] | set KEY=VALUE...
@@ -1130,7 +1139,7 @@ func options(args []string) (map[string]string, []string, error) {
 		if key == "" || !validOptions[key] {
 			return nil, nil, fmt.Errorf("unknown option %s", a)
 		}
-		if key == "json" || key == "explain" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "md" || key == "archived" || key == "follow" || key == "exec" || key == "accept" {
+		if key == "json" || key == "explain" || key == "all" || key == "verbose" || key == "na" || key == "evidence-gap" || key == "workspace" || key == "dry-run" || key == "release" || key == "full" || key == "force" || key == "claim" || key == "headless" || key == "prompt" || key == "html" || key == "md" || key == "archived" || key == "follow" || key == "exec" || key == "accept" || key == "changed" {
 			o[key] = "true"
 			continue
 		}

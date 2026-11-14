@@ -561,6 +561,17 @@ mw node list [-j]
 - Budget and cost: `mw node beat --left PCT` records the budget the node has left (0..100); `mw edit ID cost=N|-` (add: `--cost N`) is a row's estimate in thousands of tokens.
 - `mw start` records the node on the row (`started_on`) and `mw session start` on the session when `node.name` is set. Older mw versions keep these optional fields; the schema stays 9.
 
+### The fleets view: `mw fleet`
+
+```
+mw fleet [-t SLUG] [-j] [--changed]
+mw get-prompt fleet-coordinator [NAME] [-j]
+```
+
+Per node: live or SILENT, state, budget left (LOW at 10% or less), sessions, ready rows and their cost, and the rows by kind: in flight (age, last log entry), STALLED (in flight on a silent node, or no log entry for `node.stall` minutes), blocked, waiting on an answer (an open ask: never offered for dispatch, never listed as movable), and `next`, the row `mw next --node NAME` would serve. Rows in flight with no node known sit under `?`. Below the nodes: ready rows for anyone, `movable` (stalled rows routed to anyone) and `held` (ready or stalled rows pinned to a silent node: `mw edit ID node=any` frees them). `mw reopen ID` puts a stalled row back to ready.
+
+`--changed` compares the view (ages and beat times left out) with the last `--changed` run of the same session and prints the single line `no change` when nothing differs, else the full view. The state is `fleet-<hash>.json` next to `mw-user.json`, one per board and `MW_SESSION`, so two coordinators on one computer never swallow each other's changes. The prompt `fleet-coordinator` tells a session how to run that loop.
+
 ### Shared boards: `mw merge-file`
 
 Computers that commit `.miniwaves.json` and `.miniwaves/` to one git repo collide on rebase. `mw merge-file BASE OURS THEIRS [PATH]` is a git merge driver that merges the JSON instead of the lines; mw runs no git command. Once per clone:

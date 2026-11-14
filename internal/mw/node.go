@@ -236,7 +236,7 @@ func nodeRows(path string, now time.Time) []nodeRow {
 }
 
 func nodeList(path string, o map[string]string) error {
-	rows := nodeRows(path, time.Now())
+	rows := nodeRows(path, nowFn())
 	if o["json"] == "true" {
 		return printJSON(rows)
 	}

@@ -57,7 +57,7 @@ All off until you turn them on. Details in [USAGE.md](USAGE.md).
 | Coordinator kit (plan, news desk, build lock) | `mw init --kit coordinated --job ID` | delete the files it wrote |
 | Fanfare, per board | `mw fanfare set enabled=true` | `mw fanfare set enabled=false` |
 | Fanfare, just for you | `mw user set fanfare.enabled=true` | `mw user set fanfare.enabled=false` |
-| Fleet of computers (nodes) sharing one board | `mw node set NAME`, `mw node beat`, `mw node list` (USAGE.md, "Fleets") | don't set a node name |
+| Fleet of computers (nodes) sharing one board | `mw node set NAME`, `mw node beat`, `mw fleet [--changed]`, `mw edit ID node=NAME`, `mw merge-file` as a git merge driver (USAGE.md, "Fleets") | don't set a node name |
 | Find boards | `mw boards [DIR] [--depth N] [--up] [-j]` | read-only, nothing to turn off |
 | Uncapped news lists | `mw news --job ID --full -o FILE` (or `-o -`, `--format json\|text`) | leave `--full` off |
 | Personal settings (fanfare, chat bar, discovery) | `mw configure` (or `mw configure KEY=VALUE...`) | `mw user set KEY=` resets a key |
