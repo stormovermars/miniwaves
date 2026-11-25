@@ -102,3 +102,7 @@ No schema change, no migration step. `MW_NO_WR=1` makes `install.sh`, `install.p
 ## 0.3.23
 
 No schema change (still 9), no migration step. Fleets: `mw node`, `mw fleet`, routing with `node=` on rows, and `mw merge-file`, a git merge driver for boards that several computers commit (setup in USAGE.md, "Fleets"). New fields are optional: an older mw keeps the item fields but drops the new session and tenant `node` fields when it saves, so run 0.3.23 on every computer that shares a board.
+
+## 0.3.24
+
+No schema change (still 9), no migration step. `mw ask ID QUESTION --option A --option B` asks a closed question with 2 to 4 options; the ask event stores them in an optional `options` field. An event now keeps JSON fields this mw does not know when the board is saved, so run 0.3.24 on every computer that shares a board (an older mw drops `options`).

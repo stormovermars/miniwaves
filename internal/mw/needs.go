@@ -17,12 +17,13 @@ import (
 
 // needRow is one open question: what review -j lists under "needs".
 type needRow struct {
-	Tenant   string `json:"tenant" toon:"tenant"`
-	Item     string `json:"item" toon:"item"`
-	Question string `json:"question" toon:"question"`
-	By       string `json:"by" toon:"by"`
-	At       string `json:"at" toon:"at"`
-	For      string `json:"for,omitempty" toon:"for,omitempty"` // the answerer session, on rows of for_answerers
+	Tenant   string   `json:"tenant" toon:"tenant"`
+	Item     string   `json:"item" toon:"item"`
+	Question string   `json:"question" toon:"question"`
+	By       string   `json:"by" toon:"by"`
+	At       string   `json:"at" toon:"at"`
+	For      string   `json:"for,omitempty" toon:"for,omitempty"`         // the answerer session, on rows of for_answerers
+	Options  []string `json:"options,omitempty" toon:"options,omitempty"` // the allowed answers (mw ask --option)
 }
 
 // finalAction is true for the events that move an item to its final state (done; accept also finishes it).
@@ -59,7 +60,7 @@ func needsOf(sessions []Session, t *Tenant) []needRow {
 	rows := []needRow{}
 	for _, it := range t.Items {
 		if e, ok := openAsk(it); ok && liveAnswerer(sessions, t.Slug, e) == "" {
-			rows = append(rows, needRow{t.Slug, it.ID, e.Note, e.By, e.At, ""})
+			rows = append(rows, needRow{t.Slug, it.ID, e.Note, e.By, e.At, "", e.Options})
 		}
 	}
 	return rows
@@ -71,7 +72,7 @@ func answererNeeds(sessions []Session, t *Tenant) []needRow {
 	for _, it := range t.Items {
 		if e, ok := openAsk(it); ok {
 			if a := liveAnswerer(sessions, t.Slug, e); a != "" {
-				rows = append(rows, needRow{t.Slug, it.ID, e.Note, e.By, e.At, a})
+				rows = append(rows, needRow{t.Slug, it.ID, e.Note, e.By, e.At, a, e.Options})
 			}
 		}
 	}
@@ -85,7 +86,7 @@ func printAnswererNeeds(label string, rows []needRow) {
 	}
 	fmt.Printf("%s (%d)\n", label, len(rows))
 	for _, r := range rows {
-		fmt.Printf("  %-8s %s @%s  for %s  %s\n", r.Item, compactText(r.Question, 90), displayName(r.By), r.For, ago(r.At))
+		fmt.Printf("  %-8s %s%s @%s  for %s  %s\n", r.Item, compactText(r.Question, 90), optionsSuffix(r.Options), displayName(r.By), r.For, ago(r.At))
 	}
 }
 
@@ -96,8 +97,52 @@ func printNeeds(rows []needRow) {
 		if r.By != "" {
 			by = " @" + displayName(r.By)
 		}
-		fmt.Printf("  %-8s %s%s  %s\n", r.Item, compactText(r.Question, 90), by, ago(r.At))
+		fmt.Printf("  %-8s %s%s%s  %s\n", r.Item, compactText(r.Question, 90), optionsSuffix(r.Options), by, ago(r.At))
 	}
+}
+
+// optionsSuffix shows an ask's options after the question: " [A | B]" ("" for a free-text ask).
+func optionsSuffix(opts []string) string {
+	if len(opts) == 0 {
+		return ""
+	}
+	return " [" + strings.Join(opts, " | ") + "]"
+}
+
+// askOptions splits the repeated --option values (joined by options()), checks them (2 to 4, not blank, distinct
+// ignoring case) and returns them trimmed. No --option gives nil.
+func askOptions(raw string) ([]string, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var opts []string
+	seen := map[string]bool{}
+	for _, p := range strings.Split(raw, "\x1f") {
+		p = strings.Join(strings.Fields(p), " ")
+		if p == "" {
+			return nil, errors.New("--option must not be blank")
+		}
+		if seen[strings.ToLower(p)] {
+			return nil, fmt.Errorf("--option %q is given twice", p)
+		}
+		seen[strings.ToLower(p)] = true
+		opts = append(opts, p)
+	}
+	if len(opts) < 2 || len(opts) > 4 {
+		return nil, fmt.Errorf("--option takes 2 to 4 values, got %d", len(opts))
+	}
+	return opts, nil
+}
+
+// matchOption returns the option text equal to answer (case-insensitive, whitespace squeezed).
+func matchOption(opts []string, answer string) (string, bool) {
+	a := strings.ToLower(strings.Join(strings.Fields(answer), " "))
+	for _, o := range opts {
+		if strings.ToLower(o) == a {
+			return o, true
+		}
+	}
+	return "", false
 }
 
 func askCommand(path string, w *Workspace, args []string) error {
@@ -106,9 +151,13 @@ func askCommand(path string, w *Workspace, args []string) error {
 		return err
 	}
 	if len(pos) < 2 {
-		return errors.New("usage: mw ask ID QUESTION... [-t SLUG] [-s NAME]")
+		return errors.New("usage: mw ask ID QUESTION... [--option TEXT]... [-t SLUG] [-s NAME]")
 	}
-	if err := allowOptions(o, "tenant", "session"); err != nil {
+	if err := allowOptions(o, "tenant", "session", "option"); err != nil {
+		return err
+	}
+	opts, err := askOptions(o["option"])
+	if err != nil {
 		return err
 	}
 	t, err := selectTenant(w, o)
@@ -126,6 +175,7 @@ func askCommand(path string, w *Workspace, args []string) error {
 	who := value(o, "session", os.Getenv("MW_SESSION"))
 	now := time.Now().UTC().Format(time.RFC3339)
 	emit(it, now, "ask", who, q)
+	it.Events[len(it.Events)-1].Options = opts
 	touchSession(w, who, now)
 	it.Updated = now
 	if err := save(path, w); err != nil {
@@ -169,6 +219,16 @@ func answerCommand(path string, w *Workspace, args []string) error {
 	ask, ok := openAsk(*it)
 	if !ok {
 		return fmt.Errorf("%s has no open question", it.ID)
+	}
+	if len(ask.Options) > 0 { // a closed question: the answer is one of its options
+		if accept {
+			return fmt.Errorf("%s has options (%s): answer with one of them, --accept is refused", it.ID, strings.Join(ask.Options, " | "))
+		}
+		o, ok := matchOption(ask.Options, text)
+		if !ok {
+			return fmt.Errorf("%q is not one of the options of %s: %s", text, it.ID, strings.Join(ask.Options, " | "))
+		}
+		text = o
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	mark := ""

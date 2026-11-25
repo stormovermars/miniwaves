@@ -24,13 +24,14 @@ func emit(it *Item, at, action, by, note string) {
 }
 
 type logRow struct {
-	At      string `json:"ts" toon:"ts"`
-	Tenant  string `json:"tenant" toon:"tenant"`
-	Item    string `json:"item" toon:"item"`
-	Action  string `json:"action" toon:"action"`
-	By      string `json:"by" toon:"by"`
-	Note    string `json:"note" toon:"note"`
-	Key     string `json:"key,omitempty" toon:"key,omitempty"` // tenant/item/content hash, set by log --since
+	At      string   `json:"ts" toon:"ts"`
+	Tenant  string   `json:"tenant" toon:"tenant"`
+	Item    string   `json:"item" toon:"item"`
+	Action  string   `json:"action" toon:"action"`
+	By      string   `json:"by" toon:"by"`
+	Note    string   `json:"note" toon:"note"`
+	Options []string `json:"options,omitempty" toon:"options,omitempty"` // ask events: the allowed answers
+	Key     string   `json:"key,omitempty" toon:"key,omitempty"`         // tenant/item/content hash, set by log --since
 	sortKey time.Time
 }
 
@@ -70,7 +71,7 @@ func tenantRows(t *Tenant) []logRow {
 	var rows []logRow
 	for _, it := range t.Items {
 		for _, e := range it.Events {
-			rows = append(rows, logRow{At: e.At, Tenant: t.Slug, Item: it.ID, Action: e.Action, By: e.By, Note: e.Note, sortKey: parseTS(e.At)})
+			rows = append(rows, logRow{At: e.At, Tenant: t.Slug, Item: it.ID, Action: e.Action, By: e.By, Note: e.Note, Options: e.Options, sortKey: parseTS(e.At)})
 		}
 	}
 	return rows

@@ -33,7 +33,7 @@ var validOptions = map[string]bool{
 	"path": true, "body": true, "acceptance": true, "kind": true,
 	"status": true, "limit": true, "json": true, "all": true, "verbose": true,
 	"na": true, "wave": true, "by": true, "no-evidence": true, "evidence-gap": true, "workspace": true, "na-rest": true, "dry-run": true,
-	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "resets": true, "changed": true, "cost": true, "item": true, "left": true, "node": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true,
+	"since": true, "since-file": true, "follow": true, "exec": true, "poll": true, "kit": true, "job": true, "claim": true, "headless": true, "release": true, "full": true, "force": true, "older-than": true, "except": true, "prompt": true, "days": true, "html": true, "md": true, "out": true, "explain": true, "plugins": true, "ticket": true, "format": true, "width": true, "message": true, "on": true, "claude-session": true, "answerer": true, "to": true, "id": true, "resets": true, "changed": true, "cost": true, "item": true, "left": true, "node": true, "idle": true, "at": true, "accept": true, "action": true, "grep": true, "option": true,
 }
 
 // exitError carries a specific exit code. quiet means the details were already printed
@@ -665,14 +665,17 @@ Keys (defaults): title (the id), description (none, one line ≤120), max_worker
 news.out (docs/news/<job>/), news.url (http/https), news_releases (<news.out>/releases), metrics (none), tracker (none; jira linear youtrack github gitlab azure shortcut clickup asana), tracker_url (https base URL), summary (none).
 news.out, news_releases, metrics and summary must be relative, inside the workspace (no .., no absolute path, no ~). An empty VALUE resets a key.
 Job ids match ^[a-z0-9][a-z0-9-]{0,31}$. Example: mw jobs enable tiny -t sheet,doc && mw jobs set tiny max_workers=3`,
-		"ask": `mw ask ID QUESTION... [-t SLUG] [-s NAME]
+		"ask": `mw ask ID QUESTION... [--option TEXT]... [-t SLUG] [-s NAME]
 Record a question that needs a human, as an "ask" event on the item (any board, no gate; the status is unchanged).
-It stays open until an answer follows it on the same item. mw review shows it as "needs you" (-j: needs), and so does mw board.`,
+It stays open until an answer follows it on the same item. mw review shows it as "needs you" (-j: needs), and so does mw board.
+--option TEXT (repeat it, 2 to 4 times, distinct) lists the allowed answers: mw answer then accepts only one of them (case-insensitive)
+and refuses --accept; review shows them as [A | B] (-j: "options"). Without --option any text is an answer. Example: mw ask STR-001 "Ship now?" --option yes --option later`,
 		"answer": `mw answer ID TEXT... --by NAME [-t SLUG]
 mw answer ID --accept --by NAME [-t SLUG]
 Human only (refused under MW_SESSION or -s; --by NAME when stdin is not a terminal). Appends an "answer" event that
 closes the item's open ask; refused when the item has none. --accept takes the ask as asked: it first records a
-"decide" event "accepted: <the ask>" on the item, then the answer "accepted".`,
+"decide" event "accepted: <the ask>" on the item, then the answer "accepted". When the ask has options (mw ask --option), the answer must be
+one of them and --accept is refused.`,
 		"decide": `mw decide TEXT... [--by NAME] [-s SESSION] [-b WHY] [-p ID] [-t SLUG]
 Open to humans and sessions: with -s (or MW_SESSION) the event is recorded by that session and --by NAME is kept in the
 note as "(for NAME)"; else by --by NAME (required when stdin is not a terminal), else the login name. Record a decision as a "decide" event on item ID (-p), else on the tenant's "Decisions" chore, which is created
@@ -1152,6 +1155,10 @@ func options(args []string) (map[string]string, []string, error) {
 		}
 		if key == "tag" && o[key] != "" { // repeatable: --tag a --tag b means both
 			o[key], i = o[key]+","+args[i+1], i+1
+			continue
+		}
+		if key == "option" && o[key] != "" { // repeatable (mw ask): joined with a unit separator, split by askOptions
+			o[key], i = o[key]+"\x1f"+args[i+1], i+1
 			continue
 		}
 		o[key], i = args[i+1], i+1

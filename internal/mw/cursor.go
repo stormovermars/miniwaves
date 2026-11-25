@@ -114,7 +114,7 @@ func logSince(tenants []*Tenant, cursor string, limit int) ([]logRow, string, er
 						continue
 					}
 				}
-				ke := keyedEvent{row: logRow{At: e.At, Tenant: t.Slug, Item: it.ID, Action: e.Action, By: e.By, Note: e.Note, Key: k}, ts: ts, idx: i}
+				ke := keyedEvent{row: logRow{At: e.At, Tenant: t.Slug, Item: it.ID, Action: e.Action, By: e.By, Note: e.Note, Options: e.Options, Key: k}, ts: ts, idx: i}
 				fresh = append(fresh, ke)
 			}
 		}

@@ -1,0 +1,21 @@
+$ mw review
+needs you (1)
+  TSK-001  Ship the index? [yes | later | never] @bot  <AGO>
+judge: []
+blocked: []
+waves: []
+$ mw review -j (needs)
+[
+  {
+    "tenant": "needs-app",
+    "item": "TSK-001",
+    "question": "Ship the index?",
+    "by": "bot",
+    "at": "<TS>",
+    "options": [
+      "yes",
+      "later",
+      "never"
+    ]
+  }
+]

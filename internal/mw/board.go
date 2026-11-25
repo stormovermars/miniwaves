@@ -105,6 +105,53 @@ type Event struct {
 	By     string `json:"by,omitempty"`
 	Note   string `json:"note,omitempty"`
 	On     string `json:"on,omitempty"` // block events: the item this one waits for (mw block --on ID)
+	// Options are the 2 to 4 allowed answers of an ask event (mw ask --option); empty = free text.
+	Options []string `json:"options,omitempty"`
+
+	extra map[string]json.RawMessage // fields this mw does not know: kept, written back (like Item)
+}
+
+var eventJSONKeys = []string{"at", "action", "by", "note", "on", "options"}
+
+// UnmarshalJSON reads the known fields and keeps unknown ones, so a newer mw's event fields survive a save.
+func (e *Event) UnmarshalJSON(b []byte) error {
+	type plain Event
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	for _, k := range eventJSONKeys {
+		delete(raw, k)
+	}
+	p.extra = nil
+	if len(raw) > 0 {
+		p.extra = raw
+	}
+	*e = Event(p)
+	return nil
+}
+
+// MarshalJSON writes the known fields, then the kept unknown ones.
+func (e Event) MarshalJSON() ([]byte, error) {
+	type plain Event
+	b, err := json.Marshal(plain(e))
+	if err != nil || len(e.extra) == 0 {
+		return b, err
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	for k, v := range e.extra {
+		if _, ok := m[k]; !ok {
+			m[k] = v
+		}
+	}
+	return json.Marshal(m)
 }
 
 // Step is one delivery-protocol checkbox on a wave.
