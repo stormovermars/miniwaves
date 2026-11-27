@@ -110,11 +110,8 @@ func optionsSuffix(opts []string) string {
 }
 
 // askOptions splits the repeated --option values (joined by options()), checks them (2 to 4, not blank, distinct
-// ignoring case) and returns them trimmed. No --option gives nil.
+// ignoring case) and returns them trimmed. Call it only when --option was given: an empty raw is one blank value.
 func askOptions(raw string) ([]string, error) {
-	if raw == "" {
-		return nil, nil
-	}
 	var opts []string
 	seen := map[string]bool{}
 	for _, p := range strings.Split(raw, "\x1f") {
@@ -156,9 +153,11 @@ func askCommand(path string, w *Workspace, args []string) error {
 	if err := allowOptions(o, "tenant", "session", "option"); err != nil {
 		return err
 	}
-	opts, err := askOptions(o["option"])
-	if err != nil {
-		return err
+	var opts []string
+	if raw, given := o["option"]; given {
+		if opts, err = askOptions(raw); err != nil {
+			return err
+		}
 	}
 	t, err := selectTenant(w, o)
 	if err != nil {

@@ -16,6 +16,8 @@ func TestAskOptionsValidation(t *testing.T) {
 		{"ask", "TSK-001", "Q?", "--option", "A", "--option", "B", "--option", "C", "--option", "D", "--option", "E"},
 		{"ask", "TSK-001", "Q?", "--option", "A", "--option", "a"},
 		{"ask", "TSK-001", "Q?", "--option", "A", "--option", " "},
+		{"ask", "TSK-001", "Q?", "--option", ""},
+		{"ask", "TSK-001", "Q?", "--option", "", "--option", "A", "--option", "B"},
 	} {
 		if err := run(c); err == nil {
 			t.Fatalf("%v must be refused", c)

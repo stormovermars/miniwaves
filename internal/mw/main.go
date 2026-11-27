@@ -1157,7 +1157,7 @@ func options(args []string) (map[string]string, []string, error) {
 			o[key], i = o[key]+","+args[i+1], i+1
 			continue
 		}
-		if key == "option" && o[key] != "" { // repeatable (mw ask): joined with a unit separator, split by askOptions
+		if _, seen := o[key]; key == "option" && seen { // repeatable (mw ask): joined with a unit separator, split by askOptions
 			o[key], i = o[key]+"\x1f"+args[i+1], i+1
 			continue
 		}
